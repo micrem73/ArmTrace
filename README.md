@@ -4,6 +4,31 @@ This folder contains two scripts for extracting and structuring military export 
 
 
 
+## **Structure**
+
+Inputs and generated files are kept apart: `Reports/` holds only the original PDFs, everything produced by the pipeline goes to `Out/`.
+
+```
+Reports/
+└── 2024/                                # one folder per reporting year
+    ├── lxvii_3_volume 1_442452.pdf      # Doc. LXVII n. 3, Anno 2024 – Volume I
+    └── lxvii_3_volume 2_442453.pdf      # Doc. LXVII n. 3, Anno 2024 – Volume II
+
+Out/
+├── PDF/
+│   └── <tabella>/<anno>/<tabella>.pdf   # one PDF per table  (step 1)
+└── XLS/
+    └── <tabella>/<anno>/<tabella>.xlsx  # one workbook per table  (step 2)
+```
+
+The folder name is the **reporting year** covered by the report (not the year it was published), so the year is carried through both `Reports/` and `Out/` and the pipeline never has to hardcode it: it is parsed from the `Reports/<anno>/…` path.
+
+Adding a year means dropping its PDFs into `Reports/<anno>/` — no code change required.
+
+Both 2024 PDFs are the same parliamentary document (*Doc. LXVII n. 3*, XIX Legislatura, communicated 24 March 2025), split into Volume I (Presidency of the Council of Ministers, Ministry of Foreign Affairs) and Volume II (Ministry of Defence, Ministry of the Interior).
+
+
+
 ## **Scripts**
 
 ### **2024relations2IndividualTables**
@@ -41,11 +66,23 @@ different legislatures. Filenames are therefore prefixed with the reference year
 
 ## **Usage**
 
-Run the scripts in order:
+Run the scripts in order, starting from the report of the year you want to process:
 
-1. 2024relations2IndividualTables   →   produces one PDF per table
+1. **2024relations2IndividualTables**   →   produces one PDF per table in `Out/PDF/<tabella>/<anno>/`
 
-2. IndividualTables2SQL             →   loads tables into SQL / Excel
+   Point `input_pdf` / `input_filename` at the report inside `Reports/<year>/`, e.g. `Reports/2024/lxvii_3_volume 1_442452.pdf`. The year is read from that path.
+
+2. **IndividualTables2SQL**             →   loads tables into SQL / Excel in `Out/XLS/<tabella>/<anno>/`
+
+   Defaults to reading `Out/PDF/<tabella>/<anno>/*.pdf` for `YEAR` and writing the matching workbooks. Set `YEAR` to process another year.
+
+Both scripts share the same constants: `REPORTS_DIR`, `OUT_DIR`, `BASE`. Paths are relative to the working directory, so in Colab either upload the project folder or point `BASE` at your Drive folder:
+
+```python
+BASE = "/content/drive/MyDrive/Colab Notebooks/SplitRelazioniUAMA"
+```
+
+Both accept overrides if you need them: `PDFTableExtractor(input_dir=..., output_root=..., year="2023")`.
 
 
 
