@@ -34,7 +34,8 @@ import re
 # Percorsi del progetto: Out/PDF/<tabella>/<anno>/ -> Out/XLS/<tabella>/<anno>/
 OUT_DIR = "Out"
 
-# Anno di riferimento predefinito (corrisponde alla cartella Reports/<anno>/)
+# Anno di riferimento predefinito (corrisponde alla cartella
+# reports_185_1990/<anno>/ da cui derivano i PDF in Out/PDF/<anno>/)
 YEAR = "2024"
 
 # Radice dei percorsi, impostabile da CLI con --base

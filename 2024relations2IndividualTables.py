@@ -3,15 +3,15 @@
 2024relations2IndividualTables — split a Law 185/1990 annual report PDF into
 one PDF per table.
 
-    Reports/<anno>/<relazione>.pdf  ->  Out/PDF/<tabella>/<anno>/<tabella>.pdf
+    reports_185_1990/<anno>/<relazione>.pdf  ->  Out/PDF/<tabella>/<anno>/<tabella>.pdf
 
-The year is read from the ``Reports/<anno>/`` path, so the same script handles
-every reporting year.
+The year is read from the ``reports_185_1990/<anno>/`` path, so the same script
+handles every reporting year. With many years present, ``--year`` is required.
 
 Usage:
     python 2024relations2IndividualTables.py --year 2024 --volume both
     python 2024relations2IndividualTables.py --year 2024 --volume 2
-    python 2024relations2IndividualTables.py --report Reports/2024/relazione.pdf
+    python 2024relations2IndividualTables.py --report reports_185_1990/2024/relazione.pdf
 
 Requires: pypdf  (pip install -r requirements.txt)
 """
@@ -22,7 +22,7 @@ import re
 import sys
 from pathlib import Path
 
-REPORTS_DIR = "Reports"
+REPORTS_DIR = "reports_185_1990"
 OUT_DIR = "Out"
 
 
@@ -268,8 +268,32 @@ def estrai_tabelle_volume2(input_filename, base=""):
 # CLI
 # ---------------------------------------------------------------------------
 
+ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5}
+
+
+def parse_volume(stem):
+    """Ricava il numero di volume dal nome del file della relazione.
+
+    I nomi non sono uniformi fra gli anni, quindi si coprono tutti i casi:
+
+        lxvii_3_volume 1_442452.pdf        -> 1   (2024, numerazione araba)
+        2019_LXVII_n3_VOLUME_I.pdf         -> 1   (numerazione romana)
+        2021_LXVII_n5_TOMO_II.pdf         -> 2   (TOMO come VOLUME)
+        2001_LXVII_n1_DOCUMENTO_UNICO.pdf -> 1   (documento unico = un volume)
+
+    Restituisce None se il volume non e' ricavabile dal nome.
+    """
+    m = re.search(r"(?:volume|tomo)[\s_-]*([IVX]+|\d+)", stem, re.IGNORECASE)
+    if m:
+        token = m.group(1).upper()
+        return int(token) if token.isdigit() else ROMAN.get(token)
+    if re.search(r"documento[\s_-]*unico", stem, re.IGNORECASE):
+        return 1
+    return None
+
+
 def detect_year(reports_dir=REPORTS_DIR):
-    """Se Reports/ contiene un solo anno, usa quello."""
+    """Se la cartella contiene un solo anno, usa quello."""
     years = sorted(
         d.name for d in Path(reports_dir).glob("*") if d.is_dir() and d.name.isdigit()
     )
@@ -283,17 +307,13 @@ def detect_year(reports_dir=REPORTS_DIR):
 
 
 def find_report(year, volume, reports_dir=REPORTS_DIR):
-    """Trova il PDF del volume richiesto dentro Reports/<anno>/."""
+    """Trova il PDF del volume richiesto dentro reports_185_1990/<anno>/."""
     folder = Path(reports_dir, year)
     if not folder.is_dir():
         raise SystemExit(f"Cartella non trovata: {folder}")
 
-    # "volume 1_442452" -> dopo il numero c'è '_', che è un word char:
-    # usiamo un lookahead numerico invece di \b
-    matches = [
-        p for p in sorted(folder.glob("*.pdf"))
-        if re.search(rf"volume[\s_-]*{volume}(?![0-9])", p.stem, re.IGNORECASE)
-    ]
+    wanted = int(volume)
+    matches = [p for p in sorted(folder.glob("*.pdf")) if parse_volume(p.stem) == wanted]
     if not matches:
         available = ", ".join(p.name for p in sorted(folder.glob("*.pdf"))) or "(nessun PDF)"
         raise SystemExit(
@@ -341,11 +361,13 @@ def main(argv=None):
             jobs.append((str(find_report(year, volume, Path(args.base, REPORTS_DIR))), year))
 
     for report, _year in jobs:
-        volume = "2" if re.search(r"volume[\s_-]*2(?![0-9])", Path(report).stem, re.I) else "1"
+        # Il volume e' quello dichiarato --volume; con --report lo ricaviamo dal nome
+        volume = parse_volume(Path(report).stem) or (2 if args.volume == "2" else 1)
         print("=" * 70)
         print(f"Volume {volume} — {report}")
         print("=" * 70)
-        if volume == "2":
+        if volume >= 2:
+            # Dal Volume 2 in poi le tabelle sono citate come "Tabella N1"
             estrai_tabelle_volume2(report, base=args.base)
         else:
             dividi_pdf_per_tabelle(report, base=args.base)

@@ -1,112 +1,129 @@
 # **ArmTrace — Data Pipeline**
 
-This folder contains two scripts for extracting and structuring military export data from Italian government annual reports published under **Law 185/1990**.
+Two Python scripts that extract and structure Italian military export data from the government annual reports published under **Law 185/1990** (Article 5, Law 9 July 1990 n. 185).
 
-
+---
 
 ## **Structure**
 
-Inputs and generated files are kept apart: `Reports/` holds only the original PDFs, everything produced by the pipeline goes to `Out/`.
+Source reports and generated files are kept apart. `reports_185_1990/` holds only the original PDFs, everything produced by the pipeline goes to `Out/`.
 
 ```
-Reports/
-└── 2024/                                # one folder per reporting year
-    ├── lxvii_3_volume 1_442452.pdf      # Doc. LXVII n. 3, Anno 2024 – Volume I
-    └── lxvii_3_volume 2_442453.pdf      # Doc. LXVII n. 3, Anno 2024 – Volume II
+reports_185_1990/                 # source reports, one folder per reporting year
+├── 2001/ … 2025/                # 23 years, 43 PDFs (2009 and 2011 absent from the archive)
+│   └── <anno>_LXVII_nN_VOLUME_<X>.pdf   (or _DOCUMENTO_UNICO.pdf)
+├── MANIFEST.tsv                 # year, doc number, volume, filename, pages, source URL
+├── manifest.tsv + download_185.sh   # reproduce the download
+└── SOURCES.md                   # archive structure, legislature→year mapping, gaps
 
-Out/
-├── PDF/
-│   └── <tabella>/<anno>/<tabella>.pdf   # one PDF per table  (step 1)
-└── XLS/
-    └── <tabella>/<anno>/<tabella>.xlsx  # one workbook per table  (step 2)
+Out/                             # generated, tracked via Git LFS
+├── PDF/<tabella>/<anno>/<tabella>.pdf   # one PDF per table  (step 1)
+└── XLS/<tabella>/<anno>/<tabella>.xlsx  # one workbook per table  (step 2)
 ```
 
-The folder name is the **reporting year** covered by the report (not the year it was published), so the year is carried through both `Reports/` and `Out/` and the pipeline never has to hardcode it: it is parsed from the `Reports/<anno>/…` path.
+The folder name is the **reporting year** covered by the report, not the year it was published. Both `reports_185_1990/` and `Out/` are keyed by it, so nothing in the scripts hardcodes a year: it is parsed from the `reports_185_1990/<anno>/…` path.
 
-Adding a year means dropping its PDFs into `Reports/<anno>/` — no code change required.
+Adding a year means dropping its PDFs into `reports_185_1990/<anno>/` — no code change required.
 
-Both 2024 PDFs are the same parliamentary document (*Doc. LXVII n. 3*, XIX Legislatura, communicated 24 March 2025), split into Volume I (Presidency of the Council of Ministers, Ministry of Foreign Affairs) and Volume II (Ministry of Defence, Ministry of the Interior).
+> The 2024 volumes predate the bulk download and keep their original filenames
+> (`lxvii_3_volume 1_442452.pdf`, `lxvii_3_volume 2_442453.pdf`) rather than the
+> `<anno>_LXVII_nN_VOLUME_<X>.pdf` convention. Both are understood by
+> `parse_volume()`. They are also **absent from `MANIFEST.tsv`**, which still
+> needs its two 2024 rows added with their real source URLs.
 
-
+---
 
 ## **Scripts**
 
-### **2024relations2IndividualTables**
+### **2024relations2IndividualTables.py**
 
-Parses official Law 185/1990 annual report PDFs. The script automatically locates the table of contents, extracts table names and page references, and generates a separate PDF file for each table.
+Splits a report volume into one PDF per table. It locates the table index (`ELENCO TABELLE SEGNALAZIONI` from Volume 2 onwards, the `TAB` column in Volume 1), extracts the table names, and writes one PDF per table.
 
-**Status:** Tested and working with 2024 reports.
-
-
-
-### **IndividualTables2SQL**
-
-Reads the single-table PDFs produced by the previous step, extracts structured data, and loads it into a SQL database. Also supports export to Excel.
-
-**Status:** Working for a subset of table types. Broader table support is under active development.
-
-
-
-### **reports_185_1990**
-
-Source reports for every year available from the official Camera dei Deputati archive, other than the 2024 pair already in the repository root.
-
-- `reports_185_1990/<year>/` — one folder per year, one PDF per volume
-- `reports_185_1990/MANIFEST.tsv` — year, doc number, volume, filename, page count, source URL
-- `reports_185_1990/SOURCES.md` — archive structure, legislature→year mapping, coverage and gaps
-- `reports_185_1990/manifest.tsv` + `download_185.sh` — reproduce the download
-
-Years retrieved: **2001–2008, 2010, 2012–2023, 2025** (41 volumes).
-Missing: **2009 and 2011** — absent from the Camera archive (see `SOURCES.md`).
-
-Note: doc numbering restarts each legislature, so `n. 1` means a different year in
-different legislatures. Filenames are therefore prefixed with the reference year.
-
-
-
-## **Usage**
-
-Run the scripts in order, starting from the report of the year you want to process:
-
-1. **2024relations2IndividualTables**   →   produces one PDF per table in `Out/PDF/<tabella>/<anno>/`
-
-   Point `input_pdf` / `input_filename` at the report inside `Reports/<year>/`, e.g. `Reports/2024/lxvii_3_volume 1_442452.pdf`. The year is read from that path.
-
-2. **IndividualTables2SQL**             →   loads tables into SQL / Excel in `Out/XLS/<tabella>/<anno>/`
-
-   Defaults to reading `Out/PDF/<tabella>/<anno>/*.pdf` for `YEAR` and writing the matching workbooks. Set `YEAR` to process another year.
-
-Both scripts share the same constants: `REPORTS_DIR`, `OUT_DIR`, `BASE`. Paths are relative to the working directory, so in Colab either upload the project folder or point `BASE` at your Drive folder:
-
-```python
-BASE = "/content/drive/MyDrive/Colab Notebooks/SplitRelazioniUAMA"
+```bash
+python 2024relations2IndividualTables.py --year 2024 --volume both
+python 2024relations2IndividualTables.py --year 2019 --volume 2
+python 2024relations2IndividualTables.py --report reports_185_1990/2024/lxvii_3_volume\ 1_442452.pdf
 ```
 
-Both accept overrides if you need them: `PDFTableExtractor(input_dir=..., output_root=..., year="2023")`.
+| Flag | Meaning |
+|---|---|
+| `--year` | reporting year — **required**, 23 years are present |
+| `--volume` | `1`, `2` or `both` (default `2`) |
+| `--report` | explicit PDF path, skips year/volume detection |
+| `--base` | root for all paths (default `.`) |
 
+Volume detection handles both naming schemes (`volume 1`, `VOLUME_I`, `TOMO_II`) and treats `DOCUMENTO_UNICO` as a single volume. It refuses to guess when a year has two files claiming the same volume — which is currently the case for **2021 volume 2**, where `2021_LXVII_n5_TOMO_II.pdf` and `2021_LXVII_n5_VOLUME_II.pdf` are two *different* documents (844 and 1070 pages) with colliding names.
 
+**Status:** does not currently work. Verified against the 2024 Volume II report, it extracts **0 tables**: the page scan is gated on the `"ELENCO TABELLE"` index heading, which actual table pages do not contain, so no page is ever assigned to a table. Untested for any year other than 2024.
+
+### **IndividualTables2SQL.py**
+
+Reads the per-table PDFs from step 1 and converts them to Excel via tabula-py.
+
+```bash
+python IndividualTables2SQL.py --year 2024
+python IndividualTables2SQL.py --year 2024 --input-dir Out/PDF --output-root Out/XLS
+```
+
+| Flag | Meaning |
+|---|---|
+| `--year` | year to process (default `2024`) |
+| `--input-dir` | per-table PDFs (default `Out/PDF`) |
+| `--output-root` | workbooks root (default `Out/XLS`) |
+| `--base` | root for all paths (default `.`) |
+
+**Status:** does not run to completion. It hangs on `TAB_A1.pdf`, which is missing from `type_mapping` and therefore takes the unknown-type branch, writing ~4000 empty sheets — past Excel's 255-sheet limit. Consistent with this, `Out/XLS/` holds 16 workbooks for 19 PDFs: `TAB_A1`, `Tabella_AA` and `Tabella_EE` were never converted.
+
+### **Requirements**
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+```
+
+tabula-py shells out to Java, so a JRE (e.g. Temurin 17) must be on `PATH` or reachable via `JAVA_HOME`.
+
+---
+
+## **Source reports**
+
+`reports_185_1990/` holds every year available from the official Camera dei Deputati archive.
+
+Years retrieved: **2001–2008, 2010, 2012–2025** (43 PDFs: 41 from the bulk download, plus the 2 volumes of 2024). Missing: **2009 and 2011**, absent from the archive — see `SOURCES.md`.
+
+Doc numbering restarts each legislature, so `n. 1` refers to a different year in a different legislature. Filenames are therefore prefixed with the reference year.
+
+Re-fetch with:
+
+```bash
+reports_185_1990/download_185.sh <dest> reports_185_1990/manifest.tsv
+```
+
+---
+
+## **Git LFS**
+
+`.gitattributes` tracks **every** `*.pdf`, `*.xls` and `*.xlsx` in the repository regardless of folder. This keeps the extracted tables diffable and shareable.
+
+The 41 PDFs in `reports_185_1990/` that came from the bulk download are still plain blobs (only the 2 volumes of 2024 are in LFS), and the folder totals ~1.6 GB. Converting them retroactively (`git add --renormalize .`) would push all of it into LFS storage, which likely exceeds the GitHub free quota — so it has deliberately not been done.
+
+---
 
 ## **ToDo**
 
-- Iterate on all reports 
-
+- Fix the step 1 index bug so tables are actually extracted (currently 0 tables)
+- Fix the `TAB_A1` type detection and cap sheets per workbook so step 2 completes
+- Resolve the 2021 volume-2 filename collision
+- Add the two missing 2024 rows to `MANIFEST.tsv`
+- Process the remaining 22 years
 - Populate a MySQL db
+- Create an LLM tool that converts natural language requests into SQL queries
+- Create a chatbot enhanced with that tool, allowing the DB to be interrogated in natural language
+- Participatory workshop for the design of the interface
 
-- create a LLM tool that convert natural language requests into SQL queries
-
-- create a chatbot enhanced with the tool, allowing to interrogate the DB in natural language
-
-- participatory workshop for the design of the interface
-
-- test, test, test
-
-
+---
 
 ## **Notes**
 
 - Input data is sourced from publicly available government reports under Italian Law 185/1990 (annual reports on military exports).
-
-- Source PDFs total ~1.5 GB and are excluded from version control. Re-fetch them
-  with `reports_185_1990/download_185.sh <dest> reports_185_1990/manifest.tsv`.
-
 - This pipeline is the technical foundation of the ArmTrace civic transparency platform.
