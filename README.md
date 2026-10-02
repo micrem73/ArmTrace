@@ -16,20 +16,26 @@ reports_185_1990/                 # source reports, one folder per reporting yea
 ├── download_185.sh              # reproduce the download
 └── SOURCES.md                   # archive structure, legislature→year mapping, gaps
 
-Out/                             # generated, tracked via Git LFS
+Out/                             # generated locally, NOT in git (see "Binary files")
 ├── PDF/<tabella>/<anno>/<tabella>.pdf   # one PDF per table  (step 1)
 └── XLS/<tabella>/<anno>/<tabella>.xlsx  # one workbook per table  (step 2)
 ```
+
+Neither folder is checked in: `reports_185_1990/` and `Out/` are rebuilt from
+`manifest.tsv` and the two scripts. The repository tracks only the scripts, the
+manifest, `download_185.sh` and `SOURCES.md`.
 
 The folder name is the **reporting year** covered by the report, not the year it was published. Both `reports_185_1990/` and `Out/` are keyed by it, so nothing in the scripts hardcodes a year: it is parsed from the `reports_185_1990/<anno>/…` path.
 
 Adding a year means dropping its PDFs into `reports_185_1990/<anno>/` — no code change required.
 
-> The 2024 volumes predate the bulk download and keep their original filenames
+> The 2024 volumes keep their original filenames
 > (`lxvii_3_volume 1_442452.pdf`, `lxvii_3_volume 2_442453.pdf`) rather than the
 > `<anno>_LXVII_nN_VOLUME_<X>.pdf` convention. Both are understood by
 > `parse_volume()`, and `manifest.tsv` records the real names so that
-> `download_185.sh` recognises them and skips them instead of re-fetching.
+> `download_185.sh` recognises them and skips them instead of re-fetching. This is
+> the only difference from the other years — they are sourced and stored exactly
+> like the rest.
 
 ---
 
@@ -72,7 +78,7 @@ python IndividualTables2SQL.py --year 2024 --input-dir Out/PDF --output-root Out
 | `--output-root` | workbooks root (default `Out/XLS`) |
 | `--base` | root for all paths (default `.`) |
 
-**Status:** does not run to completion. It hangs on `TAB_A1.pdf`, which is missing from `type_mapping` and therefore takes the unknown-type branch, writing ~4000 empty sheets — past Excel's 255-sheet limit. Consistent with this, `Out/XLS/` holds 16 workbooks for 19 PDFs: `TAB_A1`, `Tabella_AA` and `Tabella_EE` were never converted.
+**Status:** does not run to completion. It hangs on `TAB_A1.pdf`, which is missing from `type_mapping` and therefore takes the unknown-type branch, writing ~4000 empty sheets — past Excel's 255-sheet limit. Consistent with this, a local run left 16 workbooks in `Out/XLS/` for the 19 PDFs in `Out/PDF/`: `TAB_A1`, `Tabella_AA` and `Tabella_EE` were never converted. (`Out/` is not in git, so those counts describe a local run rather than committed state.)
 
 ### **Requirements**
 
@@ -90,9 +96,14 @@ tabula-py shells out to Java, so a JRE (e.g. Temurin 17) must be on `PATH` or re
 `reports_185_1990/` holds every year available from the official Camera dei Deputati
 archive, plus 2009 and 2011 from the SIPRI mirror (see `SOURCES.md`).
 
-Years retrieved: **2001–2025, all 25 years** (51 PDFs). 2009 and 2011 are absent
-from the Camera archive and come from SIPRI instead; every other year comes from
-`documenti.camera.it`.
+Years retrieved: **2001–2025, all 25 years, 51 PDFs, no gaps** — every one of them
+has a row in `manifest.tsv`. 2009 (Doc. LXVII n. 3, tomi I–III) and 2011 (Doc. LXVII
+n. 5, tomi I–V) are **not** in the Camera archive — its legislature XVI index 404s
+and an exhaustive probe of the path space finds nothing — so their `manifest.tsv`
+rows point at `sipri.org`, which mirrors the same parliamentary documents. Both are
+Senato printings; every other year comes from `documenti.camera.it`. Nothing is
+missing from the manifest: the eight SIPRI-sourced rows are ordinary rows, and
+`download_185.sh` fetches them like any other.
 
 Doc numbering restarts each legislature, so `n. 1` refers to a different year in a different legislature. Filenames are therefore prefixed with the reference year.
 
@@ -104,12 +115,33 @@ reports_185_1990/download_185.sh <dest> reports_185_1990/manifest.tsv
 
 ---
 
-## **Git LFS**
+## **Binary files**
 
-`.gitattributes` tracks **every** `*.pdf`, `*.xls` and `*.xlsx` in the repository regardless of folder. This keeps the extracted tables diffable and shareable.
+No PDF, Excel or other binary is tracked by git, and **nothing is in Git LFS**.
 
-The 49 PDFs in `reports_185_1990/` that came from the bulk download are still plain
-blobs (only the 2 volumes of 2024 are in LFS), and the folder totals ~1.6 GB. Converting them retroactively (`git add --renormalize .`) would push all of it into LFS storage, which likely exceeds the GitHub free quota — so it has deliberately not been done.
+`.gitignore` excludes `*.pdf`, `*.xls` and `*.xlsx` — that is, the source reports
+in `reports_185_1990/` (51 PDFs, ~1.6 GB) and everything generated under `Out/`.
+`.gitattributes` deliberately carries **no** `filter=lfs` rule for them; it only
+documents why. LFS was never a solution here: it does not stop the files being
+committed, it just moves the bytes into GitHub's metered LFS storage/bandwidth
+quota, and this repository's binaries total well over 1 GB.
+
+There is no special case for the 2024 volumes. Earlier revisions had only those two
+files in LFS while the other 49 were plain blobs; that split has been removed, so
+the 2024 PDFs are ignored exactly like every other source report and are
+regenerated from their `manifest.tsv` rows like the rest.
+
+Verified on the current tree: `git ls-files '*.pdf' '*.xls' '*.xlsx'` returns
+nothing, `git lfs ls-files` is empty, and `git check-attr` reports no LFS attribute
+for `reports_185_1990/2024/lxvii_3_volume 1_442452.pdf`.
+
+To obtain the files locally:
+
+```bash
+reports_185_1990/download_185.sh reports_185_1990 reports_185_1990/manifest.tsv
+```
+
+then re-run the two scripts to regenerate `Out/`.
 
 ---
 
@@ -118,7 +150,7 @@ blobs (only the 2 volumes of 2024 are in LFS), and the folder totals ~1.6 GB. Co
 - Fix the step 1 index bug so tables are actually extracted (currently 0 tables)
 - Fix the `TAB_A1` type detection and cap sheets per workbook so step 2 completes
 - Resolve the 2021 volume-2 filename collision
-- Process the remaining 23 years
+- Process the remaining 24 years (2025 is downloaded but has not been through the pipeline)
 - Populate a MySQL db
 - Create an LLM tool that converts natural language requests into SQL queries
 - Create a chatbot enhanced with that tool, allowing the DB to be interrogated in natural language
