@@ -1,8 +1,9 @@
-# Every PDF and Excel workbook in this repository is stored in Git LFS,
-# regardless of folder. Extracted tables (Out/) are regenerable from the
-# source reports (Reports/) by re-running the pipeline scripts, but both are
-# tracked so tables can be diffed and shared.
-
-*.pdf  filter=lfs diff=lfs merge=lfs -text
-*.xls  filter=lfs diff=lfs merge=lfs -text
-*.xlsx filter=lfs diff=lfs merge=lfs -text
+# This repository tracks no binary files.
+#
+# *.pdf / *.xls / *.xlsx are deliberately NOT tracked and deliberately NOT kept
+# in Git LFS — they are ignored in .gitignore. Do not re-add LFS filter rules
+# for them: LFS would not stop them from being committed, it would only charge
+# them against GitHub's LFS storage/bandwidth quota.
+#
+# To obtain the files locally, follow reports_185_1990/SOURCES.md for the source
+# reports and re-run the pipeline scripts to regenerate Out/.

@@ -7,3 +7,13 @@ venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Source reports and generated tables.
+# These are large (well over 1 GB) and are not meant to live in git: they were
+# briefly routed through Git LFS, which only moves the bytes into GitHub's
+# metered LFS quota instead of removing them. Both sets are regenerable —
+# Reports/ from the official sources listed in reports_185_1990/SOURCES.md,
+# Out/ by re-running the pipeline scripts — so they are simply ignored.
+*.pdf
+*.xls
+*.xlsx
