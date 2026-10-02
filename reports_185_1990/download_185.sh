@@ -9,11 +9,13 @@ DEST="${1:?destination dir}"
 MANIFEST="${2:?manifest tsv}"
 mkdir -p "$DEST"
 
+# filename comes from the manifest's `file` column, not derived here, so that
+# volumes already on disk under a different name (e.g. the 2024 files) are
+# recognised and skipped instead of being re-downloaded.
 fetch() {
-  local year="$1" leg="$2" num="$3" vol="$4" url="$5"
+  local year="$1" leg="$2" num="$3" vol="$4" file="$5" url="$6"
   local dir="$DEST/$year"
-  local safe_vol; safe_vol=$(echo "$vol" | tr ' ' '_' | tr '[:lower:]' '[:upper:]')
-  local out="$dir/${year}_LXVII_n${num}_${safe_vol}.pdf"
+  local out="$dir/$file"
   mkdir -p "$dir"
 
   if [ -s "$out" ] && pdfinfo "$out" >/dev/null 2>&1; then
@@ -40,7 +42,7 @@ export UA DEST
 
 grep -v '^#' "$MANIFEST" | grep -v '^[[:space:]]*$' \
   | xargs -P 4 -d '\n' -I{} bash -c '
-      IFS=$'"'"'\t'"'"' read -r year leg num vol url <<< "{}"
-      fetch "$year" "$leg" "$num" "$vol" "$url"
+      IFS=$'"'"'\t'"'"' read -r year leg num vol file _ url <<< "{}"
+      fetch "$year" "$leg" "$num" "$vol" "$file" "$url"
     '
 echo "--- download complete ---"

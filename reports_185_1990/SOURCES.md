@@ -13,6 +13,7 @@ export, import and transit of armaments material.
 | Camera dei Deputati — category index (leg XI–XVI) | same pattern | **404** — index not published |
 | Senato della Repubblica — non-legislative documents | `www.parlamento.it/static/bgt/listadocumenti/{leg}/1/{tipoDoc}/0/index.html` | Index readable |
 | Senato della Repubblica — PDF server | `www.senato.it/service/PDF/PDFServer/DF/{id}.pdf` | **Blocked** by AWS WAF challenge (HTTP 202) |
+| SIPRI — national reports on arms exports (Italy) | `www.sipri.org/databases/national-reports/Italy` → `www.sipri.org/sites/default/files/…/national_reports/italy/*.pdf` | Working, no WAF — mirrors the reports for **1990–2021** |
 
 ## Legislature → year mapping (Doc. LXVII, category 067)
 
@@ -29,17 +30,43 @@ export, import and transit of armaments material.
 Note: doc numbering restarts each legislature, so the same "n. 1" refers to
 different years in different legislatures.
 
-## Year coverage retrieved from Camera archive
+## Year coverage
 
-Complete: 2010, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021,
-2022, 2023, 2025.
+Complete: **2001–2025, all 25 years, no gaps.**
 
-**Gaps: 2009 and 2011.** These are Doc. LXVII n. 3 and n. 5 of legislature XVI.
-The category index for legislature XVI returns 404 and an exhaustive probe of
-the archive path space (volume suffixes `_v01`, `_v01_RS`, tomi `_t1`…`_t5`,
-`_ALLEGATO`, and both `INTERO.pdf` / `INTERO_COM.pdf` filenames) found no files.
-The Senate PDF server, which lists them, is behind an AWS WAF challenge that
-cannot be solved non-interactively.
+**2009 and 2011 are not in the Camera archive.** These are Doc. LXVII n. 3 and
+n. 5 of legislature XVI. The category index for legislature XVI returns 404, and an
+exhaustive probe of the archive path space (volume suffixes `_v01`, `_v01_RS`, tomi
+`_t1`…`_t5`, `_ALLEGATO`, and both `INTERO.pdf` / `INTERO_COM.pdf` filenames)
+returns nothing. The Senate PDF server, which lists them, is behind an AWS WAF
+challenge that cannot be solved non-interactively.
+
+They were instead retrieved from the **SIPRI national-reports mirror**, which hosts
+the same parliamentary documents:
+
+| Year | Doc | SIPRI file | Volume | Pages |
+|---|---|---|---|---|
+| 2009 | LXVII n. 3 | `Italy09_2.pdf` | TOMO I | 825 |
+| 2009 | LXVII n. 3 | `Italy09_3.pdf` | TOMO II | 953 |
+| 2009 | LXVII n. 3 | `Italy09_4.pdf` | TOMO III | 1113 |
+| 2011 | LXVII n. 5 | `italy_11_1.pdf` | TOMO I | 808 |
+| 2011 | LXVII n. 5 | `Italy_11_2.pdf` | TOMO II | 690 |
+| 2011 | LXVII n. 5 | `Italy_11_3.pdf` | TOMO III | 768 |
+| 2011 | LXVII n. 5 | `italy_11_4.pdf` | TOMO IV | 800 |
+| 2011 | LXVII n. 5 | `Italy_11_5.pdf` | TOMO V | 396 |
+
+Each was verified by downloading it and reading page 1, which states the doc
+number and reference year (`Doc. LXVII n. 3 … (Anno 2009)`, `Doc. LXVII n. 5 …
+(Anno 2011)`). Note both years are *Senato* printings, whereas the other years in
+this manifest are Camera printings — same document series, different typesetting.
+
+SIPRI also hosts, and we deliberately **excluded**, three files that carry no
+volume number and would confuse volume detection:
+
+- `Italy09_1.pdf` — the 2009 **ALLEGATO** (16 pp), the separate sectoral relation
+  of the Ministero dello sviluppo economico, not part of the three tomi.
+- `Italy_11_short.pdf`, `Italy_2009_short-version.pdf` — abridged one-volume
+  summaries of the full relations.
 
 ## File naming
 

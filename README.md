@@ -10,10 +10,10 @@ Source reports and generated files are kept apart. `reports_185_1990/` holds onl
 
 ```
 reports_185_1990/                 # source reports, one folder per reporting year
-├── 2001/ … 2025/                # 23 years, 43 PDFs (2009 and 2011 absent from the archive)
-│   └── <anno>_LXVII_nN_VOLUME_<X>.pdf   (or _DOCUMENTO_UNICO.pdf)
-├── MANIFEST.tsv                 # year, doc number, volume, filename, pages, source URL
-├── manifest.tsv + download_185.sh   # reproduce the download
+├── 2001/ … 2025/                # 25 years, 51 PDFs (2009 and 2011 from the SIPRI mirror)
+│   └── <anno>_LXVII_nN_VOLUME_<X>.pdf   (or _TOMO_X / _DOCUMENTO_UNICO)
+├── manifest.tsv                 # year, leg, num, volume, filename, pages, source URL
+├── download_185.sh              # reproduce the download
 └── SOURCES.md                   # archive structure, legislature→year mapping, gaps
 
 Out/                             # generated, tracked via Git LFS
@@ -28,8 +28,8 @@ Adding a year means dropping its PDFs into `reports_185_1990/<anno>/` — no cod
 > The 2024 volumes predate the bulk download and keep their original filenames
 > (`lxvii_3_volume 1_442452.pdf`, `lxvii_3_volume 2_442453.pdf`) rather than the
 > `<anno>_LXVII_nN_VOLUME_<X>.pdf` convention. Both are understood by
-> `parse_volume()`. They are also **absent from `MANIFEST.tsv`**, which still
-> needs its two 2024 rows added with their real source URLs.
+> `parse_volume()`, and `manifest.tsv` records the real names so that
+> `download_185.sh` recognises them and skips them instead of re-fetching.
 
 ---
 
@@ -47,7 +47,7 @@ python 2024relations2IndividualTables.py --report reports_185_1990/2024/lxvii_3_
 
 | Flag | Meaning |
 |---|---|
-| `--year` | reporting year — **required**, 23 years are present |
+| `--year` | reporting year — **required**, 25 years are present |
 | `--volume` | `1`, `2` or `both` (default `2`) |
 | `--report` | explicit PDF path, skips year/volume detection |
 | `--base` | root for all paths (default `.`) |
@@ -87,9 +87,12 @@ tabula-py shells out to Java, so a JRE (e.g. Temurin 17) must be on `PATH` or re
 
 ## **Source reports**
 
-`reports_185_1990/` holds every year available from the official Camera dei Deputati archive.
+`reports_185_1990/` holds every year available from the official Camera dei Deputati
+archive, plus 2009 and 2011 from the SIPRI mirror (see `SOURCES.md`).
 
-Years retrieved: **2001–2008, 2010, 2012–2025** (43 PDFs: 41 from the bulk download, plus the 2 volumes of 2024). Missing: **2009 and 2011**, absent from the archive — see `SOURCES.md`.
+Years retrieved: **2001–2025, all 25 years** (51 PDFs). 2009 and 2011 are absent
+from the Camera archive and come from SIPRI instead; every other year comes from
+`documenti.camera.it`.
 
 Doc numbering restarts each legislature, so `n. 1` refers to a different year in a different legislature. Filenames are therefore prefixed with the reference year.
 
@@ -105,7 +108,8 @@ reports_185_1990/download_185.sh <dest> reports_185_1990/manifest.tsv
 
 `.gitattributes` tracks **every** `*.pdf`, `*.xls` and `*.xlsx` in the repository regardless of folder. This keeps the extracted tables diffable and shareable.
 
-The 41 PDFs in `reports_185_1990/` that came from the bulk download are still plain blobs (only the 2 volumes of 2024 are in LFS), and the folder totals ~1.6 GB. Converting them retroactively (`git add --renormalize .`) would push all of it into LFS storage, which likely exceeds the GitHub free quota — so it has deliberately not been done.
+The 49 PDFs in `reports_185_1990/` that came from the bulk download are still plain
+blobs (only the 2 volumes of 2024 are in LFS), and the folder totals ~1.6 GB. Converting them retroactively (`git add --renormalize .`) would push all of it into LFS storage, which likely exceeds the GitHub free quota — so it has deliberately not been done.
 
 ---
 
@@ -114,8 +118,7 @@ The 41 PDFs in `reports_185_1990/` that came from the bulk download are still pl
 - Fix the step 1 index bug so tables are actually extracted (currently 0 tables)
 - Fix the `TAB_A1` type detection and cap sheets per workbook so step 2 completes
 - Resolve the 2021 volume-2 filename collision
-- Add the two missing 2024 rows to `MANIFEST.tsv`
-- Process the remaining 22 years
+- Process the remaining 23 years
 - Populate a MySQL db
 - Create an LLM tool that converts natural language requests into SQL queries
 - Create a chatbot enhanced with that tool, allowing the DB to be interrogated in natural language

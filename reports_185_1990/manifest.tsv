@@ -1,42 +1,52 @@
-# year	leg	num	vol	url
-2025	19	4	VOLUME I	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/004v01_RS/INTERO_COM.pdf
-2025	19	4	VOLUME II	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/004v02_RS/INTERO_COM.pdf
-2023	19	2	VOLUME I	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/002v01_RS/INTERO_COM.pdf
-2023	19	2	VOLUME II	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/002v02_RS/INTERO_COM.pdf
-2023	19	2	VOLUME III	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/002v03_RS/INTERO_COM.pdf
-2022	19	1	VOLUME I	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/001v01/INTERO.pdf
-2022	19	1	VOLUME II	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/001v02/INTERO.pdf
-2021	18	5	TOMO I	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/005v01_t1_RS/INTERO_COM.pdf
-2021	18	5	TOMO II	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/005v01_t2_RS/INTERO_COM.pdf
-2021	18	5	VOLUME II	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/005v02_RS/INTERO_COM.pdf
-2020	18	4	VOLUME I	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/004v01/INTERO.pdf
-2020	18	4	VOLUME II	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/004v02/INTERO.pdf
-2019	18	3	VOLUME I	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/003v01_RS/INTERO_COM.pdf
-2019	18	3	VOLUME II	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/003v02_RS/INTERO_COM.pdf
-2018	18	2	VOLUME I	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/002v01/INTERO.pdf
-2018	18	2	VOLUME II	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/002v02/INTERO.pdf
-2017	18	1	VOLUME I	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/001v01_RS/INTERO_COM.pdf
-2017	18	1	VOLUME II	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/001v02_RS/INTERO_COM.pdf
-2016	17	5	VOLUME I	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/005v01/INTERO.pdf
-2016	17	5	VOLUME II	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/005v02/INTERO.pdf
-2015	17	4	VOLUME I	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/004v01_RS/INTERO_COM.pdf
-2015	17	4	VOLUME II	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/004v02_RS/INTERO_COM.pdf
-2014	17	3	VOLUME I	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/003v01/INTERO.pdf
-2014	17	3	VOLUME II	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/003v02/INTERO.pdf
-2013	17	2	DOCUMENTO UNICO	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/002_RS/INTERO_COM.pdf
-2012	17	1	VOLUME I	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/001v01/INTERO.pdf
-2012	17	1	VOLUME II	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/001v02/INTERO.pdf
-2012	17	1	VOLUME III	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/001v03/INTERO.pdf
-2010	16	4	VOLUME I	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/004v01/INTERO.pdf
-2010	16	4	VOLUME II	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/004v02/INTERO.pdf
-2010	16	4	VOLUME III	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/004v03/INTERO.pdf
-2008	16	2	VOLUME I	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/002v01/INTERO.pdf
-2008	16	2	VOLUME II	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/002v02/INTERO.pdf
-2008	16	2	VOLUME III	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/002v03/INTERO.pdf
-2007	16	1	DOCUMENTO UNICO	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/001_RS/INTERO_COM.pdf
-2006	15	2	DOCUMENTO UNICO	https://documenti.camera.it/_dati/leg15/lavori/documentiparlamentari/IndiceETesti/067/002/INTERO_COM.pdf
-2005	15	1	DOCUMENTO UNICO	https://documenti.camera.it/_dati/leg15/lavori/documentiparlamentari/IndiceETesti/067/001_RS/INTERO_COM.pdf
-2004	14	4	DOCUMENTO UNICO	https://documenti.camera.it/_dati/leg14/lavori/documentiparlamentari/IndiceETesti/067/004/INTERO.pdf
-2003	14	3	DOCUMENTO UNICO	https://documenti.camera.it/_dati/leg14/lavori/documentiparlamentari/IndiceETesti/067/003_RS/INTERO.pdf
-2002	14	2	DOCUMENTO UNICO	https://documenti.camera.it/_dati/leg14/lavori/documentiparlamentari/IndiceETesti/067/002/INTERO.pdf
-2001	14	1	DOCUMENTO UNICO	https://documenti.camera.it/_dati/leg14/lavori/documentiparlamentari/IndiceETesti/067/001_RS/INTERO.pdf
+# year	leg	num	vol	file	pages	url
+2025	19	4	VOLUME I	2025_LXVII_n4_VOLUME_I.pdf	1048	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/004v01_RS/INTERO_COM.pdf
+2025	19	4	VOLUME II	2025_LXVII_n4_VOLUME_II.pdf	1048	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/004v02_RS/INTERO_COM.pdf
+2024	19	3	VOLUME I	lxvii_3_volume 1_442452.pdf	1016	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/003v01/INTERO.pdf
+2024	19	3	VOLUME II	lxvii_3_volume 2_442453.pdf	1260	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/003v02/INTERO.pdf
+2023	19	2	VOLUME I	2023_LXVII_n2_VOLUME_I.pdf	946	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/002v01_RS/INTERO_COM.pdf
+2023	19	2	VOLUME II	2023_LXVII_n2_VOLUME_II.pdf	580	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/002v02_RS/INTERO_COM.pdf
+2023	19	2	VOLUME III	2023_LXVII_n2_VOLUME_III.pdf	518	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/002v03_RS/INTERO_COM.pdf
+2022	19	1	VOLUME I	2022_LXVII_n1_VOLUME_I.pdf	1020	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/001v01/INTERO.pdf
+2022	19	1	VOLUME II	2022_LXVII_n1_VOLUME_II.pdf	1088	https://documenti.camera.it/_dati/leg19/lavori/documentiparlamentari/IndiceETesti/067/001v02/INTERO.pdf
+2021	18	5	TOMO I	2021_LXVII_n5_TOMO_I.pdf	793	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/005v01_t1_RS/INTERO_COM.pdf
+2021	18	5	TOMO II	2021_LXVII_n5_TOMO_II.pdf	844	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/005v01_t2_RS/INTERO_COM.pdf
+2021	18	5	VOLUME II	2021_LXVII_n5_VOLUME_II.pdf	1070	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/005v02_RS/INTERO_COM.pdf
+2020	18	4	VOLUME I	2020_LXVII_n4_VOLUME_I.pdf	732	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/004v01/INTERO.pdf
+2020	18	4	VOLUME II	2020_LXVII_n4_VOLUME_II.pdf	958	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/004v02/INTERO.pdf
+2019	18	3	VOLUME I	2019_LXVII_n3_VOLUME_I.pdf	826	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/003v01_RS/INTERO_COM.pdf
+2019	18	3	VOLUME II	2019_LXVII_n3_VOLUME_II.pdf	1004	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/003v02_RS/INTERO_COM.pdf
+2018	18	2	VOLUME I	2018_LXVII_n2_VOLUME_I.pdf	742	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/002v01/INTERO.pdf
+2018	18	2	VOLUME II	2018_LXVII_n2_VOLUME_II.pdf	764	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/002v02/INTERO.pdf
+2017	18	1	VOLUME I	2017_LXVII_n1_VOLUME_I.pdf	748	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/001v01_RS/INTERO_COM.pdf
+2017	18	1	VOLUME II	2017_LXVII_n1_VOLUME_II.pdf	746	https://documenti.camera.it/_dati/leg18/lavori/documentiparlamentari/IndiceETesti/067/001v02_RS/INTERO_COM.pdf
+2016	17	5	VOLUME I	2016_LXVII_n5_VOLUME_I.pdf	716	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/005v01/INTERO.pdf
+2016	17	5	VOLUME II	2016_LXVII_n5_VOLUME_II.pdf	768	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/005v02/INTERO.pdf
+2015	17	4	VOLUME I	2015_LXVII_n4_VOLUME_I.pdf	1032	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/004v01_RS/INTERO_COM.pdf
+2015	17	4	VOLUME II	2015_LXVII_n4_VOLUME_II.pdf	716	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/004v02_RS/INTERO_COM.pdf
+2014	17	3	VOLUME I	2014_LXVII_n3_VOLUME_I.pdf	664	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/003v01/INTERO.pdf
+2014	17	3	VOLUME II	2014_LXVII_n3_VOLUME_II.pdf	656	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/003v02/INTERO.pdf
+2013	17	2	DOCUMENTO UNICO	2013_LXVII_n2_DOCUMENTO_UNICO.pdf	1672	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/002_RS/INTERO_COM.pdf
+2012	17	1	VOLUME I	2012_LXVII_n1_VOLUME_I.pdf	1242	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/001v01/INTERO.pdf
+2012	17	1	VOLUME II	2012_LXVII_n1_VOLUME_II.pdf	1268	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/001v02/INTERO.pdf
+2012	17	1	VOLUME III	2012_LXVII_n1_VOLUME_III.pdf	608	https://documenti.camera.it/_dati/leg17/lavori/documentiparlamentari/IndiceETesti/067/001v03/INTERO.pdf
+2011	16	5	TOMO I	2011_LXVII_n5_TOMO_I.pdf	808	https://www.sipri.org/sites/default/files/research/armaments/transfers/transparency/national_reports/italy/italy_11_1.pdf
+2011	16	5	TOMO II	2011_LXVII_n5_TOMO_II.pdf	690	https://www.sipri.org/sites/default/files/research/armaments/transfers/transparency/national_reports/italy/Italy_11_2.pdf
+2011	16	5	TOMO III	2011_LXVII_n5_TOMO_III.pdf	768	https://www.sipri.org/sites/default/files/research/armaments/transfers/transparency/national_reports/italy/Italy_11_3.pdf
+2011	16	5	TOMO IV	2011_LXVII_n5_TOMO_IV.pdf	800	https://www.sipri.org/sites/default/files/research/armaments/transfers/transparency/national_reports/italy/italy_11_4.pdf
+2011	16	5	TOMO V	2011_LXVII_n5_TOMO_V.pdf	396	https://www.sipri.org/sites/default/files/research/armaments/transfers/transparency/national_reports/italy/Italy_11_5.pdf
+2010	16	4	VOLUME I	2010_LXVII_n4_VOLUME_I.pdf	840	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/004v01/INTERO.pdf
+2010	16	4	VOLUME II	2010_LXVII_n4_VOLUME_II.pdf	1021	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/004v02/INTERO.pdf
+2010	16	4	VOLUME III	2010_LXVII_n4_VOLUME_III.pdf	1191	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/004v03/INTERO.pdf
+2009	16	3	TOMO I	2009_LXVII_n3_TOMO_I.pdf	825	https://www.sipri.org/sites/default/files/research/armaments/transfers/transparency/national_reports/italy/Italy09_2.pdf
+2009	16	3	TOMO II	2009_LXVII_n3_TOMO_II.pdf	953	https://www.sipri.org/sites/default/files/research/armaments/transfers/transparency/national_reports/italy/Italy09_3.pdf
+2009	16	3	TOMO III	2009_LXVII_n3_TOMO_III.pdf	1113	https://www.sipri.org/sites/default/files/research/armaments/transfers/transparency/national_reports/italy/Italy09_4.pdf
+2008	16	2	VOLUME I	2008_LXVII_n2_VOLUME_I.pdf	609	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/002v01/INTERO.pdf
+2008	16	2	VOLUME II	2008_LXVII_n2_VOLUME_II.pdf	930	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/002v02/INTERO.pdf
+2008	16	2	VOLUME III	2008_LXVII_n2_VOLUME_III.pdf	983	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/002v03/INTERO.pdf
+2007	16	1	DOCUMENTO UNICO	2007_LXVII_n1_DOCUMENTO_UNICO.pdf	1104	https://documenti.camera.it/_dati/leg16/lavori/documentiparlamentari/IndiceETesti/067/001_RS/INTERO_COM.pdf
+2006	15	2	DOCUMENTO UNICO	2006_LXVII_n2_DOCUMENTO_UNICO.pdf	936	https://documenti.camera.it/_dati/leg15/lavori/documentiparlamentari/IndiceETesti/067/002/INTERO_COM.pdf
+2005	15	1	DOCUMENTO UNICO	2005_LXVII_n1_DOCUMENTO_UNICO.pdf	542	https://documenti.camera.it/_dati/leg15/lavori/documentiparlamentari/IndiceETesti/067/001_RS/INTERO_COM.pdf
+2004	14	4	DOCUMENTO UNICO	2004_LXVII_n4_DOCUMENTO_UNICO.pdf	596	https://documenti.camera.it/_dati/leg14/lavori/documentiparlamentari/IndiceETesti/067/004/INTERO.pdf
+2003	14	3	DOCUMENTO UNICO	2003_LXVII_n3_DOCUMENTO_UNICO.pdf	542	https://documenti.camera.it/_dati/leg14/lavori/documentiparlamentari/IndiceETesti/067/003_RS/INTERO.pdf
+2002	14	2	DOCUMENTO UNICO	2002_LXVII_n2_DOCUMENTO_UNICO.pdf	371	https://documenti.camera.it/_dati/leg14/lavori/documentiparlamentari/IndiceETesti/067/002/INTERO.pdf
+2001	14	1	DOCUMENTO UNICO	2001_LXVII_n1_DOCUMENTO_UNICO.pdf	371	https://documenti.camera.it/_dati/leg14/lavori/documentiparlamentari/IndiceETesti/067/001_RS/INTERO.pdf
