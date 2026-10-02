@@ -41,7 +41,7 @@ export -f fetch
 export UA DEST
 
 grep -v '^#' "$MANIFEST" | grep -v '^[[:space:]]*$' \
-  | xargs -P 4 -d '\n' -I{} bash -c '
+  | xargs -P 4 -I{} bash -c '
       IFS=$'"'"'\t'"'"' read -r year leg num vol file _ url <<< "{}"
       fetch "$year" "$leg" "$num" "$vol" "$file" "$url"
     '
