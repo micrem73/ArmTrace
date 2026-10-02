@@ -1,0 +1,12 @@
+# Requirements for the ArmTrace data pipeline (step 1 and step 2).
+#
+#   python -m venv .venv && . .venv/bin/activate
+#   pip install -r requirements.txt
+#
+# NOTE: tabula-py shells out to a Java runtime. Install a JRE (e.g. Temurin 17)
+# or tabula-py will fail with "Unable to find a Java installation".
+
+pypdf>=6.0
+tabula-py>=2.10
+pandas>=2.0
+openpyxl>=3.1
