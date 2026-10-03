@@ -17,15 +17,15 @@ reports_185_1990/                 # source reports, one folder per reporting yea
 └── SOURCES.md                   # archive structure, legislature→year mapping, gaps
 
 Out/                             # generated locally, NOT in git (see "Binary files")
-├── PDF/<tabella>/<anno>/<tabella>.pdf   # one PDF per table  (step 1)
-└── CSV/<tabella>/<anno>/<tabella>.csv   # one CSV per table  (step 2)
+├── PDF/<tabella>/<tabella><anno>.PDF   # one PDF per table  (step 1)
+└── CSV/<tabella>/<tabella><anno>.csv   # one CSV per table  (step 2)
 ```
 
 Neither folder is checked in: `reports_185_1990/` and `Out/` are rebuilt from
 `manifest.tsv` and the two scripts. The repository tracks only the scripts, the
 manifest, `download_185.sh` and `SOURCES.md`.
 
-The folder name is the **reporting year** covered by the report, not the year it was published. Both `reports_185_1990/` and `Out/` are keyed by it, so nothing in the scripts hardcodes a year: it is parsed from the `reports_185_1990/<anno>/…` path.
+The folder name is the **reporting year** covered by the report, not the year it was published. Nothing in the scripts hardcodes a year: step 1 reads it from the `reports_185_1990/<anno>/…` path, and both steps key their output on it as a **filename suffix**, `Out/PDF/AA/AA2023.PDF` → `Out/CSV/AA/AA2023.csv`. One folder per table therefore holds one file per reporting year, and step 2 selects the year with `--year` (it matches the suffix, so the suffix and the flag must agree).
 
 Adding a year means dropping its PDFs into `reports_185_1990/<anno>/` — no code change required.
 
@@ -76,8 +76,9 @@ folds these back.
 
 ### **Reports2PDFTables.py**
 
-Splits a report volume into one PDF per table. For each table it finds the
-first page; the last page is one before the next table starts.
+Splits a report volume into one PDF per table, written to
+`Out/PDF/<tabella>/<tabella><anno>.PDF`. For each table it finds the first page;
+the last page is one before the next table starts.
 
 ```bash
 ./Reports2PDFTables.py --year 2023 --volume 2
@@ -135,23 +136,25 @@ python IndividualTables2SQL.py --year 2023 --input-dir Out/PDF --output-root Out
 
 | Flag | Meaning |
 |---|---|
-| `--year` | year to process (default `2024`) |
+| `--year` | year to process (default `2024`); matches the filename suffix |
 | `--input-dir` | per-table PDFs (default `Out/PDF`) |
 | `--output-root` | CSV root (default `Out/CSV`) |
 | `--base` | root for all paths (default `.`) |
 | `--sep` | field separator (default `;`) |
 | `--encoding` | CSV encoding (default `utf-8-sig`) |
 
-`detect_pdf_type()` reads the table code from the filename stem;
-`table_semantics()` maps it to a family and a human label.
+`split_stem()` splits the filename stem into table code and year (`AA2023` →
+`AA`, `2023`); `detect_pdf_type()` uses the code, `table_semantics()` maps it to
+a family and a human label. No archive code ends in four digits, so the trailing
+digit group is always the year.
 
 **Why CSV and not XLSX.** The archive holds tables Excel cannot represent.
 `detect_pdf_type()` used to key on `TAB_N1`, `TAB_O1`, `TAB_A2` … names that
 appear **nowhere in the reports**, so every table took the unknown-type branch;
 that branch wrote **one sheet per extracted fragment**, producing ~4000-sheet
-workbooks past Excel's 255-sheet limit — the hang previously recorded here (a
-local run left 16 workbooks in `Out/XLS/` for 19 PDFs in `Out/PDF/`, with
-`TAB_A1`, `Tabella_AA` and `Tabella_EE` never converted). Fragments are
+workbooks past Excel's 255-sheet limit — the hang previously recorded here (an
+early local run, under the old `Out/XLS/` layout, left 16 workbooks for 19 PDFs,
+with `TAB_A1`, `Tabella_AA` and `Tabella_EE` never converted). Fragments are
 concatenated into a single table, and the output is CSV, so **none of Excel's
 ceilings apply**: 255 sheets, 1048576 rows and 16384 columns are all workbook
 and sheet properties, and a CSV of any length is one file that pandas, sqlite
@@ -171,8 +174,16 @@ Two CSV conventions are deliberate, not defaults:
 
 **Status:** cannot be run end to end here — **no JRE is installed**, and
 tabula-py shells out to Java. The parts changed in this pass were verified
-directly (see the log): the dispatch fix, the fragment concatenation, and the
-CSV writer (1.2 M rows past Excel's ceiling → one file, round-tripped intact).
+directly (see the log): the dispatch fix, the fragment concatenation, the CSV
+writer (1.2 M rows past Excel's ceiling → one file, round-tripped intact), and
+the flattened layout (one folder per table, year as a filename suffix).
+
+A note on the earlier `.XLS` workaround, now moot: pandas refuses a non-`.xlsx`
+name for the openpyxl engine (`Invalid extension for engine 'openpyxl': 'XLS'`),
+so that branch wrote a workbook to a `.xlsx` sibling and renamed it, leaving xlsx
+bytes under an `.XLS` name. Emitting CSV removes the problem at its root rather
+than renaming around it — there is no engine that objects to a `.csv`, and no
+row, sheet or column ceiling to work against.
 
 ### **Requirements**
 

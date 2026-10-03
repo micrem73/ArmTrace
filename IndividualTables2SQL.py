@@ -3,7 +3,7 @@
 IndividualTables2SQL — turn the per-table PDFs produced by
 Reports2PDFTables into CSV files (and, later, SQL).
 
-    Out/PDF/<tabella>/<anno>/<tabella>.pdf  ->  Out/CSV/<tabella>/<anno>/<tabella>.csv
+    Out/PDF/<tabella>/<tabella><anno>.PDF  ->  Out/CSV/<tabella>/<tabella><anno>.csv
 
 Why CSV and not XLSX: the archive holds tables Excel cannot represent. One
 volume yields up to 65 tables (2025 vol. II), and tabula fragments a borderless
@@ -13,6 +13,9 @@ open the file at all. CSV has no such cap: one table is one file of any length,
 it loads in full into pandas, MySQL or sqlite without a driver having to
 understand a spreadsheet, and its text is diffable in git even though the .csv
 itself is not tracked.
+
+The year is a filename suffix, not a directory level, so one folder per table
+holds one file per reporting year.
 
 The table code is the filename stem. Three code schemes exist in the archive:
 
@@ -53,11 +56,17 @@ except ImportError:
 
 import re
 
-# Percorsi del progetto: Out/PDF/<tabella>/<anno>/ -> Out/CSV/<tabella>/<anno>/
+# Percorsi del progetto:
+#   Out/PDF/<tabella>/<tabella><anno>.PDF -> Out/CSV/<tabella>/<tabella><anno>.csv
 OUT_DIR = "Out"
 
+# Estensioni prodotte e consumate dalla pipeline. reports_185_1990/ contiene
+# i PDF di origine in minuscolo, ma i PDF per-tabella vengono scritti in
+# maiuscolo: su Linux i due casi non si equivalgono.
+PDF_EXT = ".PDF"
+
 # Anno di riferimento predefinito (corrisponde alla cartella
-# reports_185_1990/<anno>/ da cui derivano i PDF in Out/PDF/<anno>/)
+# reports_185_1990/<anno>/ da cui derivano i PDF in Out/PDF/<tabella>/)
 YEAR = "2024"
 
 # Radice dei percorsi, impostabile da CLI con --base
@@ -97,7 +106,8 @@ class PDFTableExtractor:
 
     def __init__(self, input_dir=None, output_root=None, year=YEAR, base=BASE,
                  separator=CSV_SEPARATOR, encoding=CSV_ENCODING):
-        # Default: Out/PDF/<tabella>/<anno>/*.pdf  ->  Out/CSV/<tabella>/<anno>/*.csv
+        # Default: Out/PDF/<tabella>/<tabella><anno>.PDF
+        #       -> Out/CSV/<tabella>/<tabella><anno>.csv
         self.input_dir = Path(input_dir) if input_dir else Path(base, OUT_DIR, "PDF")
         self.output_root = Path(output_root) if output_root else Path(base, OUT_DIR, "CSV")
         self.year = str(year)
@@ -105,22 +115,43 @@ class PDFTableExtractor:
         self.encoding = encoding
         self.output_root.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def split_stem(stem):
+        """Split a per-table filename stem into (table code, year).
+
+        Step 1 writes <tabella><anno>.PDF, so the code carries the year as a
+        suffix rather than in a parent directory:
+
+            AA2023  ->  ("AA", "2023")     MT7  ->  ("MT7", None)
+
+        A table code never ends in four digits (the archive uses AA AA1 MG1 ...
+        A1 .. P2 and single letters), so a trailing four-digit group is always
+        the year and never part of the code.
+        """
+        m = re.search(r"\d{4}$", stem)
+        if m is None:
+            return stem, None
+        return stem[:m.start()], m.group(0)
+
     def detect_pdf_type(self, pdf_path):
         """Classify a per-table PDF by its filename.
 
-        Reports2PDFTables writes Out/PDF/<code>/<anno>/<code>.pdf, so the
-        stem IS the table code. The three code schemes in the archive are:
+        Reports2PDFTables writes Out/PDF/<code>/<code><anno>.PDF, so the stem
+        minus the trailing year IS the table code. The three code schemes in
+        the archive are:
 
             family 1  art. 27 double-letter  AA AA1 BB ... UE  MG1 MG3 MT7
             family 2  A1 .. P2                31 codes
             family 3  art. 27 single-letter  A B D E G J Q
 
-        The previous mapping keyed on TAB_N1, TAB_O1, TAB_A2 ... -- names
-        that appear nowhere in the 43 reports. Every table fell through to
-        the unknown branch, which wrote one sheet per extracted fragment and
-        was the cause of the ~4000-sheet hang recorded in the README.
+        Without the year-stripping step the code would come back as "AA2023"
+        and fall through to the unknown branch, which is the trap the previous
+        mapping (TAB_N1, TAB_O1, TAB_A2 ... -- names that appear nowhere in
+        the 43 reports) walked into and that wrote one sheet per extracted
+        fragment, the cause of the ~4000-sheet hang recorded in the README.
         """
-        return Path(pdf_path).stem.upper()
+        code, _ = self.split_stem(Path(pdf_path).stem)
+        return code.upper()
 
     def table_semantics(self, pdf_type):
         """Describe a code in terms a reader can act on, for the log.
@@ -417,11 +448,14 @@ class PDFTableExtractor:
 
     def process_pdf(self, pdf_path):
         """Process a single PDF file"""
-        pdf_name = Path(pdf_path).stem
-        # L'anno e' il nome della cartella che contiene il PDF: Out/PDF/<tabella>/<anno>/
-        src_dir = Path(pdf_path).parent
-        year = src_dir.name if src_dir.name.isdigit() else self.year
-        print(f"\nProcessing: {pdf_name}.pdf")
+        # L'anno e' il suffisso del nome del file, non piu' il nome della
+        # cartella: Out/PDF/<tabella>/<tabella><anno>.PDF
+        stem = Path(pdf_path).stem
+        table_name, file_year = self.split_stem(stem)
+        year = file_year or self.year
+        if not table_name:
+            table_name = stem
+        print(f"\nProcessing: {stem}{PDF_EXT}")
 
         # Detect PDF type
         pdf_type = self.detect_pdf_type(pdf_path)
@@ -466,10 +500,10 @@ class PDFTableExtractor:
                 return False
             processed_data = cleaned
 
-            # Save to CSV: Out/CSV/<tabella>/<anno>/<tabella>.csv
-            dest_dir = self.output_root / pdf_name / year
+            # Save to CSV: Out/CSV/<tabella>/<tabella><anno>.csv
+            dest_dir = self.output_root / table_name
             dest_dir.mkdir(parents=True, exist_ok=True)
-            output_path = str(dest_dir / f"{pdf_name}{CSV_SUFFIX}")
+            output_path = str(dest_dir / f"{table_name}{year}{CSV_SUFFIX}")
             self.save_to_csv(processed_data, output_path, pdf_type)
 
             print(f"  ✓ Saved to: {output_path}")
@@ -483,17 +517,17 @@ class PDFTableExtractor:
 
     def process_all(self):
         """Process all PDF files in input directory"""
-        # Percorso previsto: Out/PDF/<tabella>/<anno>/<tabella>.pdf
-        pdf_files = sorted(self.input_dir.glob(f"*/{self.year}/*.pdf"))
+        # Percorso previsto: Out/PDF/<tabella>/<tabella><anno>.PDF
+        pdf_files = sorted(self.input_dir.glob(f"*/*{self.year}{PDF_EXT}"))
 
-        # Fallback: cartella piatta con i PDF delle singole tabelle
+        # Fallback: PDF sciolti nella root di input invece che in <tabella>/
         if not pdf_files:
-            pdf_files = sorted(self.input_dir.glob("*.pdf"))
+            pdf_files = sorted(self.input_dir.glob(f"*{self.year}{PDF_EXT}"))
 
         if not pdf_files:
             print(f"No PDF files found in {self.input_dir}")
             print("\nTo use this script:")
-            print(f"Atteso: {self.input_dir}/<tabella>/<anno>/<tabella>.pdf")
+            print(f"Atteso: {self.input_dir}/<tabella>/<tabella>{self.year}{PDF_EXT}")
             print("1. Esegui prima Reports2PDFTables per generare i PDF")
             print(f"2. Oppure passa input_dir=... (anno selezionato: {self.year})")
             return
@@ -515,7 +549,7 @@ class PDFTableExtractor:
         print("Processing Complete!")
         print(f"  ✓ Success: {success}")
         print(f"  ✗ Failed: {failed}")
-        print(f"\nCSV files saved to: {self.output_root}/<tabella>/<anno>/")
+        print(f"\nCSV files saved to: {self.output_root}/<tabella>/<tabella><anno>{CSV_SUFFIX}")
 
 def main(argv=None):
     """Punto d'ingresso."""
@@ -556,8 +590,8 @@ def main(argv=None):
     print("IndividualTables2SQL - PDF Table Extractor to CSV")
     print("Supports: TABELLE A1..P2 (famiglia 2) e i codici art. 27")
     print(f"Anno: {args.year}")
-    print(f"Input:  {pdf_root}/<tabella>/<anno>/")
-    print(f"Output: {csv_root}/<tabella>/<anno>/")
+    print(f"Input:  {pdf_root}/<tabella>/<tabella>{args.year}{PDF_EXT}")
+    print(f"Output: {csv_root}/<tabella>/<tabella>{args.year}{CSV_SUFFIX}")
     print("=" * 70)
 
     extractor = PDFTableExtractor(
