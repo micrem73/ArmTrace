@@ -4,7 +4,7 @@ Reports2PDFTables — split a Law 185/1990 annual report volume into one PDF
 per table.
 
     reports_185_1990/<anno>/<relazione>.pdf
-        ->  Out/PDF/<tabella>/<anno>/<tabella>.pdf
+        ->  Out/PDF/<tabella>/<tabella><anno>.PDF
 
 The year is read from the reports_185_1990/<anno>/ path, so one script serves
 every reporting year. With many years present, --year is required.
@@ -63,6 +63,11 @@ except ImportError:
 
 REPORTS_DIR = "reports_185_1990"
 OUT_DIR = "Out"
+
+# Per-table PDFs are written as Out/PDF/<tabella>/<tabella><anno>.PDF, the
+# uppercase extension included. IndividualTables2SQL.py globs for exactly this
+# name (PDF_EXT there); change both together or step 2 finds nothing, since
+# globbing is case-sensitive on Linux.
 
 
 # ==========================================================================
@@ -512,19 +517,21 @@ def build_manifest(reader, vocabulary, counts):
 # ==========================================================================
 
 def split_pdf(reader, manifest, out_root, table, year):
-    """Write one PDF per table under <out_root>/<tabella>/<anno>/<tabella>.pdf.
+    """Write one PDF per table under <out_root>/PDF/<tabella>/<tabella><anno>.PDF.
 
     The directory is named for the table CODE, not the source volume, so
-    Out/PDF/AA/2023/AA.pdf holds Tabella AA from whichever volume carried it.
+    Out/PDF/AA/AA2023.PDF holds Tabella AA from whichever volume carried it.
+    The year is a filename suffix rather than a directory level, so one
+    folder per table holds one file per reporting year.
     """
     written = []
     for code, info in manifest["tables"].items():
         writer = PdfWriter()
         for p in range(info["start"], info["end"] + 1):
             writer.add_page(reader.pages[p - 1])
-        folder = Path(out_root, OUT_DIR, "PDF", code, year)
+        folder = Path(out_root, OUT_DIR, "PDF", code)
         folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"{code}.pdf"
+        path = folder / f"{code}{year}.PDF"
         with open(path, "wb") as fh:
             writer.write(fh)
         written.append(str(path))
@@ -719,7 +726,7 @@ def main(argv=None):
             out_root = args.out or args.base or "."
             written = split_pdf(reader, manifest, out_root, label, year)
             print(f"    wrote      : {len(written)} PDF in "
-                  f"{Path(out_root, OUT_DIR, 'PDF')}/<tabella>/{year}/")
+                  f"{Path(out_root, OUT_DIR, 'PDF')}/<tabella>/<tabella>{year}.PDF")
         print()
         del reader
 

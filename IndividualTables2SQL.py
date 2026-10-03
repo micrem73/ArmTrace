@@ -3,7 +3,7 @@
 IndividualTables2SQL — turn the per-table PDFs produced by
 Reports2PDFTables into Excel workbooks (and, later, SQL).
 
-    Out/PDF/<tabella>/<anno>/<tabella>.pdf  ->  Out/XLS/<tabella>/<anno>/<tabella>.xlsx
+    Out/PDF/<tabella>/<tabella><anno>.PDF  ->  Out/XLS/<tabella>/<tabella><anno>.XLS
 
 The table code is the filename stem. Three code schemes exist in the archive:
 
@@ -43,11 +43,18 @@ except ImportError:
 
 import re
 
-# Percorsi del progetto: Out/PDF/<tabella>/<anno>/ -> Out/XLS/<tabella>/<anno>/
+# Percorsi del progetto:
+#   Out/PDF/<tabella>/<tabella><anno>.PDF -> Out/XLS/<tabella>/<tabella><anno>.XLS
 OUT_DIR = "Out"
 
+# Estensioni prodotte e consumate dalla pipeline. reports_185_1990/ contiene
+# i PDF di origine in minuscolo, ma i PDF per-tabella vengono scritti in
+# maiuscolo: su Linux i due casi non si equivalgono.
+PDF_EXT = ".PDF"
+XLS_EXT = ".XLS"
+
 # Anno di riferimento predefinito (corrisponde alla cartella
-# reports_185_1990/<anno>/ da cui derivano i PDF in Out/PDF/<anno>/)
+# reports_185_1990/<anno>/ da cui derivano i PDF in Out/PDF/<tabella>/)
 YEAR = "2024"
 
 # Radice dei percorsi, impostabile da CLI con --base
@@ -73,28 +80,50 @@ class PDFTableExtractor:
     """Extract tables from PDF files based on their format"""
 
     def __init__(self, input_dir=None, output_root=None, year=YEAR, base=BASE):
-        # Default: Out/PDF/<tabella>/<anno>/*.pdf  ->  Out/XLS/<tabella>/<anno>/*.xlsx
+        # Default: Out/PDF/<tabella>/<tabella><anno>.PDF
+        #       -> Out/XLS/<tabella>/<tabella><anno>.XLS
         self.input_dir = Path(input_dir) if input_dir else Path(base, OUT_DIR, "PDF")
         self.output_root = Path(output_root) if output_root else Path(base, OUT_DIR, "XLS")
         self.year = str(year)
         self.output_root.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def split_stem(stem):
+        """Split a per-table filename stem into (table code, year).
+
+        Step 1 writes <tabella><anno>.PDF, so the code carries the year as a
+        suffix rather than in a parent directory:
+
+            AA2023  ->  ("AA", "2023")     MT7  ->  ("MT7", None)
+
+        A table code never ends in four digits (the archive uses AA AA1 MG1 ...
+        A1 .. P2 and single letters), so a trailing four-digit group is always
+        the year and never part of the code.
+        """
+        m = re.search(r"\d{4}$", stem)
+        if m is None:
+            return stem, None
+        return stem[:m.start()], m.group(0)
+
     def detect_pdf_type(self, pdf_path):
         """Classify a per-table PDF by its filename.
 
-        Reports2PDFTables writes Out/PDF/<code>/<anno>/<code>.pdf, so the
-        stem IS the table code. The three code schemes in the archive are:
+        Reports2PDFTables writes Out/PDF/<code>/<code><anno>.PDF, so the stem
+        minus the trailing year IS the table code. The three code schemes in
+        the archive are:
 
             family 1  art. 27 double-letter  AA AA1 BB ... UE  MG1 MG3 MT7
             family 2  A1 .. P2                31 codes
             family 3  art. 27 single-letter  A B D E G J Q
 
-        The previous mapping keyed on TAB_N1, TAB_O1, TAB_A2 ... -- names
-        that appear nowhere in the 43 reports. Every table fell through to
-        the unknown branch, which wrote one sheet per extracted fragment and
-        was the cause of the ~4000-sheet hang recorded in the README.
+        Without the year-stripping step the code would come back as "AA2023"
+        and fall through to the unknown branch, which is the trap the previous
+        mapping (TAB_N1, TAB_O1, TAB_A2 ... -- names that appear nowhere in
+        the 43 reports) walked into and that wrote one sheet per extracted
+        fragment, the cause of the ~4000-sheet hang recorded in the README.
         """
-        return Path(pdf_path).stem.upper()
+        code, _ = self.split_stem(Path(pdf_path).stem)
+        return code.upper()
 
     def table_semantics(self, pdf_type):
         """Describe a code in terms a reader can act on, for the log.
@@ -361,6 +390,15 @@ class PDFTableExtractor:
         one sheet, so the sheet limit no longer applies; only Excel's
         1048576-row limit does, and exceeding it is reported rather than
         silently truncating.
+
+        The file is named <tabella><anno>.XLS, but pandas refuses to hand a
+        non-.xlsx name to the openpyxl engine ("Invalid extension for engine
+        'openpyxl': 'XLS'"), so the workbook is written to a .xlsx sibling and
+        renamed. The bytes are therefore xlsx under an .XLS name, which Excel
+        opens after a format-mismatch prompt. Writing true Excel 97-2003 would
+        need the unmaintained xlwt engine and cap the sheet at 65536 rows
+        instead of 1048576, so the rename is the cheaper trade. Set XLS_EXT to
+        ".xlsx" to get an honest extension with no other change.
         """
         frames = data if isinstance(data, list) else [data]
         frames = [f for f in frames if f is not None and len(f) > 0]
@@ -379,18 +417,25 @@ class PDFTableExtractor:
                   f"({EXCEL_MAX_ROWS}): il foglio non verra' scritto")
             return 0
 
-        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+        target = Path(output_path)
+        staged = target.with_suffix(".xlsx") if target.suffix.lower() != ".xlsx" else target
+        with pd.ExcelWriter(staged, engine='openpyxl') as writer:
             combined.to_excel(writer, sheet_name='Data', index=False)
+        if staged != target:
+            os.replace(staged, target)
         print(f"    - Data: {len(combined)} rows × {len(combined.columns)} columns")
         return len(combined)
 
     def process_pdf(self, pdf_path):
         """Process a single PDF file"""
-        pdf_name = Path(pdf_path).stem
-        # L'anno e' il nome della cartella che contiene il PDF: Out/PDF/<tabella>/<anno>/
-        src_dir = Path(pdf_path).parent
-        year = src_dir.name if src_dir.name.isdigit() else self.year
-        print(f"\nProcessing: {pdf_name}.pdf")
+        # L'anno e' il suffisso del nome del file, non piu' il nome della
+        # cartella: Out/PDF/<tabella>/<tabella><anno>.PDF
+        stem = Path(pdf_path).stem
+        table_name, file_year = self.split_stem(stem)
+        year = file_year or self.year
+        if not table_name:
+            table_name = stem
+        print(f"\nProcessing: {stem}{PDF_EXT}")
 
         # Detect PDF type
         pdf_type = self.detect_pdf_type(pdf_path)
@@ -435,10 +480,10 @@ class PDFTableExtractor:
                 return False
             processed_data = cleaned
 
-            # Save to Excel: Out/XLS/<tabella>/<anno>/<tabella>.xlsx
-            dest_dir = self.output_root / pdf_name / year
+            # Save to Excel: Out/XLS/<tabella>/<tabella><anno>.XLS
+            dest_dir = self.output_root / table_name
             dest_dir.mkdir(parents=True, exist_ok=True)
-            output_path = str(dest_dir / f"{pdf_name}.xlsx")
+            output_path = str(dest_dir / f"{table_name}{year}{XLS_EXT}")
             self.save_to_excel(processed_data, output_path, pdf_type)
 
             print(f"  ✓ Saved to: {output_path}")
@@ -452,17 +497,17 @@ class PDFTableExtractor:
 
     def process_all(self):
         """Process all PDF files in input directory"""
-        # Percorso previsto: Out/PDF/<tabella>/<anno>/<tabella>.pdf
-        pdf_files = sorted(self.input_dir.glob(f"*/{self.year}/*.pdf"))
+        # Percorso previsto: Out/PDF/<tabella>/<tabella><anno>.PDF
+        pdf_files = sorted(self.input_dir.glob(f"*/*{self.year}{PDF_EXT}"))
 
-        # Fallback: cartella piatta con i PDF delle singole tabelle
+        # Fallback: PDF sciolti nella root di input invece che in <tabella>/
         if not pdf_files:
-            pdf_files = sorted(self.input_dir.glob("*.pdf"))
+            pdf_files = sorted(self.input_dir.glob(f"*{self.year}{PDF_EXT}"))
 
         if not pdf_files:
             print(f"No PDF files found in {self.input_dir}")
             print("\nTo use this script:")
-            print(f"Atteso: {self.input_dir}/<tabella>/<anno>/<tabella>.pdf")
+            print(f"Atteso: {self.input_dir}/<tabella>/<tabella>{self.year}{PDF_EXT}")
             print("1. Esegui prima Reports2PDFTables per generare i PDF")
             print(f"2. Oppure passa input_dir=... (anno selezionato: {self.year})")
             return
@@ -484,7 +529,7 @@ class PDFTableExtractor:
         print("Processing Complete!")
         print(f"  ✓ Success: {success}")
         print(f"  ✗ Failed: {failed}")
-        print(f"\nExcel files saved to: {self.output_root}/<tabella>/<anno>/")
+        print(f"\nExcel files saved to: {self.output_root}/<tabella>/<tabella><anno>{XLS_EXT}")
 
 def main(argv=None):
     """Punto d'ingresso."""
@@ -515,8 +560,8 @@ def main(argv=None):
     print("Supports: TAB_N1, TAB_N2, TAB_O1, TAB_O2, TAB_A2, TAB_A4,")
     print("          TAB_B6, TAB_B7, TAB_M1, TAB_M2, TAB_P1, TAB_P2")
     print(f"Anno: {args.year}")
-    print(f"Input:  {pdf_root}/<tabella>/<anno>/")
-    print(f"Output: {xls_root}/<tabella>/<anno>/")
+    print(f"Input:  {pdf_root}/<tabella>/<tabella>{args.year}{PDF_EXT}")
+    print(f"Output: {xls_root}/<tabella>/<tabella>{args.year}{XLS_EXT}")
     print("=" * 70)
 
     extractor = PDFTableExtractor(

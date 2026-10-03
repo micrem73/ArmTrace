@@ -14,6 +14,16 @@ Thumbs.db
 # metered LFS quota instead of removing them. Both sets are regenerable —
 # Reports/ from the official sources listed in reports_185_1990/SOURCES.md,
 # Out/ by re-running the pipeline scripts — so they are simply ignored.
+#
+# The extensions are listed in both cases: the pipeline writes the per-table
+# PDFs as .PDF and the workbooks as .XLS, while the source reports are .pdf.
+# Git patterns are case-sensitive unless core.ignorecase is set, so a lowercase
+# *.pdf alone would stop matching the generated files and leave Out/ untracked
+# but visible. Out/ is also ignored wholesale as the authoritative rule.
+Out/
 *.pdf
+*.PDF
 *.xls
+*.XLS
 *.xlsx
+*.XLSX
