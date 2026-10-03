@@ -121,6 +121,55 @@ page *counts*, used to cross-check derived spans; and the table **title**
 repeated through the body, for family 3 where the codes appear only on the
 index page.
 
+**How trailing pages are removed.** Deriving a table's end from "the page
+before the next table starts" over-runs whenever the source document brought
+junk with it. Each table was exported as a document of its own and pasted into
+the volume, so every page keeps that document's own pagination, printed as a
+rotated stamp in the right margin: **"Pagina N di X"**. The volume folio
+(`– 1035 –`) runs continuously across tables and says nothing about
+boundaries; the stamp is the only witness of a table's real length.
+
+So if the first page reads `Pagina 1 of X`, the final page must read
+`Pagina Y of X`. A different total, or no stamp at all, means the page came
+from somewhere else and everything after the last agreeing page is dropped.
+`Y` is normally `X` but need not be: **F1 is the first half of table F, which
+is split across the two volumes of 2025**, so it ends at `Pagina 8 di 12` and
+only the totals are compared, never the page numbers.
+
+Verified on the three reported cases and two more found the same way:
+
+| volume | table | was | now | the page(s) dropped |
+|---|---|---|---|---|
+| 2025 I | **E** | 222 | **221** | a separate one-page document, `Pagina 1 di 1` |
+| 2025 I | **F1** | 10 | **8** | two `PAGINA BIANCA` |
+| 2021 I | E | 6 | **5** | a separate one-page document |
+| 2019 I | E | 35 | **34** | a separate one-page document |
+| 2021 I, 2019 I | all others | — | unchanged | |
+
+The 2021 and 2019 cases are confirmed independently by the index page, which
+lists those E tables as 5 and 34 pages: trimming turns a span/index mismatch
+into an agreement.
+
+It works on garbled text because the numbers need not be *read*, only
+compared. On the subsetted fonts with no `ToUnicode` the stamp comes back as
+Private Use Area characters, but the strings are stable — the subsetter gave
+one PUA codepoint per character — so two pages of the same document agree
+character for character on the total and a page from another document does
+not. **2025 E is garbled on all 221 pages and still trims correctly.**
+
+Three guards, because this deletes pages:
+
+- the stamp must be corroborated on at least two pages of the table;
+- a table never loses more than `MAX_TRAILING_PAGES` (25);
+- if a dropped page's document **carries on past the table**, it is the first
+  page of a table no detector found, so nothing is dropped and a note says so —
+  trimming it would take those pages out of the split entirely, since no table
+  claims them.
+
+Dropping pages loses nothing from the split: they are still in the volume and
+still inside the next table's span, so they are written with that table. This
+only shortens one output file.
+
 **Status:** works. Verified across all 28 supported volumes — **479 tables,
 zero failures**, every volume producing a manifest. Coverage per year is in
 [the log below](#log-for-the-next-agent).
@@ -304,6 +353,20 @@ file so the failure is not misread as a tabula bug.
   steals the start of the real `Tabella UE` at p543. Resolved by the bookmark.
 - **Prose stop-list: do not put `E` or `I` in it.** Both are genuine family 2
   codes; suppressing them cost 4 tables on 2019 vol. I.
+- **The stamp needs its position, not just its shape.** Matching the
+  `"Pagina N di X"` shape on the text alone also matches body rows:
+  `"MUNIZIONAMENTO CALIBRO 120 MM , APPOSITAMENTE"` (2025 vol. I p70) reads as
+  `CALIBRO 120 MM ,` and cut **A1 from 537 pages to 1**. The stamp is the 9pt
+  header chunk between 30% and 52% of the page height; both filters are in
+  `read_page()`.
+- **Do not trust the token order inside the stamp.** The rotation reverses it
+  page to page: 2025 vol. I p70 is `Pagina 1 di 537`, p611 is `Pagina 5 5di`,
+  p817 is `Pagina di 1 221`. The total is identified as *the number that does
+  not change* across the pages of the table, never by position.
+- **The two PUA runs ending in U+E000 are the words, not the numbers.** On a
+  garbled page the subsetter mapped the space glyph to U+E000 as well, so
+  `"Pagina "` and `"di "` keep it and the digits do not. That is the only thing
+  separating the separator from the numbers.
 
 ### Cross-validation available
 
@@ -323,6 +386,11 @@ error signal, not noise.
   keeping as reference, but nothing calls them.
 - Install a JRE and run step 2 for real — nothing about its output is verified.
 - OCR decision, if garbled tables are ever to yield data.
+- The trailing-page check only runs where the stamp is legible or stable. It
+  fires on 2025 I, 2021 I and 2019 I; **2019 vol. II, 2023 vol. III and the
+  family 3 volumes carry no stamp at all** (0 stamped pages of 1004 and 518
+  respectively), so nothing is checked there. Those volumes are exported
+  differently and would need a second kind of witness.
 
 ---
 

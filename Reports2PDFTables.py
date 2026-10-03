@@ -134,6 +134,182 @@ MIN_RUN = 2
 
 
 # ==========================================================================
+# the "Pagina N di X" stamp
+# ==========================================================================
+#
+# Each table was exported as a document of its own and then pasted into the
+# volume, so every page carries the pagination of the document it came from:
+# a stamp in the right margin reads "Pagina N di X" -- page N of X. It is the
+# only witness of how long a table really is. The volume folio ("-  1035  -")
+# runs continuously across tables and says nothing about their boundaries,
+# and "the page before the next table starts" is wrong whenever a document
+# brought trailing junk with it.
+#
+# The stamp is set in the 9pt export header, rotated, in the middle of the
+# right margin, between "MAECI - UAMA - CENTRO INFORMATICO" above and the
+# table code below. Both the position and the shape are needed: on the text
+# alone the shape also matches body rows, and
+# "MUNIZIONAMENTO CALIBRO 120 MM , APPOSITAMENTE" (2025 vol. I p70) would
+# then have cut A1 from 537 pages to 1.
+STAMP_SIZE = (8.5, 10.0)      # the export header, 9pt
+STAMP_BAND = (0.30, 0.52)     # ... between these fractions of the page height
+
+# The subsetter copied the Private Use Area codepoint into the glyph name, and
+# a space is a glyph like any other, so a space comes back as U+E000. Both
+# stamp words keep it ("Pagina ", "di ") and neither number does: on a
+# garbled page that is what tells the two numbers from the separator.
+SUBSET_SPACE = ""
+
+STAMP_WORD = re.compile(r"(?i)pagina[\s.]*")
+STAMP_NUM = re.compile(r"\d+")
+
+# A table that would lose this many trailing pages is a detection failure, not
+# trailing junk, and is left alone with a note.
+MAX_TRAILING_PAGES = 25
+
+
+def stamp_tokens(chunk):
+    """The "Pagina N di X" stamp carried by one text chunk, or None.
+
+    Returns (word, first, second): the word and the two numbers in the order
+    pypdf hands them over. Which of the two numbers is the total is settled
+    per table in stamp_total(), because the rotation reverses them from one
+    page to the next -- 2025 vol. I p70 reads "Pagina 1 di 537" and p611
+    "Pagina 5 5di".
+
+    Two cases, and only the first gives readable numbers:
+
+      read      the word is there in clear, so the digits are picked out of
+                the three tokens that follow it.
+      garbled   the stamp is set in one of the subsetted fonts with no
+                ToUnicode (see is_garbled), so even "Pagina" comes back as
+                Private Use Area characters and the numbers cannot be read at
+                all. The strings are still stable, though: the subsetter gave
+                one PUA codepoint per character, so two pages of the same
+                document agree character for character on the total and a page
+                from another document does not. Comparing them is enough --
+                this is what recovers 2025 E (221 garbled pages) and F1.
+    """
+    tokens = chunk.split()
+    for i, tok in enumerate(tokens):
+        if STAMP_WORD.fullmatch(tok):
+            numbers = []
+            for after in tokens[i + 1:i + 4]:
+                numbers += STAMP_NUM.findall(after)
+            if len(numbers) == 2:
+                return tok, numbers[0], numbers[1]
+            return None
+    # Garbled: "Pagina ", "di ", then the two numbers, then the table code.
+    # The word and the separator are the two runs that end in the space
+    # glyph; the numbers are the short ones that do not.
+    if (len(tokens) >= 4
+            and 5 <= len(tokens[0]) <= 8 and tokens[0].endswith(SUBSET_SPACE)
+            and 2 <= len(tokens[1]) <= 3 and tokens[1].endswith(SUBSET_SPACE)
+            and SUBSET_SPACE not in tokens[2] and len(tokens[2]) <= 4
+            and SUBSET_SPACE not in tokens[3] and len(tokens[3]) <= 4):
+        return tokens[0], tokens[2], tokens[3]
+    return None
+
+
+def read_page(page):
+    """(text, stamp) for one page, from a single extraction pass.
+
+    scan_headers needs the page text anyway and the visitor costs nothing
+    measurable against it (90.6s against 91.8s for 2025 vol. I, 1048 pages).
+    """
+    found = []
+    try:
+        height = float(page.mediabox.height)
+    except Exception:
+        height = 841.0
+
+    def visit(text, cm, tm, font, size):
+        chunk = text.strip()
+        if not chunk or not size or not STAMP_SIZE[0] <= size <= STAMP_SIZE[1]:
+            return
+        if not STAMP_BAND[0] * height < tm[5] < STAMP_BAND[1] * height:
+            return
+        stamp = stamp_tokens(chunk)
+        if stamp:
+            found.append(stamp)
+
+    return page.extract_text(visitor_text=visit) or "", (found[0] if found else None)
+
+
+def stamp_total(stamps, start, end):
+    """The table's own page total, as (which of the two numbers, its token).
+
+    The total is the number that stays the same from page to page, the page
+    number is the one that changes, so the two are told apart by looking at
+    every stamped page of the table rather than by trusting the order. With a
+    single stamped page there is nothing to compare and None is returned: the
+    stamp is not corroborated and nothing is trimmed on its word.
+
+    Reading the numbers is only possible when they are not garbled, so the
+    "first page is page 1" gate below is skipped for a garbled stamp. That is
+    not a hole in the argument: what the trim compares is the total, and the
+    total is read off the first page whatever the digits look like.
+    """
+    pages = [stamps[p] for p in range(start, end + 1) if p in stamps]
+    if len(pages) < 2:
+        return None
+    if len({s[1] for s in pages}) == 1 and len({s[2] for s in pages}) > 1:
+        return 1, stamps[start][1]
+    return 2, stamps[start][2]
+
+
+def trim_trailing(start, end, stamps):
+    """Drop the pages a table was pasted with but does not own.
+
+    The header scan cannot see them: 2025 E ends with a separate one-page
+    document ("Pagina 1 di 1") and F1 with two blank ones ("PAGINA BIANCA"),
+    and neither carries a table code.
+
+    The stamp settles it. If the first page reads "Pagina 1 di X", the final
+    page must read "Pagina Y di X"; a different total, or no stamp at all,
+    means the page was pasted from elsewhere, and everything after the last
+    page that still agrees is dropped. Y is normally X but need not be: F1 is
+    the first half of table F, which is split across the two volumes of 2025,
+    so it ends at "Pagina 8 di 12" and the totals are only compared, never
+    the page numbers.
+
+    Dropping pages here loses nothing from the split. They are still in the
+    volume and still inside the next table's span, so they are written with
+    that table; this only shortens one output file.
+
+    Returns (end, trimmed, note).
+    """
+    if start not in stamps:
+        return end, 0, ""
+    total = stamp_total(stamps, start, end)
+    if total is None:
+        return end, 0, "stamp on one page only, not corroborated"
+    slot, wanted = total
+    first = stamps[start][3 - slot]
+    if first.isdigit() and first != "1":
+        return end, 0, f"first page reads {first} of {wanted}, not 1"
+
+    keep = end
+    while keep > start and not (keep in stamps and stamps[keep][slot] == wanted):
+        keep -= 1
+    if keep == end:
+        return end, 0, ""
+    if end - keep > MAX_TRAILING_PAGES:
+        return end, 0, f"{end - keep} trailing pages, over the cap"
+
+    # A dropped page whose document carries on past this table is not junk: it
+    # is the first page of a table no detector found, and trimming it would
+    # take those pages out of the split altogether, because no table claims
+    # them. Left alone, with a note, for a human to look at.
+    dropped = [p for p in range(keep + 1, end + 1) if p in stamps]
+    beyond = {stamps[p][slot] for p in stamps if p > end}
+    for page in dropped:
+        if stamps[page][slot] in beyond:
+            return end, 0, f"page {page} starts a table no detector found"
+    return keep, end - keep, ""
+
+
+# ==========================================================================
 # text-corruption classes
 # ==========================================================================
 
@@ -369,18 +545,26 @@ def scan_bookmarks(reader):
     return found
 
 
-def scan_headers(reader, vocabulary, family):
-    """{code: first page}, {code: [pages]}, and corruption tallies."""
+def scan_headers(reader, vocabulary, family, stamps=None):
+    """{code: first page}, {code: [pages]}, and corruption tallies.
+
+    `stamps`, when given, is filled with {page: "Pagina N di X"} for the pages
+    that carry one, in the same pass. The pass reads every page of the volume
+    anyway and read_page() costs no more than the plain extraction it
+    replaces, so this is the only free place to collect them.
+    """
     starts, hits = {}, {}
     unassigned, garbled, ciphered = [], [], []
     weak, styles = {}, {}
     for i, page in enumerate(reader.pages):
         page_no = i + 1
         try:
-            text = page.extract_text() or ""
+            text, stamp = read_page(page)
         except Exception:
             unassigned.append(page_no)
             continue
+        if stamps is not None and stamp:
+            stamps[page_no] = stamp
         if is_garbled(text):
             garbled.append(page_no)
         elif is_ciphered(text):
@@ -448,8 +632,9 @@ def build_manifest(reader, vocabulary, counts):
     """Union every detector into a {code: {start, end, source}} manifest."""
     embedded = scan_bookmarks(reader)
     family = detect_family(reader, vocabulary)
+    stamps = {}
     header, hits, weak, styles, unassigned, garbled, ciphered = scan_headers(
-        reader, vocabulary, family
+        reader, vocabulary, family, stamps
     )
 
     # A single-page hit is a prose cross-reference, not a table -- but only for
@@ -490,9 +675,16 @@ def build_manifest(reader, vocabulary, counts):
     # Verified 28/28 codes on 2019 vol. I with zero interruptions.
     ordered = sorted(tables.items(), key=lambda kv: kv[1]["start"])
     last_page = len(reader.pages)
+    trimmed = {}
     for idx, (code, info) in enumerate(ordered):
         end = ordered[idx + 1][1]["start"] - 1 if idx + 1 < len(ordered) else last_page
         info["end"] = max(info["start"], end)
+        info["end"], dropped, note = trim_trailing(info["start"], info["end"],
+                                                   stamps)
+        if dropped:
+            trimmed[code] = dropped
+        if note:
+            info["stamp_note"] = note
         info["pages"] = info["end"] - info["start"] + 1
         if code in counts:
             info["index_pages"] = counts[code]
@@ -509,6 +701,8 @@ def build_manifest(reader, vocabulary, counts):
         "unassigned_pages": len(unassigned),
         "garbled_pages": len(garbled),
         "ciphered_pages": len(ciphered),
+        "stamped_pages": len(stamps),
+        "trimmed": trimmed,
     }
 
 
@@ -562,6 +756,18 @@ def report(manifest, label):
     if manifest["ciphered_pages"]:
         print(f"    ciphered   : {manifest['ciphered_pages']} pages, text "
               f"unrecoverable (Identity-H, no encoding table)")
+    if manifest["stamped_pages"]:
+        print(f"    stamp      : 'Pagina N di X' on "
+              f"{manifest['stamped_pages']}/{manifest['page_count']} pages")
+    if manifest["trimmed"]:
+        detail = ", ".join(f"{c} -{n}p" for c, n in
+                           sorted(manifest["trimmed"].items()))
+        print(f"    stripped   : {len(manifest['trimmed'])} trailing pages "
+              f"removed ({detail})")
+    notes = [(c, i["stamp_note"]) for c, i in manifest["tables"].items()
+             if i.get("stamp_note")]
+    for code, note in notes[:6]:
+        print(f"    stamp note : {code:5} {note}")
     checked = [i for i in manifest["tables"].values() if "index_agrees" in i]
     if checked:
         agree = sum(1 for i in checked if i["index_agrees"])
