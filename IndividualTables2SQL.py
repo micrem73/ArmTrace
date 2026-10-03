@@ -1,17 +1,29 @@
 #!/usr/bin/env python3
 """
 IndividualTables2SQL — turn the per-table PDFs produced by
-2024relations2IndividualTables into Excel workbooks (and, later, SQL).
+Reports2PDFTables into Excel workbooks (and, later, SQL).
 
     Out/PDF/<tabella>/<anno>/<tabella>.pdf  ->  Out/XLS/<tabella>/<anno>/<tabella>.xlsx
 
-Usage:
-    python IndividualTables2SQL.py --year 2024
-    python IndividualTables2SQL.py --year 2024 --input-dir Out/PDF --output-root Out/XLS
-    python IndividualTables2SQL.py --year 2024 --base /path/to/project
+The table code is the filename stem. Three code schemes exist in the archive:
 
-Requires: tabula-py, pandas, openpyxl  (pip install -r requirements.txt)
+    family 1  art. 27 double-letter  AA AA1 BB ... UE, MG1-MG9, MT1, MT7,
+              GF, NN, OO, PP
+    family 2  A1 .. P2                the 31 MAE detail tables
+    family 3  art. 27 single-letter  A B D E G J Q  (2012 vol. I)
+
+Usage:
+    python IndividualTables2SQL.py --year 2023
+    python IndividualTables2SQL.py --year 2023 --input-dir Out/PDF --output-root Out/XLS
+    python IndividualTables2SQL.py --year 2023 --base /path/to/project
+
+Requires: tabula-py, pandas, openpyxl, pypdf  (pip install -r requirements.txt)
 tabula-py shells out to Java, so a JRE must be available on PATH or via JAVA_HOME.
+
+Known limitation: about 1300 pages across the archive come from fonts whose
+character mapping was destroyed at PDF generation time. Those tables split
+correctly but extract nothing here; text_status() says so per file. OCR is
+the only route and is out of scope here.
 """
 
 import argparse
@@ -41,6 +53,21 @@ YEAR = "2024"
 # Radice dei percorsi, impostabile da CLI con --base
 BASE = ""
 
+# I 31 codici della famiglia 2, confermati dagli alberi di segnalibri di
+# 2021 tom. I, 2023 vol. I e 2025 vol. I, che concordano su ogni codice.
+FAMILY2_CODES = {
+    "A1", "A2", "A3", "A4",
+    "B1", "B2", "B3", "B4", "B5", "B6", "B7",
+    "C1", "C2", "D", "E",
+    "F1", "F2", "G1", "G2", "H1", "H2", "I", "L",
+    "M1", "M2", "N1", "N2", "O1", "O2", "P1", "P2",
+}
+
+# Limite di righe di un foglio Excel (1048576). Raggiunto solo da tabelle
+# enormi, ma va controllato: superarlo produce un file che Excel rifiuta di
+# aprire, quindi vale la pena saperlo prima.
+EXCEL_MAX_ROWS = 1048576
+
 
 class PDFTableExtractor:
     """Extract tables from PDF files based on their format"""
@@ -53,30 +80,96 @@ class PDFTableExtractor:
         self.output_root.mkdir(parents=True, exist_ok=True)
 
     def detect_pdf_type(self, pdf_path):
-        """Detect the type of PDF based on filename"""
-        filename = Path(pdf_path).stem.upper()
+        """Classify a per-table PDF by its filename.
 
-        # Map filename patterns to table types
-        type_mapping = {
-            'TAB_N1': 'TAB_N1',
-            'TAB_N2': 'TAB_N2',
-            'TAB_O1': 'TAB_O1',
-            'TAB_O2': 'TAB_O2',
-            'TAB_A2': 'TAB_A2',
-            'TAB_A4': 'TAB_A4',
-            'TAB_B6': 'TAB_B6',
-            'TAB_B7': 'TAB_B7',
-            'TAB_M1': 'TAB_M1',
-            'TAB_M2': 'TAB_M2',
-            'TAB_P1': 'TAB_P1',
-            'TAB_P2': 'TAB_P2',
-        }
+        Reports2PDFTables writes Out/PDF/<code>/<anno>/<code>.pdf, so the
+        stem IS the table code. The three code schemes in the archive are:
 
-        for pattern, table_type in type_mapping.items():
-            if pattern in filename or pattern.replace('_', '') in filename:
-                return table_type
+            family 1  art. 27 double-letter  AA AA1 BB ... UE  MG1 MG3 MT7
+            family 2  A1 .. P2                31 codes
+            family 3  art. 27 single-letter  A B D E G J Q
 
-        return 'UNKNOWN'
+        The previous mapping keyed on TAB_N1, TAB_O1, TAB_A2 ... -- names
+        that appear nowhere in the 43 reports. Every table fell through to
+        the unknown branch, which wrote one sheet per extracted fragment and
+        was the cause of the ~4000-sheet hang recorded in the README.
+        """
+        return Path(pdf_path).stem.upper()
+
+    def table_semantics(self, pdf_type):
+        """Describe a code in terms a reader can act on, for the log.
+
+        Returns (family, human label) or (None, None) when the code is not
+        recognised. The family matters downstream: families 1 and 3 are MEF
+        summary tables with a fixed column layout, family 2 is the MAE
+        per-operator/per-country detail.
+        """
+        code = pdf_type.upper()
+        if re.fullmatch(r"[A-Z]{2}\d?", code):
+            if code in ("MG1", "MG2", "MG3", "MG4", "MG5", "MG6", "MG7",
+                        "MG8", "MG9"):
+                return 1, "MAE licenze globali di progetto"
+            if code in ("MT1", "MT7"):
+                return 1, "MAE licenze globali di trasferimento"
+            if code == "LGP":
+                return 1, "licenze globali di programma di cooperazione"
+            if code in ("NN", "OO", "PP", "GF"):
+                return 1, "grafico ripartizione percentuale"
+            if code == "UE":
+                return 1, "importazioni intra UE"
+            if re.fullmatch(r"[A-Z]{2}", code):
+                return 1, "art. 27 riepilogo per istituti di credito"
+            return 1, "art. 27 riepilogo dettagliato"
+        if code in FAMILY2_CODES:
+            return 2, "MAE dettaglio operatore / paese"
+        if re.fullmatch(r"[A-Z]\d?", code):
+            return 3, "art. 27 riepilogo"
+        return None, None
+
+    def text_status(self, pdf_path):
+        """Report whether the text layer of a per-table PDF is readable.
+
+        Two corruption classes exist in the archive, both confirmed
+        unrecoverable (see Reports2PDFTables.py for the evidence):
+
+          garbled   subset fonts with no ToUnicode CMap; the subsetter wrote
+                    the Private Use codepoint into the glyph name
+                    ("uniE019"), so only outlines remain
+          ciphered  /Identity-H fonts with no ToUnicode and no
+                    /Differences; text is a substituted alphabet
+                    ("/LFHQ]D 2SHUDWRUH") with no mapping table anywhere
+
+        Affected: 2023 vol. I 284pp, 2025 vol. I 356pp, 2018 vol. II 299pp,
+        2025 vol. II 141pp (garbled); 2017 vol. I 287pp, 2022 vol. I 66pp
+        (ciphered). These tables split correctly but cannot yield data.
+        """
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            return "pypdf non disponibile"
+        pua = re.compile(r"[\ue000-\uf8ff]")
+        try:
+            reader = PdfReader(pdf_path, strict=False)
+        except Exception as exc:
+            return f"lettura fallita: {exc}"
+        pages = 0
+        garbled = 0
+        for page in reader.pages:
+            pages += 1
+            try:
+                text = page.extract_text() or ""
+            except Exception:
+                garbled += 1
+                continue
+            legible = sum(1 for c in text if c.isalnum())
+            if not text or len(pua.findall(text)) > 0.15 * max(1, legible):
+                garbled += 1
+        if garbled == pages:
+            return (f"testo illeggibile in tutte le {pages} pagine "
+                    f"(font senza ToUnicode: serve OCR)")
+        if garbled:
+            return f"{garbled}/{pages} pagine con testo illeggibile"
+        return f"testo leggibile in tutte le {pages} pagine"
 
     def extract_with_tabula(self, pdf_path, method='lattice'):
         """Extract tables using tabula-py"""
@@ -259,19 +352,37 @@ class PDFTableExtractor:
         return df
 
     def save_to_excel(self, data, output_path, pdf_type):
-        """Save extracted data to Excel file"""
+        """Save extracted data to Excel as a single 'Data' sheet.
+
+        A single PDF can yield hundreds of fragments when tabula's lattice
+        method misreads a borderless table. Writing one sheet per fragment
+        produced ~4000-sheet workbooks, past Excel's 255-sheet limit, and was
+        the hang recorded in the README. Fragments are now concatenated into
+        one sheet, so the sheet limit no longer applies; only Excel's
+        1048576-row limit does, and exceeding it is reported rather than
+        silently truncating.
+        """
+        frames = data if isinstance(data, list) else [data]
+        frames = [f for f in frames if f is not None and len(f) > 0]
+
+        if not frames:
+            print("    - nessun dato: foglio non scritto")
+            return 0
+
+        if len(frames) == 1:
+            combined = frames[0]
+        else:
+            combined = pd.concat(frames, ignore_index=True)
+
+        if len(combined) > EXCEL_MAX_ROWS:
+            print(f"    ⚠️  {len(combined)} righe superano il limite Excel "
+                  f"({EXCEL_MAX_ROWS}): il foglio non verra' scritto")
+            return 0
+
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-            if isinstance(data, list):
-                # Multiple dataframes
-                for idx, df in enumerate(data, 1):
-                    sheet_name = f'Table_{idx}' if len(data) > 1 else 'Data'
-                    sheet_name = sheet_name[:31]  # Excel limit
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-                    print(f"    - {sheet_name}: {len(df)} rows × {len(df.columns)} columns")
-            else:
-                # Single dataframe
-                data.to_excel(writer, sheet_name='Data', index=False)
-                print(f"    - Data: {len(data)} rows × {len(data.columns)} columns")
+            combined.to_excel(writer, sheet_name='Data', index=False)
+        print(f"    - Data: {len(combined)} rows × {len(combined.columns)} columns")
+        return len(combined)
 
     def process_pdf(self, pdf_path):
         """Process a single PDF file"""
@@ -295,33 +406,34 @@ class PDFTableExtractor:
             tables = self.extract_with_tabula(pdf_path, method='stream')
 
         if not tables or len(tables) == 0:
-            print(f"  ⚠️  No tables found")
+            # Distinguish "no table here" from "text unreadable": on the
+            # garbled and ciphered pages the characters are absent from the
+            # PDF, so tabula can only return empty frames. Saying so avoids
+            # the failure being later misread as a tabula bug.
+            reason = self.text_status(pdf_path)
+            print(f"  ⚠️  No tables found — {reason}")
             return False
 
         print(f"  ✓ Found {len(tables)} table(s)")
 
         # Process based on type
         try:
-            processor_map = {
-                'TAB_N1': self.process_tab_n1,
-                'TAB_N2': self.process_tab_n2,
-                'TAB_O1': self.process_tab_o1,
-                'TAB_O2': self.process_tab_o2,
-                'TAB_A2': self.process_tab_a2,
-                'TAB_A4': self.process_tab_a4,
-                'TAB_B6': self.process_tab_b6,
-                'TAB_B7': self.process_tab_b7,
-                'TAB_M1': self.process_tab_m1,
-                'TAB_M2': self.process_tab_m2,
-                'TAB_P1': self.process_tab_p1,
-                'TAB_P2': self.process_tab_p2,
-            }
-
-            if pdf_type in processor_map:
-                processed_data = processor_map[pdf_type](tables)
+            # I processor specifici esistono per i codici della famiglia 2
+            # (A1..P2), gli unici la cui struttura a colonne e' stata
+            # verificata. Le famiglie 1 e 3 hanno intestazioni diverse e
+            # vengono pulite e concatenate senza elaborazione dedicata.
+            family, label = self.table_semantics(pdf_type)
+            if family is None:
+                print(f"  ⚠️  Codice '{pdf_type}' non riconosciuto")
             else:
-                # Unknown type - save all tables as-is
-                processed_data = [self.clean_dataframe(t) for t in tables]
+                print(f"  Family {family}: {label}")
+
+            cleaned = [self.clean_dataframe(t) for t in tables]
+            cleaned = [c for c in cleaned if len(c) > 0]
+            if not cleaned:
+                print("  ⚠️  Nessuna tabella con dati dopo la pulizia")
+                return False
+            processed_data = cleaned
 
             # Save to Excel: Out/XLS/<tabella>/<anno>/<tabella>.xlsx
             dest_dir = self.output_root / pdf_name / year
@@ -351,7 +463,7 @@ class PDFTableExtractor:
             print(f"No PDF files found in {self.input_dir}")
             print("\nTo use this script:")
             print(f"Atteso: {self.input_dir}/<tabella>/<anno>/<tabella>.pdf")
-            print("1. Esegui prima 2024relations2IndividualTables per generare i PDF")
+            print("1. Esegui prima Reports2PDFTables per generare i PDF")
             print(f"2. Oppure passa input_dir=... (anno selezionato: {self.year})")
             return
 

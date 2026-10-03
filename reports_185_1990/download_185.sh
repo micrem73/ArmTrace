@@ -26,6 +26,15 @@ fetch() {
   local year="$1" leg="$2" num="$3" vol="$4" file="$5" url="$6"
   local dir="$DEST/$year"
   local out="$dir/$file"
+
+  # The manifest must have exactly 7 tab-separated fields with the URL last.
+  # Bail out before mkdir so a wrong manifest cannot leave empty year dirs behind.
+  case "$url" in
+    http://*|https://*) ;;
+    *) echo "ERR   $year n.$num $vol: manifest field 7 is not a URL ('$url')" >&2
+       return 1 ;;
+  esac
+
   mkdir -p "$dir"
 
   if [ -s "$out" ] && is_pdf "$out"; then
