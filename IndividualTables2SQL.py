@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 """
 IndividualTables2SQL — turn the per-table PDFs produced by
-Reports2PDFTables into Excel workbooks (and, later, SQL).
+Reports2PDFTables into CSV files (and, later, SQL).
 
-    Out/PDF/<tabella>/<anno>/<tabella>.pdf  ->  Out/XLS/<tabella>/<anno>/<tabella>.xlsx
+    Out/PDF/<tabella>/<anno>/<tabella>.pdf  ->  Out/CSV/<tabella>/<anno>/<tabella>.csv
+
+Why CSV and not XLSX: the archive holds tables Excel cannot represent. One
+volume yields up to 65 tables (2025 vol. II), and tabula fragments a borderless
+one into thousands of pieces. Excel caps a workbook at 255 sheets, a sheet at
+1048576 rows and a sheet at 16384 columns, and past any of those it refuses to
+open the file at all. CSV has no such cap: one table is one file of any length,
+it loads in full into pandas, MySQL or sqlite without a driver having to
+understand a spreadsheet, and its text is diffable in git even though the .csv
+itself is not tracked.
 
 The table code is the filename stem. Three code schemes exist in the archive:
 
@@ -14,10 +23,11 @@ The table code is the filename stem. Three code schemes exist in the archive:
 
 Usage:
     python IndividualTables2SQL.py --year 2023
-    python IndividualTables2SQL.py --year 2023 --input-dir Out/PDF --output-root Out/XLS
+    python IndividualTables2SQL.py --year 2023 --input-dir Out/PDF --output-root Out/CSV
     python IndividualTables2SQL.py --year 2023 --base /path/to/project
+    python IndividualTables2SQL.py --year 2023 --sep , --encoding utf-8
 
-Requires: tabula-py, pandas, openpyxl, pypdf  (pip install -r requirements.txt)
+Requires: tabula-py, pandas, pypdf  (pip install -r requirements.txt)
 tabula-py shells out to Java, so a JRE must be available on PATH or via JAVA_HOME.
 
 Known limitation: about 1300 pages across the archive come from fonts whose
@@ -43,7 +53,7 @@ except ImportError:
 
 import re
 
-# Percorsi del progetto: Out/PDF/<tabella>/<anno>/ -> Out/XLS/<tabella>/<anno>/
+# Percorsi del progetto: Out/PDF/<tabella>/<anno>/ -> Out/CSV/<tabella>/<anno>/
 OUT_DIR = "Out"
 
 # Anno di riferimento predefinito (corrisponde alla cartella
@@ -63,20 +73,36 @@ FAMILY2_CODES = {
     "M1", "M2", "N1", "N2", "O1", "O2", "P1", "P2",
 }
 
-# Limite di righe di un foglio Excel (1048576). Raggiunto solo da tabelle
-# enormi, ma va controllato: superarlo produce un file che Excel rifiuta di
-# aprire, quindi vale la pena saperlo prima.
-EXCEL_MAX_ROWS = 1048576
+# Estensione dei file prodotti. CSV al posto di XLSX: vedi il docstring.
+CSV_SUFFIX = ".csv"
+
+# Separatore di campo. Il punto e' e' la scelta, non un default arbitrario:
+# le cifre Italiane usano la virgola decimale, quindi un CSV separato da
+# virgole fa leggere "1.234,56" come due colonne. Il ';' e' cio' che Excel
+# stesso usa con le impostazioni regionali italiane e quello che pandas
+# riesce a tipizzare come numeri senza un converter. Per MySQL:
+# LOAD DATA INFILE ... FIELDS TERMINATED BY ';'
+CSV_SEPARATOR = ";"
+
+# utf-8-sig scrive il BOM che serve a Excel su Windows per non leggere le
+# lettere accentate dei nomi ("Paese", "Movimentazioni", "Valore in euro")
+# come spazzatura. Il BOM torna anche nella prima intestazione per chi legge
+# con encoding='utf-8' esplicito: passare --encoding utf-8 se la destinazione
+# e' un database e il BOM non e' desiderato.
+CSV_ENCODING = "utf-8-sig"
 
 
 class PDFTableExtractor:
     """Extract tables from PDF files based on their format"""
 
-    def __init__(self, input_dir=None, output_root=None, year=YEAR, base=BASE):
-        # Default: Out/PDF/<tabella>/<anno>/*.pdf  ->  Out/XLS/<tabella>/<anno>/*.xlsx
+    def __init__(self, input_dir=None, output_root=None, year=YEAR, base=BASE,
+                 separator=CSV_SEPARATOR, encoding=CSV_ENCODING):
+        # Default: Out/PDF/<tabella>/<anno>/*.pdf  ->  Out/CSV/<tabella>/<anno>/*.csv
         self.input_dir = Path(input_dir) if input_dir else Path(base, OUT_DIR, "PDF")
-        self.output_root = Path(output_root) if output_root else Path(base, OUT_DIR, "XLS")
+        self.output_root = Path(output_root) if output_root else Path(base, OUT_DIR, "CSV")
         self.year = str(year)
+        self.separator = separator
+        self.encoding = encoding
         self.output_root.mkdir(parents=True, exist_ok=True)
 
     def detect_pdf_type(self, pdf_path):
@@ -351,22 +377,31 @@ class PDFTableExtractor:
         df = self.clean_dataframe(df)
         return df
 
-    def save_to_excel(self, data, output_path, pdf_type):
-        """Save extracted data to Excel as a single 'Data' sheet.
+    def save_to_csv(self, data, output_path, pdf_type):
+        """Save extracted data to a single CSV file, one file per table.
 
-        A single PDF can yield hundreds of fragments when tabula's lattice
+        A single PDF can yield thousands of fragments when tabula's lattice
         method misreads a borderless table. Writing one sheet per fragment
         produced ~4000-sheet workbooks, past Excel's 255-sheet limit, and was
-        the hang recorded in the README. Fragments are now concatenated into
-        one sheet, so the sheet limit no longer applies; only Excel's
-        1048576-row limit does, and exceeding it is reported rather than
-        silently truncating.
+        the hang recorded in the README. Fragments are concatenated into a
+        single CSV here, which removes both that ceiling and Excel's
+        1048576-row one: there is no row count this has to refuse, so a long
+        table is written whole rather than dropped with a warning.
+
+        Concatenating fragments that disagree on column count is deliberate:
+        pd.concat fills the gaps with NaN, so a long table whose header row is
+        only detected on the first page keeps every data row instead of losing
+        all but the first fragment.
+
+        lineterminator is pinned to LF rather than left to os.linesep so the
+        same input yields byte-identical output on Linux and Windows; Excel
+        opens LF-terminated CSV either way.
         """
         frames = data if isinstance(data, list) else [data]
         frames = [f for f in frames if f is not None and len(f) > 0]
 
         if not frames:
-            print("    - nessun dato: foglio non scritto")
+            print("    - nessun dato: file non scritto")
             return 0
 
         if len(frames) == 1:
@@ -374,14 +409,10 @@ class PDFTableExtractor:
         else:
             combined = pd.concat(frames, ignore_index=True)
 
-        if len(combined) > EXCEL_MAX_ROWS:
-            print(f"    ⚠️  {len(combined)} righe superano il limite Excel "
-                  f"({EXCEL_MAX_ROWS}): il foglio non verra' scritto")
-            return 0
-
-        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-            combined.to_excel(writer, sheet_name='Data', index=False)
-        print(f"    - Data: {len(combined)} rows × {len(combined.columns)} columns")
+        combined.to_csv(output_path, sep=self.separator, index=False,
+                        encoding=self.encoding, lineterminator="\n")
+        print(f"    - {len(combined)} rows × {len(combined.columns)} columns "
+              f"in {len(frames)} frammento/i")
         return len(combined)
 
     def process_pdf(self, pdf_path):
@@ -435,11 +466,11 @@ class PDFTableExtractor:
                 return False
             processed_data = cleaned
 
-            # Save to Excel: Out/XLS/<tabella>/<anno>/<tabella>.xlsx
+            # Save to CSV: Out/CSV/<tabella>/<anno>/<tabella>.csv
             dest_dir = self.output_root / pdf_name / year
             dest_dir.mkdir(parents=True, exist_ok=True)
-            output_path = str(dest_dir / f"{pdf_name}.xlsx")
-            self.save_to_excel(processed_data, output_path, pdf_type)
+            output_path = str(dest_dir / f"{pdf_name}{CSV_SUFFIX}")
+            self.save_to_csv(processed_data, output_path, pdf_type)
 
             print(f"  ✓ Saved to: {output_path}")
             return True
@@ -484,12 +515,12 @@ class PDFTableExtractor:
         print("Processing Complete!")
         print(f"  ✓ Success: {success}")
         print(f"  ✗ Failed: {failed}")
-        print(f"\nExcel files saved to: {self.output_root}/<tabella>/<anno>/")
+        print(f"\nCSV files saved to: {self.output_root}/<tabella>/<anno>/")
 
 def main(argv=None):
     """Punto d'ingresso."""
     parser = argparse.ArgumentParser(
-        description="Estrae le tabelle dai PDF per-table in file Excel.",
+        description="Estrae le tabelle dai PDF per-table in file CSV.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -503,25 +534,36 @@ def main(argv=None):
     )
     parser.add_argument(
         "--output-root", default=None,
-        help=f"cartella degli XLS (default: <base>/{OUT_DIR}/XLS)",
+        help=f"cartella dei CSV (default: <base>/{OUT_DIR}/CSV)",
     )
     parser.add_argument("--base", default="", help="radice dei percorsi (default: .)")
+    parser.add_argument(
+        "--sep", default=CSV_SEPARATOR,
+        help=f"separatore di campo (default: {CSV_SEPARATOR!r}; usa ',' "
+             f"per un CSV RFC 4180, '\\t' per importare in MySQL "
+             f"senza FIELDS TERMINATED BY)",
+    )
+    parser.add_argument(
+        "--encoding", default=CSV_ENCODING,
+        help=f"encoding dei CSV (default: {CSV_ENCODING}; usa utf-8 per "
+             f"non scrivere il BOM di fronte a Excel)",
+    )
     args = parser.parse_args(argv)
 
     pdf_root = Path(args.base, OUT_DIR, "PDF")
-    xls_root = Path(args.base, OUT_DIR, "XLS")
+    csv_root = Path(args.base, OUT_DIR, "CSV")
 
-    print("IndividualTables2SQL - PDF Table Extractor to Excel - Extended Version")
-    print("Supports: TAB_N1, TAB_N2, TAB_O1, TAB_O2, TAB_A2, TAB_A4,")
-    print("          TAB_B6, TAB_B7, TAB_M1, TAB_M2, TAB_P1, TAB_P2")
+    print("IndividualTables2SQL - PDF Table Extractor to CSV")
+    print("Supports: TABELLE A1..P2 (famiglia 2) e i codici art. 27")
     print(f"Anno: {args.year}")
     print(f"Input:  {pdf_root}/<tabella>/<anno>/")
-    print(f"Output: {xls_root}/<tabella>/<anno>/")
+    print(f"Output: {csv_root}/<tabella>/<anno>/")
     print("=" * 70)
 
     extractor = PDFTableExtractor(
         input_dir=args.input_dir, output_root=args.output_root,
         year=args.year, base=args.base,
+        separator=args.sep, encoding=args.encoding,
     )
     extractor.process_all()
 

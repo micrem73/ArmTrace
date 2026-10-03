@@ -1,7 +1,7 @@
 # This repository tracks no binary files.
 #
-# *.pdf / *.xls / *.xlsx are deliberately NOT tracked and deliberately NOT kept
-# in Git LFS — they are ignored in .gitignore. Do not re-add LFS filter rules
+# *.pdf / *.xls / *.xlsx / *.csv are deliberately NOT tracked and deliberately NOT
+# kept in Git LFS — they are ignored in .gitignore. Do not re-add LFS filter rules
 # for them: LFS would not stop them from being committed, it would only charge
 # them against GitHub's LFS storage/bandwidth quota.
 #

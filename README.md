@@ -18,7 +18,7 @@ reports_185_1990/                 # source reports, one folder per reporting yea
 
 Out/                             # generated locally, NOT in git (see "Binary files")
 ├── PDF/<tabella>/<anno>/<tabella>.pdf   # one PDF per table  (step 1)
-└── XLS/<tabella>/<anno>/<tabella>.xlsx  # one workbook per table  (step 2)
+└── CSV/<tabella>/<anno>/<tabella>.csv   # one CSV per table  (step 2)
 ```
 
 Neither folder is checked in: `reports_185_1990/` and `Out/` are rebuilt from
@@ -126,37 +126,53 @@ zero failures**, every volume producing a manifest. Coverage per year is in
 
 ### **IndividualTables2SQL.py**
 
-Reads the per-table PDFs from step 1 and converts them to Excel via tabula-py.
+Reads the per-table PDFs from step 1 and converts them to CSV via tabula-py.
 
 ```bash
 python IndividualTables2SQL.py --year 2023
-python IndividualTables2SQL.py --year 2023 --input-dir Out/PDF --output-root Out/XLS
+python IndividualTables2SQL.py --year 2023 --input-dir Out/PDF --output-root Out/CSV
 ```
 
 | Flag | Meaning |
 |---|---|
 | `--year` | year to process (default `2024`) |
 | `--input-dir` | per-table PDFs (default `Out/PDF`) |
-| `--output-root` | workbooks root (default `Out/XLS`) |
+| `--output-root` | CSV root (default `Out/CSV`) |
 | `--base` | root for all paths (default `.`) |
+| `--sep` | field separator (default `;`) |
+| `--encoding` | CSV encoding (default `utf-8-sig`) |
 
 `detect_pdf_type()` reads the table code from the filename stem;
 `table_semantics()` maps it to a family and a human label.
 
+**Why CSV and not XLSX.** The archive holds tables Excel cannot represent.
+`detect_pdf_type()` used to key on `TAB_N1`, `TAB_O1`, `TAB_A2` … names that
+appear **nowhere in the reports**, so every table took the unknown-type branch;
+that branch wrote **one sheet per extracted fragment**, producing ~4000-sheet
+workbooks past Excel's 255-sheet limit — the hang previously recorded here (a
+local run left 16 workbooks in `Out/XLS/` for 19 PDFs in `Out/PDF/`, with
+`TAB_A1`, `Tabella_AA` and `Tabella_EE` never converted). Fragments are
+concatenated into a single table, and the output is CSV, so **none of Excel's
+ceilings apply**: 255 sheets, 1048576 rows and 16384 columns are all workbook
+and sheet properties, and a CSV of any length is one file that pandas, sqlite
+or MySQL read directly. Verified: 4000 fragments → one file, all 4000 rows
+retained, ragged fragment widths filled with nulls rather than dropped.
+
+Two CSV conventions are deliberate, not defaults:
+
+- **`;` separator.** Italian figures use a comma decimal separator, so
+  `1.234,56` in a comma-separated file reads as two columns. `;` is also what
+  Excel itself uses under Italian regional settings, and what
+  `LOAD DATA INFILE ... FIELDS TERMINATED BY ';'` wants.
+- **`utf-8-sig`.** The BOM is what stops Excel on Windows rendering
+  `Paese` / `Movimentazioni` / `Valore in €` as mojibake. It also prefixes the
+  first header when a reader asks for plain `utf-8`, so pass
+  `--encoding utf-8` for a database destination.
+
 **Status:** cannot be run end to end here — **no JRE is installed**, and
 tabula-py shells out to Java. The parts changed in this pass were verified
-directly (see the log). Two fixes:
-
-- `detect_pdf_type()` keyed on `TAB_N1`, `TAB_O1`, `TAB_A2` … names that appear
-  **nowhere in the reports**. Every table took the unknown-type branch.
-- That branch wrote **one sheet per extracted fragment**, producing ~4000-sheet
-  workbooks past Excel's 255-sheet limit — the hang previously recorded here
-  (a local run left 16 workbooks in `Out/XLS/` for 19 PDFs in `Out/PDF/`, with
-  `TAB_A1`, `Tabella_AA` and `Tabella_EE` never converted). Fragments are now
-  concatenated into a single `Data` sheet, so the sheet limit no longer
-  applies; only Excel's 1048576-row limit does, and exceeding it is reported
-  rather than silently truncated. Verified: 4000 fragments → one sheet, all
-  4000 rows retained.
+directly (see the log): the dispatch fix, the fragment concatenation, and the
+CSV writer (1.2 M rows past Excel's ceiling → one file, round-tripped intact).
 
 ### **Requirements**
 
@@ -325,12 +341,12 @@ reports_185_1990/download_185.sh <dest> reports_185_1990/manifest.tsv
 
 ## **Binary files**
 
-No PDF, Excel or other binary is tracked by git, and **nothing is in Git LFS**.
+No PDF, Excel, CSV or other binary is tracked by git, and **nothing is in Git LFS**.
 
-`.gitignore` excludes `*.pdf`, `*.xls` and `*.xlsx` — that is, the source reports
-in `reports_185_1990/` (51 PDFs, ~1.6 GB) and everything generated under `Out/`.
-`.gitattributes` deliberately carries **no** `filter=lfs` rule for them; it only
-documents why. LFS was never a solution here: it does not stop the files being
+`.gitignore` excludes `*.pdf`, `*.xls`, `*.xlsx` and `*.csv` — that is, the source
+reports in `reports_185_1990/` (51 PDFs, ~1.6 GB) and everything generated under
+`Out/`. `.gitattributes` deliberately carries **no** `filter=lfs` rule for them; it
+only documents why. LFS was never a solution here: it does not stop the files being
 committed, it just moves the bytes into GitHub's metered LFS storage/bandwidth
 quota, and this repository's binaries total well over 1 GB.
 
@@ -339,7 +355,7 @@ files in LFS while the other 49 were plain blobs; that split has been removed, s
 the 2024 PDFs are ignored exactly like every other source report and are
 regenerated from their `manifest.tsv` rows like the rest.
 
-Verified on the current tree: `git ls-files '*.pdf' '*.xls' '*.xlsx'` returns
+Verified on the current tree: `git ls-files '*.pdf' '*.xls' '*.xlsx' '*.csv'` returns
 nothing, `git lfs ls-files` is empty, and `git check-attr` reports no LFS attribute
 for `reports_185_1990/2024/lxvii_3_volume 1_442452.pdf`.
 
