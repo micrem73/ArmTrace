@@ -14,6 +14,15 @@ fetch() {
   local dir="$DEST/$year"
   local safe_vol; safe_vol=$(echo "$vol" | tr ' ' '_' | tr '[:lower:]' '[:upper:]')
   local out="$dir/${year}_LXVII_n${num}_${safe_vol}.pdf"
+
+  # The manifest must have exactly 5 tab-separated fields with the URL last.
+  # Bail out before mkdir so a wrong manifest cannot leave empty year dirs behind.
+  case "$url" in
+    http://*|https://*) ;;
+    *) echo "ERR   $year n.$num $vol: manifest field 5 is not a URL ('$url')" >&2
+       return 1 ;;
+  esac
+
   mkdir -p "$dir"
 
   if [ -s "$out" ] && pdfinfo "$out" >/dev/null 2>&1; then

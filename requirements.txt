@@ -6,6 +6,7 @@
 # NOTE: tabula-py shells out to a Java runtime. Install a JRE (e.g. Temurin 17)
 # or tabula-py will fail with "Unable to find a Java installation".
 
+fonttools>=4.0
 pypdf>=6.0
 tabula-py>=2.10
 pandas>=2.0
