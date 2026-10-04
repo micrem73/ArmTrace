@@ -2,6 +2,9 @@
 
 Two Python scripts that extract and structure Italian military export data from the government annual reports published under **Law 185/1990** (Article 5, Law 9 July 1990 n. 185).
 
+> Working guidance for coding agents lives in [AGENTS.md](./AGENTS.md):
+> invariants, detection traps, disproven approaches and archive coverage.
+
 ---
 
 ## **Structure**
@@ -23,7 +26,7 @@ Out/                             # generated locally, NOT in git (see "Binary fi
 
 Neither folder is checked in: `reports_185_1990/` and `Out/` are rebuilt from
 `manifest.tsv` and the two scripts. The repository tracks only the scripts, the
-manifest, `download_185.sh` and `SOURCES.md`.
+manifest, `download_185.sh`, `SOURCES.md` and `AGENTS.md`.
 
 The folder name is the **reporting year** covered by the report, not the year it was published. Nothing in the scripts hardcodes a year: step 1 reads it from the `reports_185_1990/<anno>/…` path, and both steps key their output on it as a **filename suffix**, `Out/PDF/AA/AA2023.PDF` → `Out/CSV/AA/AA2023.csv`. One folder per table therefore holds one file per reporting year, and step 2 selects the year with `--year` (it matches the suffix, so the suffix and the flag must agree).
 
@@ -39,12 +42,11 @@ Adding a year means dropping its PDFs into `reports_185_1990/<anno>/` — no cod
 
 `manifest.tsv` is the single input to `download_185.sh` and must hold exactly
 seven tab-separated fields per row — `year`, `leg`, `num`, `vol`, `file`,
-`pages`, `url` — with the **source URL last**. An earlier five-column download
-list and a separate six-column inventory were both passed to the script by
-mistake, which made the page count land in the URL field and every fetch fail
-with `URL using bad/illegal format`. The two are now one file, and the script
-rejects any row whose last field is not an `http(s)` URL before creating
-anything.
+`pages`, `url` — with the **source URL last**; the script rejects any row whose
+last field is not an `http(s)` URL before creating anything. An earlier
+five-column download list and a separate six-column inventory were both passed
+to it by mistake, so the two are now one file. See
+[AGENTS.md](./AGENTS.md#2-do-not-break-invariants) for the invariant.
 
 ---
 
@@ -69,6 +71,9 @@ and 3 codes match `^[A-Z]{1,3}\d?$`.
 The 2012 index prints the digit one as a capital `I`, so it lists `Tabella DI`
 and `Tabella Gl` where the real codes are `D1` and `G1`; `normalise_digit_one()`
 folds these back.
+
+Per-family detection rules and the traps behind them are in
+[AGENTS.md](./AGENTS.md#4-regex-and-detection-traps).
 
 ---
 
@@ -143,26 +148,20 @@ from somewhere else and everything after the last agreeing page is dropped.
 straddles the two volumes of 2025** (see below), so its 8 pages in volume I end
 at `Pagina 8 di 70` and only the totals are compared, never the page numbers.
 
-Verified on the three reported cases and two more found the same way:
+Verified on the three reported cases and two more found the same way: 2025 I `E`
+222 → **221** pages and `F1` 10 → **8** (each dropped a document of its own —
+a one-pager and two `PAGINA BIANCA`), 2021 I `E` 6 → **5** and 2019 I `E` 35 →
+**34** (a separate one-page document each). Everything else in those volumes
+was unchanged. The 2021 and 2019 cases are confirmed independently by the index
+page, which lists those E tables as 5 and 34 pages. The full case table is in
+[AGENTS.md](./AGENTS.md#6-verification-and-archive-coverage).
 
-| volume | table | was | now | the page(s) dropped |
-|---|---|---|---|---|
-| 2025 I | **E** | 222 | **221** | a separate one-page document, `Pagina 1 di 1` |
-| 2025 I | **F1** | 10 | **8** | two `PAGINA BIANCA` |
-| 2021 I | E | 6 | **5** | a separate one-page document |
-| 2019 I | E | 35 | **34** | a separate one-page document |
-| 2021 I, 2019 I | all others | — | unchanged | |
-
-The 2021 and 2019 cases are confirmed independently by the index page, which
-lists those E tables as 5 and 34 pages: trimming turns a span/index mismatch
-into an agreement.
-
-It works on garbled text because the numbers need not be *read*, only
-compared. On the subsetted fonts with no `ToUnicode` the stamp comes back as
-Private Use Area characters, but the strings are stable — the subsetter gave
-one PUA codepoint per character — so two pages of the same document agree
-character for character on the total and a page from another document does
-not. **2025 E is garbled on all 221 pages and still trims correctly.**
+It works on garbled text too, because the numbers need not be *read*, only
+compared: on subsetted fonts with no `ToUnicode` the stamp comes back as Private
+Use Area characters, but the subsetter gave one codepoint per character, so two
+pages of the same document still agree character for character on the total and
+a page from another document does not. **2025 E is garbled on all 221 pages and
+still trims correctly.**
 
 Three guards, because this deletes pages:
 
@@ -219,23 +218,22 @@ records it under `continued`, and a table that reaches the end of a volume
 without a continuation is left alone rather than padded with front matter.
 
 Verified: `--year 2025 --volume both` writes `F1/F12025.PDF` with **70 pages**,
-printed 1035 → 1104, first page `Pagina 1 di 70`, last `Pagina 70 di 70`.
-
-Every other volume boundary in 2012, 2016, 2019, 2021, 2022 and 2023 was
-checked the same way: **2025 F1 is the only split in the archive**, and none of
-them produces a false join. Two reach the numbering test and are turned away by
-the header test — 2022 vol. II and 2021 VOLUME II both open on a new section.
+printed 1035 → 1104, first page `Pagina 1 di 70`, last `Pagina 70 di 70`. Every
+other volume boundary in 2012, 2016, 2019, 2021, 2022 and 2023 was checked the
+same way: **2025 F1 is the only split in the archive**, and none of them
+produces a false join. Two reach the numbering test and are turned away by the
+header test — 2022 vol. II and 2021 VOLUME II both open on a new section. The
+full reasoning is in [AGENTS.md](./AGENTS.md#6-verification-and-archive-coverage).
 
 ### A code in two volumes is not always a split
 
 One code means one file, so a repeat has to be resolved rather than joined.
-**2021 prints the MAE tables twice**: tom. I carries `A1`…`P2` (bookmarked,
-page counts corroborated by its index) and tom. II carries the same tables again
-— `A1` spans 295 pages in each, down to the page, and the opening pages are
-identical. VOL. II prints seven of those codes a third time. Before, each
-volume wrote over the one before it; now `resolve_repeats()` keeps the
-best-attested copy (bookmark > header run > title repeat, earliest volume
-breaking a tie) and reports what it dropped:
+**2021 prints the MAE tables twice** — tom. I and tom. II carry the same
+`A1`…`P2`, and VOL. II prints seven of those codes a third time — which the
+per-volume split used to resolve by overwriting, so the output was a coin toss
+on which copy survived. `resolve_repeats()` now keeps the best-attested copy
+(bookmark > header run > title repeat, earliest volume breaking a tie) and
+reports what it dropped:
 
 ```
 duplicate  : 27 code(s) found in another volume of the same year and not a
@@ -249,8 +247,11 @@ neighbours — are both kept and joined, which is the readable-halves version of
 a split. Anything else would invent a table out of two unrelated ones.
 
 **Status:** works. Verified across all 28 supported volumes — **479 tables,
-zero failures**, every volume producing a manifest. Coverage per year is in
-[the log below](#log-for-the-next-agent).
+zero failures**, every volume producing a manifest.
+
+The pipeline is currently developed against the **2016** reports. Earlier years
+are deferred, not broken — see [Archive coverage](./AGENTS.md#archive-coverage)
+for the per-year table.
 
 ### **IndividualTables2SQL.py**
 
@@ -301,9 +302,10 @@ Two CSV conventions are deliberate, not defaults:
 
 **Status:** cannot be run end to end here — **no JRE is installed**, and
 tabula-py shells out to Java. The parts changed in this pass were verified
-directly (see the log): the dispatch fix, the fragment concatenation, the CSV
-writer (1.2 M rows past Excel's ceiling → one file, round-tripped intact), and
-the flattened layout (one folder per table, year as a filename suffix).
+directly: the dispatch fix, the fragment concatenation, the CSV writer
+(1.2 M rows past Excel's ceiling → one file, round-tripped intact), and the
+flattened layout (one folder per table, year as a filename suffix). See
+[Environment state](./AGENTS.md#3-environment-state).
 
 A note on the earlier `.XLS` workaround, now moot: pandas refuses a non-`.xlsx`
 name for the openpyxl engine (`Invalid extension for engine 'openpyxl': 'XLS'`),
@@ -321,207 +323,6 @@ pip install -r requirements.txt
 
 tabula-py shells out to Java, so a JRE (e.g. Temurin 17) must be on `PATH` or
 reachable via `JAVA_HOME`. **Not installed in this environment.**
-
----
-
-## **Log for the next agent**
-
-### Step 1 is solved; step 2 is not yet run
-
-The split works for all 28 text-bearing volumes. Step 2 has never been executed
-successfully because Java is absent — treat its output as unverified.
-
-### Coverage, measured
-
-| year | volume | family | pages | tables |
-|---|---|---|---|---|
-| 2012 | III / II / I | 1 / 2 / 3 | 608 / 1268 / 1242 | 1 / 6 / 16 |
-| 2013 | DOCUMENTO_UNICO | 2 | 1672 | 15 |
-| 2014 | II / I | 2 / 3 | 656 / 664 | 3 / 1 |
-| 2015 | I / II | 2 | 1032 / 716 | 1 / 1 |
-| 2016 | II / I | 3 / 2 | 768 / 716 | **34** / 5 |
-| 2017 | II / I | 2 | 746 / 748 | 8 / 5 |
-| 2018 | I / II | 2 | 742 / 764 | 22 / 8 |
-| 2019 | I / II | 2 / 3 | 826 / 1004 | 23 / 10 |
-| 2020 | II / I | 3 / 2 | 958 / 732 | **41** / 10 |
-| 2021 | TOMO_I / TOMO_II / VOL_II | 2 | 793 / 844 / 1070 | 31 / 27 / 8 |
-| 2022 | II / I | 3 / 2 | 1088 / 1020 | **40** / 23 |
-| 2023 | II / I / III | 1 / 2 / 2 | 580 / 946 / 518 | **35** / 31 / 5 |
-| 2025 | II / I | 3 / 2 | 1048 / 1048 | **65** / 16 |
-
-**Weak files (≤10 tables): 15 of 28.** 2015 (both volumes) and 2014 vol. I
-yield 1 table and should be treated as unsupported — no index, no bookmarks,
-codes not repeated. The 2012–2017 volumes are the weak cluster.
-
-### Bookmarks: exactly 5 volumes, 162 codes
-
-`2021_TOMO_I` (31) · `2023_VOLUME_I` (31) · `2023_VOLUME_II` (34) ·
-`2025_VOLUME_I` (16) · `2025_VOLUME_II` (50).
-
-`2016_VOL_II`, `2018_VOL_I` and `2023_VOL_III` have outlines but only
-`"Pagina vuota"` and annex titles.
-
-**Named destinations are a dead end.** 2020 vol. II (522), 2021 vol. II (570)
-and 2023 vol. II (1689) carry `JR_PAGE_ANCHOR_*` entries — JasperReports
-hyperlink anchors, not per-table — and pypdf resolves most to `None`. Do not
-spend time here.
-
-Titles need two patterns, and **neither can use `\b`**: underscore is a word
-character, so `TAB_A1` has no word boundary around `TAB`. Use
-`(?<![A-Za-z])TAB[ ._]+` for the separated form and a separate `tabella`
-alternative for the glued form (`tabellaAA_2025`).
-
-Several bookmark trees carry container entries with **no page**
-(`'araba.pdf'`, `'0001.pdf'`, `'0001.pdf'`). Skip them.
-
-### 2025 vol. I ends on F1, which continues into vol. II
-
-Volume I stops at `F1`: its last eight content pages, printed 1035–1042, the
-two physical pages after them being `PAGINA BIANCA`. `F2`…`P2` live in
-**2025 VOLUME_II**, whose outline starts at `F2` (printed 1105). The two volumes
-continue each other, and **F1 is one table of 70 pages spanning the join** —
-printed 1035–1104, `Pagina 70 di 70` in the margin of the last one. The volume
-index on page 3 of vol. II agrees:
-`MINISTERO DEGLI AFFARI ESTERI … (segue) Pag.1043`, `Tabelle » 1043`,
-`MINISTERO DELLA DIFESA » 1232`.
-
-Both halves were being written to the same filename and one overwrote the
-other. Fixed by the cross-volume stitch described above; run the year with
-`--volume both` (or `--all`), not one volume at a time.
-
-The other 30 family-2 codes are unaffected: `A1`…`F1` in vol. I and `F2`…`P2`
-in vol. II account for all 31 of `FAMILY2_CODES`, which is what proves the 62
-pages in between belong to F1 and not to a table nobody detected.
-
-### 2021 tom. I and tom. II carry the same tables
-
-Not a split: a duplicate printing. tom. I and tom. II both contain the MAE
-family-2 tables, `A1` spanning 295 pages in each with an identical opening page,
-and VOL. II repeats seven of the codes. The per-volume split used to overwrite
-whichever came first, so the output was a coin toss on which copy survived; the
-bookmarked, index-corroborated copy is now chosen on purpose (see *A code in two
-volumes is not always a split*).
-
-### Reading the printed page number — and the volumes that have none
-
-The stitch (and the "where does the content stop" question in general) rests on
-the number printed in the footer, which survives even on garbled pages: the
-digits live in a font whose `ToUnicode` came through while the letters did not.
-`printed_numbers()` wants the digits framed by dashes, `– 1103 –`, `- 1103 -`
-or `1103 -`, and ignores anything else, so a bare `2015` in a title and the
-numeric range `27 - 15` inside a table cell are both left alone. Roman
-numerals do not match, which is what keeps the 2025 index (`– III –`) out of
-the sequence.
-
-Checked across the archive: 2016, 2019, 2021, 2022, 2023 and 2025 all print it
-this way. **2012 and 2013 do not** — their footer runs the number into the
-text, `Camera dei Deputati —  100 —  Senato della Repubblica`, so 2012 vol. II
-yields no page number at all and no join is attempted. That costs nothing: 2012
-vol. I is family 3 and vol. II is family 2, so no table can run across that
-join.
-
-A page can print two numbers (2021 tom. II carries the volume-local one next to
-the volume-wide one), so the result is a set and the tests ask whether *some*
-pairing holds rather than guessing which number is meant.
-
-### Margin stamps are the ground truth, but unreadable
-
-Every table page carries `Tabella <code>` and `Pagina N di M` in the rotated
-margin, which would settle every boundary exactly. It is not extractable: not
-by pypdf, not by `pdftotext -layout` — the letters are in the same broken
-subset font as the body text. Verified, then dropped. **Read the pages as
-images when a boundary has to be settled for certain** (`pdftoppm -png`), which
-is how the 70-page extent of F1 was confirmed.
-
-### Three text-corruption classes, all unrecoverable
-
-Roughly **1300 pages** across the archive cannot yield data. Verified, not assumed.
-
-| class | cause | evidence | affected |
-|---|---|---|---|
-| **no text layer** | scanned images | 2001–2010, ~52 chars/page | 13 files |
-| **garbled** | subset font, no `ToUnicode` | 2023 vol. I 284pp, 2025 vol. I 356pp, 2018 vol. II 299pp, 2025 vol. II 141pp, 2020 vol. I 174pp | ~1250pp |
-| **ciphered** | `/Identity-H`, no `ToUnicode`, no `/Differences` | 2017 vol. I 287pp, 2022 vol. I 66pp, 2016 vol. I 28pp | ~390pp |
-
-**Garbled — three recovery routes all failed:**
-
-1. `pdftotext` (poppler 22.02) → identical PUA output.
-2. `pdffonts` → `uni = no` confirmed on every affected font.
-3. fontTools `CharStrings` → `['.notdef', 'uniE019', 'uniE026', …]`. The
-   subsetter copied each PUA codepoint into the glyph name, so `uniE019` *is*
-   U+E019 renamed. **Only outlines remain.** The `/Encoding` array is 51 real
-   entries followed by 94 `.notdef` slots.
-
-**Ciphered** is worse, because the text reads as plausible: `"/LFHQ]D 2SHUDWRUH"`
-where the header is `"TABELLA N1 PER OPERATORE"`. It is not a uniform shift
-(`2SHUDWRUH` needs −3, `GHI` needs −3, but `6SHGL]LRQL` maps `]` to `)`, not
-`I`). The text is emitted by `/Identity-H` fonts with **no mapping table
-anywhere in the PDF**.
-
-These pages are digitally rendered, so OCR is technically viable — but OCR is
-**out of scope by decision**. They still split correctly, because step 1 needs
-only page boundaries. `IndividualTables2SQL.text_status()` reports them per
-file so the failure is not misread as a tabula bug.
-
-### Regex traps — each one cost a debugging cycle
-
-- **`\bTAB\b` without a trailing boundary** parses `TABLES` as `TAB`+`LES` and
-  `TABLET` as `TAB`+`LET`. Invented codes `LES`, `LET`, `EL`, `ILE`, `ILI`.
-- **A separator that spans newlines** reads `"una tabella (F\nG)"` as code
-  `FG`. Use `[^\S\n]+`, never `\s+`.
-- **Positional windows cannot work.** 8 lines lost 24 of 28 tables in 2019
-  vol. I; 24 lines invented `KK1` on 2025 vol. II p263
-  (`"come da elencazione sintetica della tabella KK1"`). Every threshold in
-  between was wrong somewhere. **Use frequency instead**: a real table repeats
-  its code on every page of its run; a prose mention appears once.
-- **`MIN_RUN` must apply to style 3 only.** Applied to all styles it dropped
-  real one-page tables — 2020 vol. II went 41 → 23.
-- **`SEGNALAZIONI` must only be honoured in the top 12 lines.** On 2025 vol. II
-  the *table* pages print it in a trailing header block; a plain substring test
-  discards every table in the file.
-- **Style 1 needs an `ELENCO TABELLE` banner check.** 2023 vol. II p8 is a
-  summary page carrying a bare `UE` under `Operazioni disciplinate`, which
-  steals the start of the real `Tabella UE` at p543. Resolved by the bookmark.
-- **Prose stop-list: do not put `E` or `I` in it.** Both are genuine family 2
-  codes; suppressing them cost 4 tables on 2019 vol. I.
-- **The stamp needs its position, not just its shape.** Matching the
-  `"Pagina N di X"` shape on the text alone also matches body rows:
-  `"MUNIZIONAMENTO CALIBRO 120 MM , APPOSITAMENTE"` (2025 vol. I p70) reads as
-  `CALIBRO 120 MM ,` and cut **A1 from 537 pages to 1**. The stamp is the 9pt
-  header chunk between 30% and 52% of the page height; both filters are in
-  `read_page()`.
-- **Do not trust the token order inside the stamp.** The rotation reverses it
-  page to page: 2025 vol. I p70 is `Pagina 1 di 537`, p611 is `Pagina 5 5di`,
-  p817 is `Pagina di 1 221`. The total is identified as *the number that does
-  not change* across the pages of the table, never by position.
-- **The two PUA runs ending in U+E000 are the words, not the numbers.** On a
-  garbled page the subsetter mapped the space glyph to U+E000 as well, so
-  `"Pagina "` and `"di "` keep it and the digits do not. That is the only thing
-  separating the separator from the numbers.
-
-### Cross-validation available
-
-Where an index page exists it gives page **counts**, which validate the derived
-spans without needing page numbers. 2022 vol. I: `A1` = 401 pages, detected
-span 82–482 = 401. Roughly 19/22 spans agree; the mismatches are a useful
-error signal, not noise.
-
-### Outstanding
-
-- 2015 and 2014 vol. I should join 2001–2010 in an explicit *unsupported* list
-  rather than emitting a misleading 1-table split.
-- The 15 weak files (≤10 tables) need either a family-specific detector or an
-  honest partial-coverage marker in the output.
-- `process_tab_a1` … `process_tab_p2` are dead code now that dispatch is
-  family-based. They document the family 2 column layouts and may be worth
-  keeping as reference, but nothing calls them.
-- Install a JRE and run step 2 for real — nothing about its output is verified.
-- OCR decision, if garbled tables are ever to yield data.
-- The trailing-page check only runs where the stamp is legible or stable. It
-  fires on 2025 I, 2021 I and 2019 I; **2019 vol. II, 2023 vol. III and the
-  family 3 volumes carry no stamp at all** (0 stamped pages of 1004 and 518
-  respectively), so nothing is checked there. Those volumes are exported
-  differently and would need a second kind of witness.
 
 ---
 
@@ -586,12 +387,10 @@ re-add LFS filter rules.**
 
 ## **ToDo**
 
-- Install a JRE and run step 2 end to end for the first time
-- Mark 2015 and 2014 vol. I as unsupported
-- Improve the 15 weak volumes (≤10 tables detected)
-- Decide whether to OCR the ~1300 garbled/ciphered pages
-- Resolve the 2021 volume-2 filename collision
-- Process the remaining 24 years (2025 is downloaded but has not been through the pipeline)
+Engineering work is tracked in [AGENTS.md](./AGENTS.md#outstanding), which is
+authoritative for it. What is left is the product roadmap:
+
+- Process the remaining years — see [Archive coverage](./AGENTS.md#archive-coverage) for what is deferred and why
 - Populate a MySQL db
 - Create an LLM tool that converts natural language requests into SQL queries
 - Create a chatbot enhanced with that tool, allowing the DB to be interrogated in natural language
