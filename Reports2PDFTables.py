@@ -18,6 +18,12 @@ Usage:
 
 Requires: pypdf (pip install -r requirements.txt)
 
+Note: --volume both / --all. A year is processed one volume at a time but its
+tables are not confined to a volume: 2025 Tabella F1 runs from printed page
+1035 (volume I) to printed page 1104 (volume II). Stitching the volumes of a
+year together needs more than one of them in the same run; with a single
+volume the split PDF simply stops at the volume boundary and says so.
+
 --------------------------------------------------------------------------
 HOW TABLES ARE FOUND
 --------------------------------------------------------------------------
@@ -46,6 +52,18 @@ Two more detectors exist only to fill gaps:
                cross-check the derived spans
     title      the table title repeated through the body, for family 3 where
                the codes appear only on the index page
+
+--------------------------------------------------------------------------
+TABLES THAT CROSS A VOLUME BOUNDARY
+--------------------------------------------------------------------------
+A year's volumes continue one another, and a table may straddle the join. The
+volumes are numbered continuously, so the last table of volume N can run on
+into the pages volume N+1 opens with, before that volume's first detected
+table. Those pages belong to the same PDF: Out/PDF/F1/F12025.PDF is one
+70-page table, not two files fighting over one name.
+
+Since the split is per volume, the volume that wrote the tail of the table
+used to overwrite the volume that wrote its head. See stitch().
 """
 
 import argparse
@@ -54,6 +72,7 @@ import json
 import os
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 try:
@@ -131,6 +150,21 @@ PROSE_STOPLIST = {
 # pages, and a single hit is always ambiguous. Applied to style 3 only; see
 # build_manifest for why.
 MIN_RUN = 2
+
+# How many pages past the last matching running header a continuation may run
+# before it is stopped. A table often closes with a differently shaped page --
+# a totals sheet, a chart -- and dropping it loses real figures: 2025 F1 ends
+# on printed page 1104, "Totale autorizzazioni", whose margin reads
+# "Tabella F1 / Pagina 70 di 70". Kept small, since past this point the pages
+# are more likely to be the next table's than this table's.
+TAIL_PAGES = 2
+
+# A footer page number: up to four digits framed by the three dashes these
+# documents use, on either side or one side only ("– 1103 –", "- 1103-",
+# "1103 -"). Dashes strictly outside the digits, so a numeric range inside a
+# table cell ("27 - 15") is not mistaken for one. Roman numerals do not match,
+# which is what keeps the index page of 2025 ("– III –") out of the sequence.
+PAGE_NUMBER_RE = re.compile(r"^\s*[–—-]?\s*(\d{1,4})\s*[–—-]?\s*$")
 
 
 # ==========================================================================
@@ -371,6 +405,73 @@ def normalise_digit_one(code):
 
 
 # ==========================================================================
+# per-page facts used by the cross-volume stitch
+# ==========================================================================
+
+def is_blank(lines):
+    """True for a separator page: no text, or the Italian "PAGINA BIANCA"."""
+    if not lines:
+        return True
+    return len(lines) == 1 and "BIANCA" in lines[0].upper()
+
+
+def trim_trailing_blanks(info, facts):
+    """Pull a span's end back off the blank leaves closing the volume.
+
+    The last table of a volume runs to the last physical page, which is
+    usually a "PAGINA BIANCA" separator: two of them close 2025 vol. I. They
+    belong to no table, and leaving them attached also hides the cut that
+    continuation_pages looks for. Never trims past the table's own start.
+    """
+    while info["end"] > info["start"] and facts["blank"].get(info["end"]):
+        info["end"] -= 1
+    info["pages"] = info["end"] - info["start"] + 1
+
+
+def printed_numbers(lines):
+    """Page numbers printed in the footer, as a SET of candidates.
+
+    This is the one thing readable on a garbled page: the digits are drawn in
+    a font whose ToUnicode survived even where the letters were subsetted into
+    the Private Use Area, so pypdf returns "– 1103 –" on pages whose text is
+    otherwise unreadable. Verified on 2025, where all 70 pages of Tabella F1
+    report their number -- the 62 of them in vol. II being garbled beyond
+    reading.
+
+    A page can carry more than one. 2021 tom. II prints the volume-local
+    number *and* the volume-wide one, so the result is a set and callers test
+    the relation they need rather than picking a value. Lines without a dash
+    are ignored: a bare "2015" is a year in a title rather than a page
+    number, and the 2025 index prints "– III –" in roman numerals.
+    """
+    found = set()
+    for line in lines:
+        match = PAGE_NUMBER_RE.match(line)
+        if match and any(c in "-–—" for c in line):
+            found.add(int(match.group(1)))
+    return found
+
+
+def header_fingerprint(lines):
+    """A running-header signature, comparable across volumes.
+
+    Every page of a table repeats the table's title, so the first line of the
+    text identifies the group; consecutive different tables differ. On garbled
+    pages the letters are PUA, but each PUA codepoint stands for exactly one
+    original character, so two pages carrying the same header produce
+    byte-identical strings -- including across volumes, which is what the
+    continuation check compares. Confirmed on 2025: the F1 pages in vol. I
+    (p1040-1046) and in vol. II (p5-64) share one fingerprint, F2's does not.
+
+    Digits are stripped, because a running header usually ends with the page
+    number, which changes on every page.
+    """
+    if not lines:
+        return ""
+    return re.sub(r"\s+", " ", re.sub(r"\d+", " ", lines[0])).strip()[:80]
+
+
+# ==========================================================================
 # index / vocabulary
 # ==========================================================================
 
@@ -546,7 +647,7 @@ def scan_bookmarks(reader):
 
 
 def scan_headers(reader, vocabulary, family, stamps=None):
-    """{code: first page}, {code: [pages]}, and corruption tallies.
+    """{code: first page}, {code: [pages]}, per-page facts, corruption tallies.
 
     `stamps`, when given, is filled with {page: "Pagina N di X"} for the pages
     that carry one, in the same pass. The pass reads every page of the volume
@@ -556,6 +657,7 @@ def scan_headers(reader, vocabulary, family, stamps=None):
     starts, hits = {}, {}
     unassigned, garbled, ciphered = [], [], []
     weak, styles = {}, {}
+    blank, numbers, fingerprints = {}, {}, {}
     for i, page in enumerate(reader.pages):
         page_no = i + 1
         try:
@@ -570,6 +672,13 @@ def scan_headers(reader, vocabulary, family, stamps=None):
         elif is_ciphered(text):
             ciphered.append(page_no)
         lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+        # Recorded before the index/blank early-exits below: the stitch needs
+        # to know which pages are numbered content even when they carry no
+        # table code at all, which is exactly the leading region of a volume
+        # that continues the previous one.
+        blank[page_no] = is_blank(lines)
+        numbers[page_no] = printed_numbers(lines)
+        fingerprints[page_no] = header_fingerprint(lines)
         if not lines or is_index_page(lines):
             continue
 
@@ -589,7 +698,8 @@ def scan_headers(reader, vocabulary, family, stamps=None):
             if style == 1 and "ELENCO TABELLE" not in text:
                 weak[code] = page_no
         hits[code].append(page_no)
-    return starts, hits, weak, styles, unassigned, garbled, ciphered
+    return (starts, hits, weak, styles, unassigned, garbled, ciphered,
+            {"blank": blank, "numbers": numbers, "fingerprints": fingerprints})
 
 
 def body_starts(reader, vocabulary):
@@ -633,9 +743,8 @@ def build_manifest(reader, vocabulary, counts):
     embedded = scan_bookmarks(reader)
     family = detect_family(reader, vocabulary)
     stamps = {}
-    header, hits, weak, styles, unassigned, garbled, ciphered = scan_headers(
-        reader, vocabulary, family, stamps
-    )
+    (header, hits, weak, styles, unassigned, garbled, ciphered,
+     facts) = scan_headers(reader, vocabulary, family, stamps)
 
     # A single-page hit is a prose cross-reference, not a table -- but only for
     # style 3, which cannot tell a running header from "come da elencazione
@@ -690,6 +799,18 @@ def build_manifest(reader, vocabulary, counts):
             info["index_pages"] = counts[code]
             info["index_agrees"] = counts[code] == info["pages"]
 
+    # The final run otherwise ends on the last physical page, which in most
+    # volumes is a blank separator (2025 vol. I: p1047-1048 are "PAGINA
+    # BIANCA"). Those pages belong to no table, and leaving them attached
+    # would also make the cut that continuation_pages looks for invisible.
+    # The index cross-check is redone here, having been computed against the
+    # untrimmed span.
+    if ordered:
+        code, info = ordered[-1]
+        trim_trailing_blanks(info, facts)
+        if code in counts:
+            info["index_agrees"] = counts[code] == info["pages"]
+
     return {
         "family": family,
         "page_count": last_page,
@@ -703,26 +824,291 @@ def build_manifest(reader, vocabulary, counts):
         "ciphered_pages": len(ciphered),
         "stamped_pages": len(stamps),
         "trimmed": trimmed,
+    }, facts
+
+
+# ==========================================================================
+# tables that cross a volume boundary
+# ==========================================================================
+
+def stitch(prev_manifest, prev_facts, nxt_manifest, nxt_facts,
+           prev_name, nxt_name):
+    """Record, on `nxt_manifest`, the pages it inherits from `prev_manifest`.
+
+    Volumes of a year are consecutive parts of one document, and a table may
+    straddle the join: 2025 Tabella F1 is printed pages 1035-1042 in volume I
+    and 1043-1104 in volume II, seventy pages in all, its margin carrying
+    "Tabella F1 / Pagina 70 di 70" on the last one.
+
+    Because the split is per volume, the volume holding the tail used to write
+    its file over the one holding the head, and only the tail survived. Both
+    halves now go into a single Out/PDF/<code>/<code><year>.PDF.
+    """
+    found = continuation_pages(prev_manifest, prev_facts, nxt_manifest, nxt_facts)
+    if not found:
+        return None
+    code, start, end = found
+    head = prev_manifest["tables"][code]
+    nxt_manifest.setdefault("continued", {})[code] = {
+        "from_volume": prev_name,
+        "from_start": head["start"],
+        "from_end": head["end"],
+        "start": start,
+        "end": end,
+        "pages": end - start + 1,
+        "total_pages": head["pages"] + (end - start + 1),
     }
+    return code
+
+
+def last_numbered_page(facts):
+    """The last page of a volume that carries a printed page number.
+
+    Blanks and the cover/index pages have none, so this is where the real
+    content stops: 1046 on 2025 vol. I (1048 physical pages), 1046 on
+    2023 vol. I. It is also what "the table runs to the end of the volume"
+    means, as opposed to running to the last physical page.
+    """
+    numbered = [p for p, nums in facts["numbers"].items() if nums]
+    return max(numbered) if numbered else None
+
+
+def first_numbered_page(facts):
+    """The first page of a volume that carries a printed page number."""
+    numbered = [p for p, nums in facts["numbers"].items() if nums]
+    return min(numbered) if numbered else None
+
+
+# How much a detection is trusted when one table code turns up in two volumes
+# of the same year and only one copy can be kept. The bookmark tree is
+# human-authored, a run of header hits is the detector's own evidence, and a
+# title repeat is the weakest of the three.
+SOURCE_RANK = {"embedded": 3, "header": 2, "title": 1}
+
+
+def runs_to_the_end(volume, info):
+    """True if a span reaches the last numbered page of its own volume."""
+    end = last_numbered_page(volume["facts"])
+    return bool(end and info["end"] >= end)
+
+
+def halves_join(volumes, earlier, later):
+    """True if one detected span continues straight into the next.
+
+    Consecutive means exactly that: the volumes are neighbours, the earlier
+    copy runs to the last numbered page of its own volume, and the later one
+    starts no later than the first numbered page of its own.
+    """
+    i, info = earlier
+    j, other = later
+    if j != i + 1:
+        return False
+    end = last_numbered_page(volumes[i]["facts"])
+    start = first_numbered_page(volumes[j]["facts"])
+    return bool(end and start
+                and info["end"] >= end and other["start"] <= start)
+
+
+def resolve_repeats(volumes):
+    """Settle a table code that was detected in more than one volume.
+
+    One code means one file, so a repeat has to be resolved rather than
+    concatenated. Three cases are real in the archive and only the third is a
+    split:
+
+      * **the same table printed twice.** 2021 tom. I and tom. II both carry
+        the MAE tables: A1 spans 295 pages in each, down to the page, and the
+        opening pages are identical. One copy belongs in the output.
+      * **two different tables sharing a code.** 2021 tom. II and VOL. II both
+        detect an M1, 8 and 13 pages of different content. Neither is the
+        other's continuation and concatenating them would invent a table, so
+        the better-attested copy is kept and the other reported.
+      * **one table split across the join, both halves readable.** The halves
+        are consecutive by construction, and only then are both kept.
+
+    The losers are marked `kept = False` for the writer to skip.
+    """
+    by_code = {}
+    for idx, volume in enumerate(volumes):
+        for code in volume["manifest"]["tables"]:
+            by_code.setdefault(code, []).append(idx)
+
+    for code, holders in by_code.items():
+        if len(holders) < 2:
+            continue
+        copies = [(i, volumes[i]["manifest"]["tables"][code]) for i in holders]
+        if all(halves_join(volumes, a, b) for a, b in zip(copies, copies[1:])):
+            continue
+        # Keep the best-attested copy. A human-authored bookmark outranks anything
+        # the header scan inferred, the same principle the per-volume detectors
+        # already follow. Between two header-scan copies, prefer the one that
+        # does not run to the end of its volume: that is the shape an
+        # over-extension takes (2016 and 2019 vol. I each read a body line as
+        # "M1" and swallowed the rest of the volume with it, while vol. II
+        # holds the real 10-page M1). Then the index cross-check, then reading
+        # order.
+        best = max(copies, key=lambda pair: (
+            SOURCE_RANK.get(pair[1]["source"], 0),
+            not runs_to_the_end(volumes[pair[0]], pair[1]),
+            bool(pair[1].get("index_agrees")),
+            -pair[0],
+        ))
+        for idx, info in copies:
+            if idx == best[0]:
+                info["kept"] = True
+                continue
+            info["kept"] = False
+            volumes[idx]["manifest"].setdefault("dropped", {})[code] = {
+                "volume": volumes[idx]["label"],
+                "start": info["start"],
+                "end": info["end"],
+                "pages": info["pages"],
+                "kept_from": volumes[best[0]]["label"],
+                "reason": "stesso codice in più volumi, non uno spezzamento",
+            }
+
+
+def number_joins(here, there):
+    """True if some printed number in `there` follows one in `here` by one.
+
+    Volume N ends at printed page 1042 and volume N+1 opens at 1043, so the
+    two volumes are one document and a table cut at the join continues. When
+    a volume restarts its numbering (2019: vol. I ends at 824, vol. II opens at
+    1) nothing joins and no continuation is claimed.
+
+    A page may offer several candidates -- 2021 tom. II prints the volume
+    local number and the volume-wide one -- so any pairing is accepted rather
+    than a single guess.
+    """
+    return any(b == a + 1 for a in here for b in there)
+
+
+def continuation_pages(prev_manifest, prev_facts, nxt_manifest, nxt_facts):
+    """Pages of `nxt` that carry on the table cut at the end of `prev`.
+
+    Returns (code, first_page, last_page) or None.
+
+    A table is treated as cut when it reaches the last numbered page of its
+    volume: nothing else claims those pages, so the run is not complete and
+    the next volume must be holding the rest. The claim is then made
+    conservative, because gluing the wrong pages in is worse than missing a
+    join, and the next volume opening on something else is the normal case --
+    2023 vol. III starts the Agenzia delle Dogane relations, where vol. II
+    ended on Tabella UE. Three tests have to agree:
+
+      * the next volume must open with numbered pages of its own, before its
+        first table, so there is somewhere to continue into;
+      * those pages must carry the printed numbers the join implies, each the
+        next integer of the last (number_joins, then consecutive to the end of
+        the run). The volumes are one document, numbered continuously, so a
+        run that continues shows it;
+      * their running header must be the one the cut table ended on, read
+        from the previous volume. This is the test that says "same table" and
+        it is what rejects 2023: Dogane pages do not carry the MEF header
+        that UE's tail carries.
+
+    The last few pages of a table are allowed to look different -- the
+    "Totale autorizzazioni" sheet of 2025 F1, printed 1104, opens with its
+    own line and is still F1, its margin reading "Tabella F1 / Pagina 70 di
+    70". Hence TAIL_PAGES rather than a strict run of equal headers.
+    """
+    tables = prev_manifest["tables"]
+    if not tables:
+        return None
+    code, info = max(tables.items(), key=lambda kv: kv[1]["start"])
+    prev_last = last_numbered_page(prev_facts)
+    if prev_last is None or info["end"] < prev_last:
+        return None
+
+    first = first_numbered_page(nxt_facts)
+    if first is None or not nxt_manifest["tables"]:
+        return None
+    nxt_start = min(i["start"] for i in nxt_manifest["tables"].values())
+    if first >= nxt_start:
+        return None
+
+    # The running header the cut table ends on, read from the previous volume
+    # so that a header repeated by an unrelated page cannot pose as the match.
+    tail = Counter(
+        prev_facts["fingerprints"][p]
+        for p in range(max(info["start"], info["end"] - 7), info["end"] + 1)
+        if prev_facts["fingerprints"][p]
+    ).most_common(1)
+    if not tail:
+        # No readable header on the tail pages, so the header test cannot
+        # vouch for anything and nothing is glued.
+        return None
+    expected = tail[0][0]
+
+    # Printed numbers, in two steps. First the join: the next volume's first
+    # numbered page must be the successor of the previous volume's last one
+    # (on 2025, printed 1042 then 1043 -- the two volumes are one document).
+    # Then, within the next volume, the numbers must run consecutively, which
+    # is what a continuation looks like and what a new section cannot fake: a
+    # page whose footer is unreadable ends the run rather than letting it
+    # bridge a gap. A page that prints two numbers (2021 tom. II carries the
+    # volume-local one alongside) advances if either of them does.
+    prev_numbers = prev_facts["numbers"][prev_last]
+    if not number_joins(prev_numbers, nxt_facts["numbers"][first]):
+        return None
+
+    run, seen = [], None
+    for p in range(first, nxt_start):
+        numbers = nxt_facts["numbers"].get(p) or set()
+        if not numbers or (seen and not numbers & {n + 1 for n in seen}):
+            break
+        seen = numbers
+        run.append(p)
+    if not run or nxt_facts["fingerprints"].get(run[0]) != expected:
+        return None
+
+    # The run may stop early on a header change; the last TAIL_PAGES pages of
+    # it are kept regardless, since a table often ends differently shaped.
+    matched = 0
+    for idx, p in enumerate(run):
+        if nxt_facts["fingerprints"].get(p) != expected:
+            break
+        matched = idx
+    last = run[min(matched + TAIL_PAGES, len(run) - 1)]
+    return code, first, last
 
 
 # ==========================================================================
 # output
 # ==========================================================================
 
-def split_pdf(reader, manifest, out_root, table, year):
+def split_pdf(readers, manifests, out_root, year):
     """Write one PDF per table under <out_root>/PDF/<tabella>/<tabella><anno>.PDF.
 
     The directory is named for the table CODE, not the source volume, so
     Out/PDF/AA/AA2023.PDF holds Tabella AA from whichever volume carried it.
     The year is a filename suffix rather than a directory level, so one
     folder per table holds one file per reporting year.
+
+    `readers` and `manifests` are parallel sequences, one entry per volume of
+    the year. A table is written once, from the volume that detected it; when
+    it continues into the next volume, that volume's manifest carries the
+    leading pages under "continued", and they are appended here so both halves
+    land in the same file. Previously each volume wrote its own file over the
+    same name, and whichever ran last won: 2025 F1 lost the 8 pages of vol. I.
     """
+    # code -> list of (reader, first, last), in volume order. A copy of a table
+    # resolved away by resolve_repeats is skipped: one code, one file.
+    plan = {}
+    for reader, manifest in zip(readers, manifests):
+        for code, info in manifest["tables"].items():
+            if info.get("kept") is False:
+                continue
+            plan.setdefault(code, []).append((reader, info["start"], info["end"]))
+        for code, cont in manifest.get("continued", {}).items():
+            plan.setdefault(code, []).append((reader, cont["start"], cont["end"]))
+
     written = []
-    for code, info in manifest["tables"].items():
+    for code, segments in plan.items():
         writer = PdfWriter()
-        for p in range(info["start"], info["end"] + 1):
-            writer.add_page(reader.pages[p - 1])
+        for reader, start, end in segments:
+            for p in range(start, end + 1):
+                writer.add_page(reader.pages[p - 1])
         folder = Path(out_root, OUT_DIR, "PDF", code)
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{code}{year}.PDF"
@@ -776,6 +1162,17 @@ def report(manifest, label):
                 and not i["index_agrees"]]
         print(f"    index check: {agree}/{len(checked)} spans agree with the "
               f"index page counts, {len(mism)} mismatch {mism[:4]}")
+    for code, cont in manifest.get("continued", {}).items():
+        print(f"    continued  : {code} carries on from {cont['from_volume']} "
+              f"p{cont['from_end']}, here p{cont['start']}-{cont['end']} "
+              f"({cont['pages']} pages) -> one PDF of {cont['total_pages']}")
+    dropped = manifest.get("dropped", {})
+    if dropped:
+        print(f"    duplicate  : {len(dropped)} code(s) found in another volume "
+              f"of the same year and not a split; kept copy wins")
+        for code, info in list(dropped.items())[:8]:
+            print(f"        {code:5} p{info['start']}-{info['end']} "
+                  f"({info['pages']} pp) dropped, kept from {info['kept_from']}")
 
 
 # ==========================================================================
@@ -805,12 +1202,18 @@ def parse_volume(stem):
 def report_year(report_path):
     """Reporting year from the reports_185_1990/<anno>/ path."""
     m = re.search(rf"{REPORTS_DIR}[/\\](\d{{4}})", str(report_path))
-    if not m:
-        raise ValueError(
-            f"Anno non trovato in '{report_path}': il percorso deve essere "
-            f"'{REPORTS_DIR}/<anno>/<file>.pdf'"
-        )
-    return m.group(1)
+    if m:
+        return m.group(1)
+    # Outside that layout -- an absolute path, a copy renamed -- fall back to
+    # the filename, which the archive prefixes with the reference year because
+    # doc numbering restarts each legislature.
+    m = re.search(r"(?<!\d)(\d{4})(?!\d)", Path(str(report_path)).stem)
+    if m:
+        return m.group(1)
+    raise ValueError(
+        f"Anno non trovato in '{report_path}': il percorso deve essere "
+        f"'{REPORTS_DIR}/<anno>/<file>.pdf'"
+    )
 
 
 def detect_year(reports_dir=REPORTS_DIR):
@@ -881,6 +1284,27 @@ def year_from_path(path):
         return "?"
 
 
+def group_by_year(jobs):
+    """Regroup (report, year) jobs into {year: [report, ...]}, in volume order.
+
+    The volumes of a year have to meet each other before any of them is
+    written, because a table may run from one into the next. Order within the
+    year is by parsed volume number, with the filename as the tie-break: that
+    is what makes 2021 TOMO I -> TOMO II -> VOLUME II come out in reading
+    order despite the colliding volume-2 names.
+
+    A path that yields no year at all still gets a group, so those volumes are
+    processed but never stitched: `main` refuses to join a boundary whose two
+    halves cannot be attributed to the same year.
+    """
+    grouped = {}
+    for report, year in jobs:
+        grouped.setdefault(year, []).append(report)
+    for reports in grouped.values():
+        reports.sort(key=lambda p: (parse_volume(Path(p).stem) or 0, p))
+    return grouped
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Estrae una tabella per PDF dalla relazione L.185/1990.",
@@ -903,41 +1327,67 @@ def main(argv=None):
                         help="scrivi anche il manifest JSON in questo percorso")
     args = parser.parse_args(argv)
 
-    jobs = collect_jobs(args)
+    jobs = group_by_year(collect_jobs(args))
     print("=" * 70)
-    print(f"Reports2PDFTables — {len(jobs)} volume/i")
+    print(f"Reports2PDFTables — {sum(len(v) for v in jobs.values())} volume/i, "
+          f"{len(jobs)} anno/i")
     print("=" * 70)
 
     total = 0
-    for report, year in jobs:
-        label = Path(report).stem
-        try:
-            reader = PdfReader(report, strict=False)
-        except Exception as exc:
-            print(f"{label}: apertura fallita: {exc}\n")
-            continue
-        vocabulary, counts = read_index(reader)
-        manifest = build_manifest(reader, vocabulary, counts)
-        report_manifest(manifest, f"{label} (y={year})")
-        total += len(manifest["tables"])
+    for year, reports in jobs.items():
+        # Every volume of the year is opened before any of them is written:
+        # a table that runs past a volume boundary is only visible once the
+        # next volume's first table is known, and the PDF is written once from
+        # both halves. One entry per volume that opened, so the labels stay
+        # aligned with their manifests if one of them does not.
+        volumes = []
+        for report in reports:
+            label = Path(report).stem
+            try:
+                reader = PdfReader(report, strict=False)
+            except Exception as exc:
+                print(f"{label}: apertura fallita: {exc}\n")
+                continue
+            vocabulary, counts = read_index(reader)
+            manifest, page_facts = build_manifest(reader, vocabulary, counts)
+            volumes.append({"label": label, "path": report, "reader": reader,
+                            "manifest": manifest, "facts": page_facts})
+
+        for idx in range(len(volumes) - 1):
+            if year == "?":
+                print("    (anno non determinato: nessun join fra i volumi)")
+                break
+            stitch(volumes[idx]["manifest"], volumes[idx]["facts"],
+                   volumes[idx + 1]["manifest"], volumes[idx + 1]["facts"],
+                   volumes[idx]["label"], volumes[idx + 1]["label"])
+
+        resolve_repeats(volumes)
+
+        for volume in volumes:
+            report_manifest(volume["manifest"], f"{volume['label']} (y={year})")
+            total += len(volume["manifest"]["tables"])
 
         if args.manifest:
             target = Path(args.manifest)
             target.parent.mkdir(parents=True, exist_ok=True)
             with open(target, "a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"report": report, "year": year,
-                                    **manifest}, ensure_ascii=False) + "\n")
+                for volume in volumes:
+                    fh.write(json.dumps({"report": volume["path"], "year": year,
+                                        **volume["manifest"]},
+                                        ensure_ascii=False) + "\n")
 
-        if not args.dry_run and manifest["tables"]:
+        if not args.dry_run and any(v["manifest"]["tables"] for v in volumes):
             out_root = args.out or args.base or "."
-            written = split_pdf(reader, manifest, out_root, label, year)
+            written = split_pdf([v["reader"] for v in volumes],
+                                [v["manifest"] for v in volumes], out_root, year)
             print(f"    wrote      : {len(written)} PDF in "
                   f"{Path(out_root, OUT_DIR, 'PDF')}/<tabella>/<tabella>{year}.PDF")
         print()
-        del reader
+        del volumes
 
     print("=" * 70)
-    print(f"Totale: {total} tabelle in {len(jobs)} volume/i")
+    print(f"Totale: {total} tabelle in "
+          f"{sum(len(v) for v in jobs.values())} volume/i")
     if args.dry_run:
         print("(dry-run: nessun PDF scritto)")
 

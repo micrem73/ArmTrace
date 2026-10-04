@@ -105,6 +105,11 @@ year has two files claiming the same volume — currently **2021 volume 2**, whe
 `2021_LXVII_n5_TOMO_II.pdf` and `2021_LXVII_n5_VOLUME_II.pdf` are two
 *different* documents (844 and 1070 pages) with colliding names.
 
+**A year is processed as a whole.** Every volume named in one run is read before
+any of them is written, because a table may run from one volume into the next.
+A single volume (`--volume 1`) still works, but a table cut at that volume's
+end can only be reported as cut — see *Tables that cross a volume boundary*.
+
 **How tables are found.** Two independent detectors, **unioned rather than
 ranked**:
 
@@ -121,20 +126,22 @@ page *counts*, used to cross-check derived spans; and the table **title**
 repeated through the body, for family 3 where the codes appear only on the
 index page.
 
-**How trailing pages are removed.** Deriving a table's end from "the page
-before the next table starts" over-runs whenever the source document brought
-junk with it. Each table was exported as a document of its own and pasted into
-the volume, so every page keeps that document's own pagination, printed as a
-rotated stamp in the right margin: **"Pagina N di X"**. The volume folio
-(`– 1035 –`) runs continuously across tables and says nothing about
-boundaries; the stamp is the only witness of a table's real length.
+### How trailing pages are removed
 
-So if the first page reads `Pagina 1 of X`, the final page must read
+Deriving a table's end from "the page before the next table starts" over-runs
+whenever the source document brought junk with it. Each table was exported as a
+document of its own and pasted into the volume, so every page keeps that
+document's own pagination, printed as a rotated stamp in the right margin:
+**"Pagina N di X"**. The volume folio (`– 1035 –`) runs continuously across
+tables and says nothing about boundaries; the stamp is the only witness of a
+table's real length.
+
+So if the first page reads `Pagina 1 di X`, the final page must read
 `Pagina Y of X`. A different total, or no stamp at all, means the page came
 from somewhere else and everything after the last agreeing page is dropped.
 `Y` is normally `X` but need not be: **F1 is the first half of table F, which
-is split across the two volumes of 2025**, so it ends at `Pagina 8 di 12` and
-only the totals are compared, never the page numbers.
+straddles the two volumes of 2025** (see below), so its 8 pages in volume I end
+at `Pagina 8 di 70` and only the totals are compared, never the page numbers.
 
 Verified on the three reported cases and two more found the same way:
 
@@ -169,6 +176,77 @@ Three guards, because this deletes pages:
 Dropping pages loses nothing from the split: they are still in the volume and
 still inside the next table's span, so they are written with that table. This
 only shortens one output file.
+
+### Tables that cross a volume boundary
+
+The volumes of a year are consecutive parts of one document, numbered
+continuously, and a table may straddle the join. **2025 Tabella F1** is the case
+in point: printed pages 1035–1042 close volume I, printed 1043–1104 open volume
+II, and the margin of the last page reads `Tabella F1 / Pagina 70 di 70` — one
+table of seventy pages. `Out/PDF/F1/F12025.PDF` is that table.
+
+The split used to be per volume, so the volume holding the tail wrote its file
+over the one holding the head, and only the tail survived. Every volume of a
+year is now read before any is written, and a table is written once, from all
+the volumes it spans.
+
+`stitch()` only claims the pages when three independent things agree, because
+the next volume opening on something *else* is the normal case (2023 vol. III
+starts the Agenzia delle Dogane relations, where vol. II ended on Tabella UE):
+
+| test | rejects |
+|---|---|
+| the cut table must reach the last page of its volume that carries a printed number — blanks and covers carry none | a table that simply ends there |
+| the next volume's first numbered page must be the successor of that page's, and the run taken must stay consecutive | a volume that restarts its own numbering (2019) |
+| the pages taken must carry the running header the cut table ended on | a new section (2023 Dogane vs UE's MEF header) |
+
+The last test works on garbled pages too, which matters because that is where
+a split table hides: each Private Use Area codepoint stands for exactly one
+original character, so two pages carrying the same header produce
+byte-identical strings, in either volume.
+
+Two details are deliberate:
+
+- **`TAIL_PAGES = 2`.** A table often closes on a differently shaped page, and
+  F1's last page is its `Totale autorizzazioni` sheet — dropping it would lose
+  the figures. Beyond two such pages the pages are more likely to be the next
+  table's.
+- **An unreadable footer ends a run** rather than letting it bridge a gap in
+  the numbering: a page whose number cannot be checked may hide anything.
+
+Nothing is guessed silently. The console prints the join, the JSON manifest
+records it under `continued`, and a table that reaches the end of a volume
+without a continuation is left alone rather than padded with front matter.
+
+Verified: `--year 2025 --volume both` writes `F1/F12025.PDF` with **70 pages**,
+printed 1035 → 1104, first page `Pagina 1 di 70`, last `Pagina 70 di 70`.
+
+Every other volume boundary in 2012, 2016, 2019, 2021, 2022 and 2023 was
+checked the same way: **2025 F1 is the only split in the archive**, and none of
+them produces a false join. Two reach the numbering test and are turned away by
+the header test — 2022 vol. II and 2021 VOLUME II both open on a new section.
+
+### A code in two volumes is not always a split
+
+One code means one file, so a repeat has to be resolved rather than joined.
+**2021 prints the MAE tables twice**: tom. I carries `A1`…`P2` (bookmarked,
+page counts corroborated by its index) and tom. II carries the same tables again
+— `A1` spans 295 pages in each, down to the page, and the opening pages are
+identical. VOL. II prints seven of those codes a third time. Before, each
+volume wrote over the one before it; now `resolve_repeats()` keeps the
+best-attested copy (bookmark > header run > title repeat, earliest volume
+breaking a tie) and reports what it dropped:
+
+```
+duplicate  : 27 code(s) found in another volume of the same year and not a
+             split; kept copy wins
+    A1    p71-365 (295 pp) dropped, kept from 2021_LXVII_n5_TOMO_I
+```
+
+Only when the two spans are *consecutive* — the first ends where its volume
+ends, the second starts where its volume starts, and the volumes are
+neighbours — are both kept and joined, which is the readable-halves version of
+a split. Anything else would invent a table out of two unrelated ones.
 
 **Status:** works. Verified across all 28 supported volumes — **479 tables,
 zero failures**, every volume producing a manifest. Coverage per year is in
@@ -296,11 +374,64 @@ alternative for the glued form (`tabellaAA_2025`).
 Several bookmark trees carry container entries with **no page**
 (`'araba.pdf'`, `'0001.pdf'`, `'0001.pdf'`). Skip them.
 
-### 2025 vol. I is *not* missing bookmarks
+### 2025 vol. I ends on F1, which continues into vol. II
 
-It ends at `F1` (p1039–1048, the last 10 pages). `F2`…`P2` live in
-**2025 VOLUME_II**, whose outline starts at `F2` (p67). The two volumes
-continue each other. Do not "fix" this.
+Volume I stops at `F1`: its last eight content pages, printed 1035–1042, the
+two physical pages after them being `PAGINA BIANCA`. `F2`…`P2` live in
+**2025 VOLUME_II**, whose outline starts at `F2` (printed 1105). The two volumes
+continue each other, and **F1 is one table of 70 pages spanning the join** —
+printed 1035–1104, `Pagina 70 di 70` in the margin of the last one. The volume
+index on page 3 of vol. II agrees:
+`MINISTERO DEGLI AFFARI ESTERI … (segue) Pag.1043`, `Tabelle » 1043`,
+`MINISTERO DELLA DIFESA » 1232`.
+
+Both halves were being written to the same filename and one overwrote the
+other. Fixed by the cross-volume stitch described above; run the year with
+`--volume both` (or `--all`), not one volume at a time.
+
+The other 30 family-2 codes are unaffected: `A1`…`F1` in vol. I and `F2`…`P2`
+in vol. II account for all 31 of `FAMILY2_CODES`, which is what proves the 62
+pages in between belong to F1 and not to a table nobody detected.
+
+### 2021 tom. I and tom. II carry the same tables
+
+Not a split: a duplicate printing. tom. I and tom. II both contain the MAE
+family-2 tables, `A1` spanning 295 pages in each with an identical opening page,
+and VOL. II repeats seven of the codes. The per-volume split used to overwrite
+whichever came first, so the output was a coin toss on which copy survived; the
+bookmarked, index-corroborated copy is now chosen on purpose (see *A code in two
+volumes is not always a split*).
+
+### Reading the printed page number — and the volumes that have none
+
+The stitch (and the "where does the content stop" question in general) rests on
+the number printed in the footer, which survives even on garbled pages: the
+digits live in a font whose `ToUnicode` came through while the letters did not.
+`printed_numbers()` wants the digits framed by dashes, `– 1103 –`, `- 1103 -`
+or `1103 -`, and ignores anything else, so a bare `2015` in a title and the
+numeric range `27 - 15` inside a table cell are both left alone. Roman
+numerals do not match, which is what keeps the 2025 index (`– III –`) out of
+the sequence.
+
+Checked across the archive: 2016, 2019, 2021, 2022, 2023 and 2025 all print it
+this way. **2012 and 2013 do not** — their footer runs the number into the
+text, `Camera dei Deputati —  100 —  Senato della Repubblica`, so 2012 vol. II
+yields no page number at all and no join is attempted. That costs nothing: 2012
+vol. I is family 3 and vol. II is family 2, so no table can run across that
+join.
+
+A page can print two numbers (2021 tom. II carries the volume-local one next to
+the volume-wide one), so the result is a set and the tests ask whether *some*
+pairing holds rather than guessing which number is meant.
+
+### Margin stamps are the ground truth, but unreadable
+
+Every table page carries `Tabella <code>` and `Pagina N di M` in the rotated
+margin, which would settle every boundary exactly. It is not extractable: not
+by pypdf, not by `pdftotext -layout` — the letters are in the same broken
+subset font as the body text. Verified, then dropped. **Read the pages as
+images when a boundary has to be settled for certain** (`pdftoppm -png`), which
+is how the 70-page extent of F1 was confirmed.
 
 ### Three text-corruption classes, all unrecoverable
 
