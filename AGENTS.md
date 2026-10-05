@@ -68,14 +68,20 @@ strong signal the detectors work on it. Caveats:
   calls them.
 - **Nothing hardcodes a year.** It comes from the `reports_185_1990/<anno>/` path
   and is used as a filename suffix, so adding a year needs no code change.
-- **Output paths are `<authority>/[<article>/]<tabella><anno>`** — the path is
-  derived from the manifest key by `ontology.relative_path()`, and a code is
+- **Step 1 writes `Out/PDF/<authority>/[<article>/]<tabella><anno>`** — the path
+  is derived from the manifest key by `ontology.relative_path()`, and a code is
   unique only within (authority, article). Both steps must agree on the layout
   and on the suffix; step 2's `--year` matches the suffix, and it walks the tree
   with `rglob` because the article level is optional.
 - **The manifest key is the triple `(authority, article, code)`.** Do not key on
   the bare code anywhere: that is what let the Dogane overwrite MAE, and it would
   undo the whole point of the authority level.
+- **`VerifyTables.py` reads both output layouts** — the ministry tree above, and
+  the older `Out/PDF/<tabella>/<tabella><anno>` one folder per table — so it can
+  audit output written before the ministry tree landed. It never *writes* inside
+  `Out/PDF/` or `Out/CSV/`: it is an audit, and an audit that can alter what it
+  audits is not one. Everything it produces goes to `Out/VERIFY/`. Do not "fix"
+  a finding by editing the verifier's output paths.
 
 ---
 
@@ -176,6 +182,25 @@ Each of these is a bug that shipped.
   character, so `TAB_A1` has no word boundary around `TAB`. Use
   `(?<![A-Za-z])TAB[ ._]+` for the separated form plus a separate `tabella`
   alternative for the glued form (`tabellaAA_2025`).
+- **The rotated margin stamp arrives as two lines, and its code can also
+  arrive bare.** On the 2025 MEF charts pypdf yields `'Tabella'` on one line
+  and `'NN'` on the next, so neither `LEADING_CODE` (needs `Tabella AA` on one
+  line) nor `INLINE_CODE` (the same) can see it. `NN`, `OO`, `PP` and `GF` are
+  detected today only because the bookmark tree lists them. A detector that
+  wants the code off those pages needs a third shape.
+- **A bare capital in the body is not a code.** The Dogane annexes list
+  MG-table numbers in prose, and one of those lines is a lone `I`, 108 lines
+  down the page — which reads as Tabella I. Any rule accepting a bare code
+  line must gate it to the header region (the stamp sits at the top of the
+  page; `BARE_CODE_MAX_LINE = 8` in `VerifyTables.py`) **and** to a vocabulary
+  already restricted to codes that repeat.
+- **`is_garbled` is a ratio, so it fires on partly garbled pages too.** 2025
+  Tabella A1's last page is its `Totale Autorizzazioni` sheet with 128 Private
+  Use characters among 681 legible ones, 18.8% against a 15% threshold, and
+  is reported garbled. That is correct — the line is genuinely half
+  subsetted — but it means "garbled" covers partial as well as total loss.
+  Anything downstream must not read it as "this page is empty"; the verifier
+  skips the checks it cannot make instead of failing them.
 - **The 2012 index prints digit one as a capital `I`** (`Tabella DI`,
   `Tabella Gl` for `D1`/`G1`); `normalise_digit_one()` folds these back.
 - **An index row is not always one line.** `INDEX_ROW` is `$`-anchored, so a row
@@ -189,6 +214,20 @@ Each of these is a bug that shipped.
   multi-page `ELENCO` is truncated. 2024 vol. II's index starts at pdf p85 and
   lists only `AA`…`DD2` — **12 of the volume's 35** — with the rest continuing
   onto p86+. Keep reading while the following pages are still index pages.
+- **`normalise_digit_one` must never be applied unconditionally**: the 2025
+  art. 27 scheme has *both* `II` and `II1` as distinct tables, and folding maps
+  both onto `I1`, after which neither is recognisable. Tabella II's own first
+  page reads `Tabella II`. Fold only as a fallback — the code as printed wins
+  whenever the volume knows it (`fold()` in `VerifyTables.py`). A harvested
+  index is human-authored and printed correctly, so it needs no folding at all.
+- **`SEGNALAZIONI` in the top lines does not mean the page is an index.** The
+  2025 MEF table pages carry it in a running header of their own, so three
+  data pages of Tabella P2 classified as index pages and were reported as
+  trailing junk that does not exist. The 2025 MEF chart pages print
+  `ELENCO TABELLE` in that same header while being one table each, so trusting
+  the marker condemns `NN`, `OO`, `PP`, `GF`. What separates a real index is
+  how many codes it names: the MEF ELENCO lists fifteen on one page, a chart
+  page names one.
 - **Several bookmark trees carry container entries with no page** (`'araba.pdf'`,
   `'0001.pdf'`, 2024 vol. II's `'RELAZIONE ARMAMENTI - file MEF CORRETTO.pdf'`).
   Skip them.
@@ -439,6 +478,32 @@ annex titles and container entries.
   upstream of the data. The same reasoning put `is_pasted()` inside the page scan
   rather than in a pass of its own.
 
+### What the audit found (2025)
+
+`VerifyTables.py` run over the 81 exported 2025 tables: **55 PASS, 8 FAIL, 18
+WARN, 0 SKIP.** The eight failures, all corroborated by reading the source
+pages by hand:
+
+| file | finding |
+|---|---|
+| `MG8` | 20pp holding **ten** tables (MG8, MG10…MG18) |
+| `M` | holds `TAB N` on pp 292-312 |
+| `O` | holds `TAB P` on pp 58-76, then 63pp of narrative |
+| `MT7` | holds `TAB MT13` on pp 3-4, plus a trailing blank |
+| `P` | 6pp of Dogane relation prose; `Tab. P` is a mention |
+| `N` | 3pp of Dogane annex prose |
+| `E` | 222pp, last page carries a different document's stamp |
+| `F1` | 10pp, two trailing `PAGINA BIANCA` |
+
+Two of the eight are **stale output, not defects**: `E2025.PDF` and
+`F12025.PDF` were written 2026-10-03 10:43 and the trailing-trim fix landed
+2026-10-03 14:14, four hours later. Current step 1 produces 221 and 8, which
+the manifest confirms. Re-running step 1 clears both with no code change.
+
+Also worth knowing: `MG8`, `P`, `N` and `M`/`O`/`MT7` all sit in the Dogane
+annexes, which announce their tables in **prose** rather than an index, so
+nothing in the archive names them and only repetition can find them.
+
 ### Outstanding
 
 - **2024 is measured and failing — fix it before extending anything else.** Ten
@@ -446,6 +511,25 @@ annex titles and container entries.
   3, `A4` trimmed by 17 pages. Every cause is named in §4 and in *2024: measured,
   and wrong* above. It is also the year the README advertises, so it is the first
   thing a reader will run.
+- **`INLINE_CODE` cannot match a two-digit code, so ten 2025 tables are
+  invisible to step 1.** The pattern ends in `([A-Z]{1,3}\d?)` — one digit at
+  most — and its trailing `\b` then does the rest. For `TAB. MT13` the greedy
+  letters take `MT`, `\d?` takes `1`, and `\b` cannot hold between `1` and `3`;
+  every shorter reading fails it too, so the match is abandoned outright.
+  Measured: `'TAB. MT7' -> ['MT7']`, `'TAB. MT13' -> []`. `LEADING_CODE` and
+  `CODE_RE` share the defect. Consequence, found by `VerifyTables.py`: under the
+  old code-only output layout, `Out/PDF/MG8/MG82025.PDF` was twenty pages holding
+  **ten** tables — MG8, MG10…MG18, two pages each — and `Out/PDF/MT7/MT72025.PDF`
+  held MT13 on pp 3-4. None of those codes appears in any index or bookmark tree,
+  so nothing else in the pipeline can notice.
+  The fix is `\d{0,2}` plus a negative lookahead instead of `\b`, which is what
+  `VERIFIER_INLINE` in `VerifyTables.py` already does; **the generator is
+  deliberately untouched for now.** Do not "fix" the verifier back to the
+  shared pattern.
+  *Partly mitigated since:* the ministry tree now files them separately —
+  `DOG/A11C5BIS/MG10…MG18` each get their own file, 2pp apiece — because the
+  Dogane annex is keyed by article rather than by code. The pattern is still
+  wrong and still worth fixing.
 - 2015 and 2014 vol. I should join 2001–2010 in an explicit *unsupported* list
   rather than emitting a misleading 1-table split.
 - The 15 weak files (≤10 tables) need either a family-specific detector or an

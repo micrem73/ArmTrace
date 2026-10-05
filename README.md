@@ -584,6 +584,81 @@ bytes under an `.XLS` name. Emitting CSV removes the problem at its root rather
 than renaming around it — there is no engine that objects to a `.csv`, and no
 row, sheet or column ceiling to work against.
 
+### **VerifyTables.py**
+
+The audit step. Reads the per-table PDFs step 1 produced, reads the source
+volumes, and reaches its own conclusions about whether each file really is one
+complete, correctly named table.
+
+```bash
+./VerifyTables.py --year 2025
+./VerifyTables.py --from-year 2016 --to-year 2025
+./VerifyTables.py --year 2025 --dry-run        # verdicts only, no JSON
+./VerifyTables.py --year 2025 --sample 3        # first/middle/last pages only
+./VerifyTables.py --year 2025 --refresh         # ignore the cache
+```
+
+| Flag | Meaning |
+|---|---|
+| `--year` | reporting year, repeatable |
+| `--from-year` / `--to-year` | inclusive range |
+| `--all` | every year under `--reports-dir` |
+| `--out-root` | root holding `Out/` (default `--base`) |
+| `--reports-dir` | the source volumes (default `<base>/reports_185_1990`) |
+| `--manifest` | step 1's JSON manifest — **required** for the provenance check |
+| `--sample N` | read only N pages per file: fast, and less complete |
+| `--no-cache` / `--refresh` | ignore remembered results |
+| `--no-fingerprint` | skip the per-page content hash |
+| `--json` | report path (default `<out>/Out/VERIFY/verify-<year>.json`) |
+| `--dry-run` | print verdicts, write nothing |
+
+It writes **only** to `Out/VERIFY/`, never to `Out/PDF/` or `Out/CSV/` — an
+audit that can alter what it audits is not one.
+
+#### What it checks
+
+Four questions per file, each with its own witness:
+
+- **one table** — the `Pagina N di X` stamp is the only record of a table's
+  true length, because each table was exported as a document of its own and
+  pasted into the volume afterwards. Stamp total == page count means the file
+  *is* that document. Where the stamp is garbled the numbers cannot be read
+  but can still be **compared**: the subsetter gave one Private Use codepoint
+  per character, so two pages of one document agree character for character on
+  the total and a page from another does not. Second witness: the code printed
+  on each page, counted against a vocabulary built from codes that *repeat*.
+- **complete** — first page is page 1, the total never changes, no interior
+  page lacks the stamp, the index's page count agrees where it carries one,
+  and printed folios run consecutively (with the volume joins allowed).
+- **nothing else** — no blank separator, no ELENCO page, no
+  running-header-only page, no page belonging to another table at either end.
+- **correctly named** — the code on the file's own pages is the code in the
+  filename, and the title the index gives that code appears on page 1.
+
+Then per year: the **general INDICE** (which authority's tables start on which
+printed page) and the per-authority **ELENCO TABELLE SEGNALAZIONI** (every code
+with its title), plus the bookmark tree where one exists. Every code any of
+them lists must have a file; every file must have a code at least one lists.
+
+And the backbone: rebuild each volume's coverage and require every physical
+page to belong to exactly one table, or to one of an explicit list of
+non-table classes. A page claimed twice fails; a page claimed by nobody is
+listed.
+
+#### Verdicts
+
+`PASS` / `FAIL` / `WARN` / `SKIP`, each with a reason. `FAIL` is reserved for
+something demonstrably wrong. `WARN` means *not verifiable here* — no stamp on
+this volume, no index, garbled text — and never fails a run on its own,
+because a warning that turns the whole archive red is one nobody reads. A file
+can be structurally perfect and still unreadable (2025 `E` is garbled on all
+221 of its pages), so the JSON records the structural verdict and the
+legibility count separately.
+
+Per-file results are cached under `Out/VERIFY/.cache/`, keyed on the file's
+size and mtime **and** on the options that change the answer, so re-running
+after a detector change only re-verifies what moved.
+
 ### **Requirements**
 
 ```bash
