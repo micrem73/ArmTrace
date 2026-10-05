@@ -102,6 +102,21 @@ Each of these is a bug that shipped.
   steals the start of the real `Tabella UE` at p543. Resolved by the bookmark.
 - **Prose stop-list: do not put `E` or `I` in it.** Both are genuine family-2
   codes; suppressing them cost 4 tables on 2019 vol. I.
+- **A volume can carry an annex in a code scheme of its own, and it collides
+  with the year-mate's vocabulary.** 2024 vol. II is family 1 (`AA`…`UE`) from
+  p88, then the Agenzia delle Dogane annex takes over at printed 1707 (pdf p701,
+  running to the end of the volume) and is coded **`TAB. M` / `N` / `O` / `P`**
+  plus `MG1 MG3 MG4 MG9 MT1 MT7` (*sampled every 15th page, not yet enumerated*).
+  These are single letters, so **not** family 2, so they miss `FAMILY2_CODES` and
+  should be rejected. They are not: `page_code()` style 3 accepts any candidate
+  that *is* a family-2 code regardless of this volume's vocabulary, so `TAB. O`
+  is read as **`O1`**, `TAB. P` as **`P2`**, `TAB. M` as **`M2`**. That
+  manufactures five phantom tables in vol. II, and `P2` spans **p1113–1260
+  (148pp)**, swallowing the whole annex; `resolve_repeats()` then drops `O1` and
+  `P2` as duplicates of the *real* vol. I codes, which hides the mistake behind a
+  plausible-looking report. A code seen in a volume whose own vocabulary never
+  lists it is a cross-volume leak, not a table. Note this also dates the README's
+  "`MG1`…`MT7`, only from 2025": they are present in 2024.
 - **The trailing-page stamp needs its position, not just its shape.** The shape
   alone also matches body rows: `"MUNIZIONAMENTO CALIBRO 120 MM , APPOSITAMENTE"`
   (2025 vol. I p70) reads as `CALIBRO 120 MM ,` and cut **A1 from 537 pages to
@@ -120,8 +135,20 @@ Each of these is a bug that shipped.
   alternative for the glued form (`tabellaAA_2025`).
 - **The 2012 index prints digit one as a capital `I`** (`Tabella DI`,
   `Tabella Gl` for `D1`/`G1`); `normalise_digit_one()` folds these back.
+- **An index row is not always one line.** `INDEX_ROW` is `$`-anchored, so a row
+  whose *title* wraps is skipped whole. 2024 vol. I's `B5`, `B6` and `B7` all
+  break onto a second line, so the harvest returns **28 codes instead of 31**.
+  `B6` and `B7` are then still found by the header scan (they are in
+  `FAMILY2_CODES`), but **`B5` is lost outright** and all three lose the index
+  cross-check. Allow the title to run over a line, or fall back to the family
+  vocabulary when a wrapped row leaves a gap.
+- **`read_index()` stops at the first page that reaches eight codes**, so a
+  multi-page `ELENCO` is truncated. 2024 vol. II's index starts at pdf p85 and
+  lists only `AA`…`DD2` — **12 of the volume's 35** — with the rest continuing
+  onto p86+. Keep reading while the following pages are still index pages.
 - **Several bookmark trees carry container entries with no page** (`'araba.pdf'`,
-  `'0001.pdf'`). Skip them.
+  `'0001.pdf'`, 2024 vol. II's `'RELAZIONE ARMAMENTI - file MEF CORRETTO.pdf'`).
+  Skip them.
 
 ---
 
@@ -154,7 +181,7 @@ assumed.**
 | class | cause | affected |
 |---|---|---|
 | no text layer | scanned images | 2001–2010, ~52 chars/page, 13 files |
-| garbled | subset font, no `ToUnicode` | 2023 I 284pp, 2025 I 356pp, 2018 II 299pp, 2025 II 141pp, 2020 I 174pp (~1250pp) |
+| garbled | subset font, no `ToUnicode` | 2023 I 284pp, 2025 I 356pp, **2024 I 335pp**, 2018 II 299pp, 2025 II 141pp, 2020 I 174pp (~1585pp) |
 | ciphered | `/Identity-H`, no `ToUnicode`, no `/Differences` | 2017 I 287pp, 2022 I 66pp, 2016 I 28pp (~390pp) |
 
 ---
@@ -223,8 +250,10 @@ unrelated ones.
 
 ### Archive coverage
 
-Authoritative copy. Step 1 works for all 28 text-bearing volumes: **479 tables,
-zero failures**, every volume producing a manifest.
+Authoritative copy. Step 1 works for all 28 text-bearing volumes **other than
+2024**: **479 tables, zero failures**, every volume producing a manifest. 2024 was
+never in that count — it is measured here for the first time, and it does **not**
+pass, so "479, zero failures" was never a claim about it.
 
 | year | volume | family | pages | tables | status |
 |---|---|---|---|---|---|
@@ -240,11 +269,38 @@ zero failures**, every volume producing a manifest.
 | 2021 | TOMO_I / TOMO_II / VOL_II | 2 | 793 / 844 / 1070 | 31 / 27 / 8 | |
 | 2022 | II / I | 3 / 2 | 1088 / 1020 | **40** / 23 | |
 | 2023 | II / I / III | 1 / 2 / 2 | 580 / 946 / 518 | **35** / 31 / 5 | |
+| **2024** | **II / I** | **3✗ / 2** | **1260 / 1016** | **40 / 10** | **measured, failing** — see below |
 | 2025 | II / I | 3 / 2 | 1048 / 1048 | **65** / 16 | |
 
+### 2024: measured, and wrong
+
+`--year 2024 --volume both --dry-run` writes **50 manifest entries, 48 files**
+after `resolve_repeats()` drops 2. The correct answer is **31 + 35 = 66** plus
+the Dogane annex, so it is wrong in *both* directions at once. This is the year
+the README uses as its worked example, and it had never been run.
+
+| | vol. I (1016pp) | vol. II (1260pp) |
+|---|---|---|
+| family | 2 ✓ | **3 ✗** — it is family 1 |
+| ground truth | **31** codes, index at pdf p70 | **35** codes, bookmark tree |
+| detected | **10** — `A1 A2 A4 B6 B7 M1 N1 O1 P1 P2` | 35 real + **5 phantom** `O1 M2 N2 O2 P2` |
+| why | **335 of 1016 pages garbled**, so the header scan cannot see them; `B5` lost to the wrapped-row trap (§4) | the Dogane annex read as family-2 codes (§4) |
+| trim | fired on a year not in the list above: `A2 -5p`, `A4 -17p`; `B7` refused a 338pp trim as over the cap | — |
+| index check | **3/8** agree; `A1` 498/497, `M1` 10/9, `N1` 6/5, `O1` 3/2 — the off-by-ones are the trim | vocabulary truncated to 12/35 |
+
+Two more recorded facts, both useful as regression assertions:
+
+- **No 2024 table straddles the volume join.** Tables stop at printed 1000 (`P2`),
+  the folios run continuously (vol. I ends ~1010, vol. II restarts at 1011), so
+  `stitch()` must **not** fire here. The general `INDICE` at vol. II p3 is the
+  map: MAE *Tabelle » 66* (vol. I), MEF *Tabelle » 1091*, Dogane *Tabelle » 1707*.
+- **2024 vol. I has only three `Pagina vuota` bookmarks**, so its header traps
+  carry the whole detection — there is no fallback.
+
 **Weak files (≤10 tables): 15 of 28.** The 2012–2017 volumes are the weak
-cluster. Deferred years are on disk (13 directories: 2001–2008, 2010, 2012–2015)
-and their state is known, not unknown:
+cluster. (2024 vol. I also lands at 10, but it is not *weak* — it is broken, see
+below; do not fold it into this count.) Deferred years are on disk (13
+directories: 2001–2008, 2010, 2012–2015) and their state is known, not unknown:
 
 - 2001–2010: no text layer (scanned), ~52 chars/page, 13 files.
 - 2009, 2011: sourced from the SIPRI mirror, not the Camera archive.
@@ -256,13 +312,19 @@ and their state is known, not unknown:
   explicit *unsupported* list rather than emitting a misleading split.
 - 2014 vol. II, 2016, 2017: the weak cluster.
 
-**Bookmarks: exactly 5 volumes, 162 codes** — `2021_TOMO_I` (31),
-`2023_VOLUME_I` (31), `2023_VOLUME_II` (34), `2025_VOLUME_I` (16),
-`2025_VOLUME_II` (50). `2016_VOL_II`, `2018_VOL_I` and `2023_VOL_III` have
-outlines but only `"Pagina vuota"` and annex titles.
+**Bookmarks: exactly 6 volumes, 197 codes** — `2021_TOMO_I` (31),
+`2023_VOLUME_I` (31), `2023_VOLUME_II` (34), `2024_VOLUME_II` (35),
+`2025_VOLUME_I` (16), `2025_VOLUME_II` (50). `2016_VOL_II`, `2018_VOL_I`,
+`2023_VOL_III` and `2024_VOLUME_I` have outlines but only `"Pagina vuota"`,
+annex titles and container entries.
 
 ### Outstanding
 
+- **2024 is measured and failing — fix it before extending anything else.** Ten
+  of 31 tables in vol. I, five phantom tables in vol. II, family misdetected as
+  3, `A4` trimmed by 17 pages. Every cause is named in §4 and in *2024: measured,
+  and wrong* above. It is also the year the README advertises, so it is the first
+  thing a reader will run.
 - 2015 and 2014 vol. I should join 2001–2010 in an explicit *unsupported* list
   rather than emitting a misleading 1-table split.
 - The 15 weak files (≤10 tables) need either a family-specific detector or an
