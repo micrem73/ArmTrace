@@ -59,7 +59,7 @@ and because the three schemes need different header detection.
 | family | scheme | example codes | meaning |
 |---|---|---|---|
 | **1** | art. 27, double letter | `AA` `AA1` `BB` `UE` `FG` `GF` | MEF summary tables |
-| **1** | art. 27, MAE detail | `MG1`…`MG9` `MT1` `MT7` `LGP` | global licences, only from 2025 |
+| **1** | art. 27, MAE detail | `MG1`…`MG9` `MT1` `MT7` `LGP` | global licences, 2024 and 2025 |
 | **1** | charts | `NN` `OO` `PP` `GF` | percentage breakdown charts |
 | **2** | `A1` … `P2` | `A1` `B7` `C1` `F2` `P2` | MAE per-operator / per-country detail, 31 codes |
 | **3** | art. 27, single letter | `A` `B` `D` `E` `G` `J` `Q` | earliest layout, e.g. 2012 vol. I |
@@ -67,6 +67,11 @@ and because the three schemes need different header detection.
 Family 2 is a **closed set of 31 codes**, confirmed by the bookmark trees of
 2021 tom. I, 2023 vol. I and 2025 vol. I, which agree on every code. Family 1
 and 3 codes match `^[A-Z]{1,3}\d?$`.
+
+Family 2 is not always alone in a volume: 2024 vol. II is family 1 for its first
+600-odd pages and then carries the Agenzia delle Dogane annex in a fourth scheme
+— single letters `M` `N` `O` `P`, plus `MG*`/`MT*`. See
+[AGENTS.md](./AGENTS.md#4-regex-and-detection-traps).
 
 The 2012 index prints the digit one as a capital `I`, so it lists `Tabella DI`
 and `Tabella Gl` where the real codes are `D1` and `G1`; `normalise_digit_one()`
@@ -87,11 +92,15 @@ the last page is one before the next table starts.
 
 ```bash
 ./Reports2PDFTables.py --year 2023 --volume 2
-./Reports2PDFTables.py --year 2024 --volume both
+./Reports2PDFTables.py --year 2016 --volume both   # the development baseline
 ./Reports2PDFTables.py --all                  # every text-bearing volume
 ./Reports2PDFTables.py --year 2023 --dry-run  # report only, write nothing
 ./Reports2PDFTables.py --report reports_185_1990/2023/2023_LXVII_n2_VOLUME_II.pdf
 ```
+
+> **2024 does not work yet.** `--year 2024 --volume both` finds 10 of 31 tables in
+> vol. I and five phantom tables in vol. II. The causes are recorded in
+> [AGENTS.md](./AGENTS.md#2024-measured-and-wrong); it heads the Outstanding list.
 
 | Flag | Meaning |
 |---|---|
@@ -118,7 +127,7 @@ end can only be reported as cut — see *Tables that cross a volume boundary*.
 **How tables are found.** Two independent detectors, **unioned rather than
 ranked**:
 
-- **embedded** — the PDF bookmark tree, present in only 5 of 43 volumes;
+- **embedded** — the PDF bookmark tree, present in only 6 of 43 volumes;
 - **header** — the table code printed in the page header.
 
 Bookmarks are human-authored and win on a page conflict, but they are *not* a
@@ -130,6 +139,13 @@ Two further detectors fill gaps: an **index** page listing codes with their
 page *counts*, used to cross-check derived spans; and the table **title**
 repeated through the body, for family 3 where the codes appear only on the
 index page.
+
+The index harvest is the weakest of the four and is treated as a *witness*, not
+an authority: it stops at the first page that carries enough codes, and a row
+whose title wraps onto a second line is lost. On 2024 it returns 28 codes
+instead of 31 in vol. I (losing `B5`) and 12 instead of 35 in vol. II. A code
+missing from the index is therefore not evidence that it is absent from the
+volume.
 
 ### How trailing pages are removed
 
@@ -152,9 +168,11 @@ Verified on the three reported cases and two more found the same way: 2025 I `E`
 222 → **221** pages and `F1` 10 → **8** (each dropped a document of its own —
 a one-pager and two `PAGINA BIANCA`), 2021 I `E` 6 → **5** and 2019 I `E` 35 →
 **34** (a separate one-page document each). Everything else in those volumes
-was unchanged. The 2021 and 2019 cases are confirmed independently by the index
-page, which lists those E tables as 5 and 34 pages. The full case table is in
-[AGENTS.md](./AGENTS.md#6-verification-and-archive-coverage).
+was unchanged — and on 2024 vol. I it fires on tables it should not, cutting
+`A4` by 17 pages, so a year absent from that list is not thereby a year where
+the trim is correct. The 2021 and 2019 cases are confirmed independently by the
+index page, which lists those E tables as 5 and 34 pages. The full case table is
+in [AGENTS.md](./AGENTS.md#6-verification-and-archive-coverage).
 
 It works on garbled text too, because the numbers need not be *read*, only
 compared: on subsetted fonts with no `ToUnicode` the stamp comes back as Private
@@ -246,8 +264,11 @@ ends, the second starts where its volume starts, and the volumes are
 neighbours — are both kept and joined, which is the readable-halves version of
 a split. Anything else would invent a table out of two unrelated ones.
 
-**Status:** works. Verified across all 28 supported volumes — **479 tables,
-zero failures**, every volume producing a manifest.
+**Status:** works on every volume previously verified — **479 tables, zero
+failures** across 28 volumes, every one producing a manifest. **2024 was not
+among them and does not work**: 10 of 31 tables found in vol. I, five phantom
+tables in vol. II. The per-year table, which includes it, is in
+[AGENTS.md](./AGENTS.md#archive-coverage).
 
 The pipeline is currently developed against the **2016** reports. Earlier years
 are deferred, not broken — see [Archive coverage](./AGENTS.md#archive-coverage)
@@ -388,7 +409,9 @@ re-add LFS filter rules.**
 ## **ToDo**
 
 Engineering work is tracked in [AGENTS.md](./AGENTS.md#outstanding), which is
-authoritative for it. What is left is the product roadmap:
+authoritative for it. At the head of it: **2024 does not work** — 10 of 31 tables
+in vol. I, five phantom tables in vol. II — and it should be fixed before
+anything else is extended. What is left after that is the product roadmap:
 
 - Process the remaining years — see [Archive coverage](./AGENTS.md#archive-coverage) for what is deferred and why
 - Populate a MySQL db
