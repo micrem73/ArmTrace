@@ -17,12 +17,19 @@ authoritative** for the coverage table, the regex traps and the disproven list.
 broken.** Nobody should "fix" a deferred year: those numbers were measured, they
 are recorded below, and they are not regressions.
 
+**In scope is 2016+.** `--all` stops at `FIRST_YEAR = 2016`
+(`Reports2PDFTables.py`), so the 2015-and-earlier scans are never reported. Not
+a judgement about those volumes so much as a decision to stop carrying them:
+presenting "0 tables" as a finding is worse than not running them. Explicit
+`--year` on an older year still works and still writes.
+
 | fact | 2016 |
 |---|---|
 | volumes on disk | `reports_185_1990/2016/2016_LXVII_n5_VOLUME_{I,II}.pdf` |
 | vol. II | family 3, 768pp, **34 tables** |
 | vol. I | family 2, 716pp, 5 tables |
 | printed page numbers | both volumes print a parseable folio |
+| INDICE | present, but its rows for Interno, Difesa and Sviluppo economico carry no page number, so validation rejects it and the volume falls back to page furniture |
 | vol. II outline | exists, but only `"Pagina vuota"` + annex titles |
 
 2016 exercises **both** code families and both volumes, and its page numbers are
@@ -61,8 +68,14 @@ strong signal the detectors work on it. Caveats:
   calls them.
 - **Nothing hardcodes a year.** It comes from the `reports_185_1990/<anno>/` path
   and is used as a filename suffix, so adding a year needs no code change.
-- **Output paths are `<tabella>/<tabella><anno>`** — one folder per table, year
-  as suffix. Both steps must agree on the suffix; step 2's `--year` matches it.
+- **Output paths are `<authority>/[<article>/]<tabella><anno>`** — the path is
+  derived from the manifest key by `ontology.relative_path()`, and a code is
+  unique only within (authority, article). Both steps must agree on the layout
+  and on the suffix; step 2's `--year` matches the suffix, and it walks the tree
+  with `rglob` because the article level is optional.
+- **The manifest key is the triple `(authority, article, code)`.** Do not key on
+  the bare code anywhere: that is what let the Dogane overwrite MAE, and it would
+  undo the whole point of the authority level.
 
 ---
 
@@ -115,8 +128,38 @@ Each of these is a bug that shipped.
   (148pp)**, swallowing the whole annex; `resolve_repeats()` then drops `O1` and
   `P2` as duplicates of the *real* vol. I codes, which hides the mistake behind a
   plausible-looking report. A code seen in a volume whose own vocabulary never
-  lists it is a cross-volume leak, not a table. Note this also dates the README's
-  "`MG1`…`MT7`, only from 2025": they are present in 2024.
+  lists it is a cross-volume leak, not a table. **This is now structural rather
+  than a filter:** the manifest is keyed by `(authority, article, code)`, so the
+  Dogane's `M`/`N`/`O`/`P` land under `DOG/A1C2` and `DOG/A1C89` and cannot
+  collide with MAE's `M1`/`N1`/`O1`/`P1` even though the code strings overlap.
+  Keep the key a triple — keying on the bare code brings this bug back.
+- **A code pattern that allows only one trailing digit hides the two-digit ones.**
+  `TAB. MG10` matched nothing: the group takes `MG1` and the word boundary then
+  fails against the following `0`. So `MG10`–`MG18` and `MT13` were invisible and
+  `MG8`'s span swallowed them. They are **Dogane** (`art. 11 comma 5-bis`), not MAE
+  `art. 27` as previously documented — `Out/PDF/DOG/A11C5BIS/MG102025.PDF` is
+  printed page 1959 of 2025 vol. II. Verified by folio, not by inference.
+- **`MIN_RUN` is waived for the Dogane.** Of the 18 MG tables, nine are a single
+  page and print their code only there, so the threshold dropped them while
+  `MG8`'s span absorbed the rest. Waived for `ontology.DOG`, where the prose
+  false positive the threshold guards against does not occur: those tables print
+  `TAB. <code>` in the running header of a data page, not in narrative.
+- **An allegato cover lists its own tables, and the header scan reads it as their
+  starts.** `All.1 - OPERAZIONI A LICENZA` and `All.1: OPERAZIONI A LICENZA` name
+  `M`, `M1`, `M2`, `N`, `N1`, `N2`, `O`, `O1`, `O2`, `P`, `P1`, `P2`, inventing
+  twelve tables and truncating the real ones. Matched with the page's whitespace
+  squeezed out — pypdf shreds it (`All.1: OPE` arrives as `Al` / `l.1: OPE` /
+  `RAZIONI A`) so no line ever holds the header. Exactly 9 pages match in 2025
+  vol. II, and they are the 9 index pages.
+- **Gazzetta Ufficiale pages bound into a volume hold prose that clears `MIN_RUN`.**
+  2019 vol. I p710–808 reprints drug prices and patents from Serie generale 1588,
+  and its prose cross-references "Tab. I" on two consecutive pages — a phantom
+  22-page table, previously the only `UNPLACED` in the volume. `indice.is_pasted()`
+  skips pages carrying the header, **inside** the page scan rather than in a pass
+  of its own: a second full extraction of a 1048-page volume added enough to push
+  a run past 40 minutes. Skipped ranges are printed every run
+  (`pasted-in: 31 Gazzetta UFFICIALe pages …`) so the assumption stays auditable.
+  **Assumed, and taken as settled: a gazette page holds no table of interest.**
 - **The trailing-page stamp needs its position, not just its shape.** The shape
   alone also matches body rows: `"MUNIZIONAMENTO CALIBRO 120 MM , APPOSITAMENTE"`
   (2025 vol. I p70) reads as `CALIBRO 120 MM ,` and cut **A1 from 537 pages to
@@ -250,10 +293,16 @@ unrelated ones.
 
 ### Archive coverage
 
-Authoritative copy. Step 1 works for all 28 text-bearing volumes **other than
-2024**: **479 tables, zero failures**, every volume producing a manifest. 2024 was
-never in that count — it is measured here for the first time, and it does **not**
-pass, so "479, zero failures" was never a claim about it.
+Authoritative copy, and note there are **two** counts because the key changed.
+The old code-only layout was verified across 28 text-bearing volumes at **479
+tables, zero failures** — that is the table below, and it is a record of what the
+*previous* key produced. The current `(authority, article, code)` key gives
+**610 tables over the 22 in-scope volumes (2016+), zero UNPLACED**: the same
+tables plus the Dogane and Difesa series the old key could not separate, at the
+cost of no longer being comparable to the 479. Do not compare the two.
+
+**2024 was never in the 479 and does not work** — it is measured below for the
+first time and fails. Treat "zero failures" as scoped to what it was measured on.
 
 | year | volume | family | pages | tables | status |
 |---|---|---|---|---|---|
@@ -271,6 +320,67 @@ pass, so "479, zero failures" was never a claim about it.
 | 2023 | II / I / III | 1 / 2 / 2 | 580 / 946 / 518 | **35** / 31 / 5 | |
 | **2024** | **II / I** | **3✗ / 2** | **1260 / 1016** | **40 / 10** | **measured, failing** — see below |
 | 2025 | II / I | 3 / 2 | 1048 / 1048 | **65** / 16 | |
+
+### The output tree is the ontology, so placement is a detector
+
+`Out/PDF/<authority>/[<article>/]<table><anno>.PDF`, with the path derived from
+the manifest key by `ontology.relative_path()`. A code is unique only within
+(authority, article) — the Dogane print `TAB. N` twice in one volume, under art. 1
+comma 2 and again under art. 1 commi 8/9, and MAE's `TAB M1` is a different table
+from the Dogane's `TAB. M1`. Under the old code-only path the second silently
+overwrote the first, so `Out/PDF/M1` held the MAE table and every Dogane `M`…`Q`
+table was **absent from the output entirely**. Verified after the fix: `N`, `N1`,
+`N2`, `O`, `O1`, `O2` each exist twice, once under `DOG/A1C2` and once under
+`DOG/A1C89`.
+
+Four authorities, read off the `INDICE` and cross-checked against page headers:
+
+| authority | tables | how it is found |
+|---|---|---|
+| `MAE` | family 2, `A1`…`P2` | INDICE row; also the volume header |
+| `MEF` | art. 27, `AA`…`UE`, `LGP`, `GF`, `NN`, `OO`, `PP` | INDICE row |
+| `DOG` | four allegati under art. 1 c.2, art. 1 commi 8/9, art. 11 c.5-bis, art. 10 quater | INDICE row + the article from each table's own qualifier line |
+| `DIFESA` | "annessi" under art. 2 c.6, **no code at all** | `ANNEXO_RE` on `MINISTERO DELLA DIFESA - Annesso 3A` |
+
+**DIFESA was being missed entirely.** Its tables are annexes with no table code
+and no "Tabelle" line in the index, and their header matched no detector. The
+annesso number is both the code and the last path segment; the letter must stay
+adjacent and uppercase, or `Annesso 4 TABELLA RIASSUNTIVA` reads as annesso "4 T"
+and splits one table in two.
+
+**Article tokens keep the differentiators the law uses.** comma 5 and comma 5-bis
+are different authorisations, and art. 10 has bis/quater/quinquies — so
+`A11C5BIS` and `A10QUATER`, never `A11C5` or `A10`. Only `DOG` and `DIFESA`
+subdivide; an article named by any other authority is a stray mention (an MEF
+narrative page discussing art. 11 comma 5-bis must not gain a path level) and is
+dropped rather than invented.
+
+**Placement prefers the volume's own `INDICE`,** because it states the ministry
+ranges outright — no argument about which string is exclusive to whom, and no
+inheritance across pages printing no marker. `lib/indice.py` maps printed folios
+onto PDF pages and the report says which source was used (`ministry: INDICE …` vs
+`ministry: page furniture`). Agreement between index and headers on 2025 vol. II
+(966pp) and 2023 vol. II (576pp) is total.
+
+Three `INDICE` traps, each of which produced a wrong answer:
+
+- **The heading is letterspaced in 2024** — `I N D I C E`, so a plain substring
+  test for `INDICE` rejects it and 2024 was recorded as having no index at all.
+  Matched with whitespace squeezed out against a spacing-tolerant pattern.
+- **A parse must be validated before it is trusted**, because a wrong parse is
+  silent. On 2018 vol. I the parser reads the "Volume I" heading as a ministry and
+  produces `MEF block@1` — out of document order and entirely plausible. Rejected
+  unless: ≥3 ministry blocks, strictly increasing folios, a folio map covering the
+  volume, and at least one block inside this volume's own span.
+- **The folio offset is the *mode* of `folio − page`**, not a linear fit. Page 3
+  of 2023 vol. II reads `- 3 -`, so fitting across that discontinuity gives a
+  slope of 2.6 instead of 1 and maps every boundary to nonsense.
+
+The index is unusable in 11 of 22 volumes: 2017, 2019 and all three 2021 have none
+at all, while 2012, 2016 and 2018 have one whose ministry rows carry no page
+number — those are rejected rather than filing tables under the wrong ministry.
+The article always comes from the table's own qualifier line, since the index does
+not subdivide the Dogane.
 
 ### 2024: measured, and wrong
 
@@ -318,6 +428,17 @@ directories: 2001–2008, 2010, 2012–2015) and their state is known, not unkno
 `2023_VOL_III` and `2024_VOLUME_I` have outlines but only `"Pagina vuota"`,
 annex titles and container entries.
 
+### Two robustness rules that already cost a run
+
+- **Guard `build_manifest` per volume.** One unreadable volume must cost that
+  volume, not the remaining twenty-one.
+- **Write the artefacts before the summary, and guard the summary.** A formatting
+  bug in a human-readable report once raised a `TypeError` *upstream* of the data
+  and took the run with it: volumes 21 to 43 were never attempted, and the volume
+  that raised lost both its manifest row and its PDFs. Nothing cosmetic may sit
+  upstream of the data. The same reasoning put `is_pasted()` inside the page scan
+  rather than in a pass of its own.
+
 ### Outstanding
 
 - **2024 is measured and failing — fix it before extending anything else.** Ten
@@ -336,6 +457,15 @@ annex titles and container entries.
   claiming the same volume, so `parse_volume()` refuses to guess.
 - Extend coverage to the deferred years, weakest first — the ordering of the work
   is set by §1, not by the age of the report.
+- **Recover the missing page numbers in the 2016 and 2018 indices.** Their
+  ministry rows carry none, so validation rejects the index and the volume falls
+  back to page furniture. The numbers are on the same page; reading them would
+  bring four more volumes onto the index.
+- **Explain the `MEF/II` key collisions** reported in 2020 vol. II and
+  2024 vol. 2: two detections landed on one (authority, article, code) and one
+  was dropped. Either a genuine duplicate or a placement error; undecided.
+- **Enumerate the 2024 vol. II Dogane annex codes.** They are sampled every 15th
+  page and flagged as not yet enumerated, so §4's annex description is partial.
 - The trailing-page check only runs where the stamp is legible or stable. It
   fires on 2025 I, 2021 I and 2019 I; **2019 vol. II, 2023 vol. III and the
   family-3 volumes carry no stamp at all** (0 stamped pages of 1004 and 518

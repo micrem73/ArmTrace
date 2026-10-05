@@ -1,0 +1,274 @@
+#!/usr/bin/env python3
+"""
+Ontology of the Law 185/1990 annual relations: which ministry produced a
+table, under which article of the law, and therefore where the table belongs
+in the Out/ tree.
+
+    Out/PDF/<authority>/[<article>/]<TableName><Year>.PDF
+    Out/CSV/<authority>/[<article>/]<TableName><Year>.csv
+
+This module owns the vocabulary and the path shape. It does *not* decide which
+ministry a given table belongs to: that comes from the volume's own INDICE
+where it has one (lib/indice.py, 11 of the 22 in-scope volumes) and from
+classify_page() below where it does not -- 2017, 2019 and all three 2021
+volumes. What always comes from here is the *article*, because the INDICE bounds
+ministries but does not subdivide the Dogane, whose four allegati share a single
+block.
+
+Why the authority level is not cosmetic
+---------------------------------------
+The archive reuses the same table code for different tables in different
+ministries. In 2025 the MAE prints "TAB M1 (Intermediazioni per Operatore)"
+and the Dogane print "TAB. M1" for Esportazioni Definitive; likewise N1, N2,
+O1, O2, P1, P2. Keyed on the code alone, the second silently overwrites the
+first, and that is what the previous flat layout did. A code is therefore only
+unique within (authority, article), and the output path has to carry both.
+
+The four authorities
+--------------------
+Read off the INDICE of the volumes, cross-checked against the running header
+of every table page:
+
+    MAE      Ministero degli Affari Esteri e della Cooperazione
+             Internazionale -- Unità Autorizzazioni Materiali Armamento.
+             Tables A1..P2, per operator and per country, per operation type.
+    MEF      Ministero dell'Economia e delle Finanze -- Dipartimento del
+             Tesoro, Direzione V. Every table is art. 27 (credit-institution
+             reporting), so the family 1 and 3 codes AA, BB, UE, GF, NN, OO,
+             PP, LGP, ... all live here.
+    DOG      Agenzia delle Dogane e dei Monopoli, which sits inside the MEF
+             part of the INDICE but is reported separately. This is the only
+             authority whose tables are keyed by article.
+    DIFESA   Ministero della Difesa -- Segretariato Generale / DNA. Its tables
+             are "annessi" under art. 2 comma 6 (maintenance and training
+             services). The INDICE gives DIFESA no "Tabelle" line, so these are
+             easy to overlook; they exist in every recent volume.
+
+Articles
+--------
+Only DOG and DIFESA subdivide by article, and the subdivision is printed on
+the page, not merely implied by position:
+
+    DOG     the four allegati each carry a qualifier line in the running
+            header above the table title:
+
+              (no qualifier)                            OPERAZIONI A LICENZA
+                                                          art. 1 comma 2
+              Programmi Intergovernativi                 PROGRAMMI DI COPRODUZIONE
+                                                          INTERGOVERNATIVA
+                                                          art. 1 commi 8 lett. a)
+                                                          e 9 lett. a)
+              Licenze Globali di Progetto                OPERAZIONI A LICENZA GLOBALE
+                                                          DI PROGETTO
+                                                          art. 11 comma 5-bis
+              Autorizzazioni Globali di Trasferimento    OPERAZIONI AD AUTORIZZAZIONE
+                                                          GLOBALE DI TRASFERIMENTO
+                                                          art. 10 quater
+
+            The qualifier travels with every page of the table, so the article
+            is read off the table itself rather than inferred from where the
+            table sits. That matters because the four covers are printed
+            consecutively and only then the tables follow, so positional
+            inheritance would be wrong; and because art. 1 comma 2 and
+            art. 1 commi 8/9 share the code letters M, N, O, P, N1, O1 ...
+
+    DIFESA  every annesso is art. 2 comma 6; the annesso number (2, 3A, 3B,
+            3C, 4) is the table name, so the path is
+            DIFESA/A2C6/3A<Year>.PDF with no extra level.
+
+Token spelling
+--------------
+Article directories keep the differentiators the law actually uses. "A10"
+alone cannot say quater from bis or quinquies -- all three appear in Law
+185/1990, and art. 10 quinquies is cited in the Dogane footnote of both 2020
+and 2025 -- so the token spells it out. Likewise comma 5 and comma 5-bis are
+different authorisations and get different tokens.
+"""
+
+import re
+
+# The four authorities that produce tables.
+MAE = "MAE"
+MEF = "MEF"
+DOG = "DOG"
+DIFESA = "DIFESA"
+
+# Used when a page carries no authority marker at all and no neighbouring page
+# does either. Kept explicit rather than silently dropped, so a gap shows up in
+# the coverage report instead of landing in a plausible-looking folder.
+UNKNOWN = "UNKNOWN"
+
+AUTHORITIES = (MAE, MEF, DOG, DIFESA)
+
+# --------------------------------------------------------------------------
+# page-local markers
+#
+# These were read off the running header of every section in pypdf reading
+# order, which is NOT the order pdftotext -layout reports and is not the visual
+# top-to-bottom order either: the export band is rotated, so its text lands at a
+# varying position in the content stream. What each ministry actually prints:
+#
+#   MAE      MAECI -UAMA - CENTRO INFORMATICO Pagina 11 di 11 TAB M1
+#   MEF      Tabella AA / Dipartimento del Tesoro Direzione V - Ufficio VIII
+#            / ELENCO TABELLE / Operazioni disciplinate dall'art. 27 ...
+#   DOG      [qualifier] / Tipo di operazione: ... / TAB. M
+#   DIFESA   MINISTERO DELLA DIFESA - Annesso 3A
+#
+# MAE writes "TAB" and DOG writes "TAB.", MEF spells it out as "Tabella", and
+# DIFESA prints no code at all -- so the code's own typography is a reliable
+# discriminator, which matters because MAE pages do not always carry the export
+# band and MEF pages carry the ELENCO banner only on the first page of a table.
+# --------------------------------------------------------------------------
+
+# DIFESA prints authority and annesso on one line. No IGNORECASE on the annesso
+# group: "Annesso 4 TABELLA RIASSUNTIVA" must yield "4", not "4 T", so the
+# letter is uppercase and adjacent to the digits.
+DIFESA_RE = re.compile(
+    r"(?i:MINISTERO\s+DELLA\s+DIFESA)\s*[-–—]?\s*(?i:Annesso)\s*([0-9]+[A-Z]?)"
+)
+
+# Dogane. The period in "TAB." is the discriminator against MAE's "TAB"; the
+# code may sit a little way along the line from the keyword, because the export
+# band is rotated and lands between them.
+DOG_CODE_RE = re.compile(r"TAB\.[^\n]{0,40}?\b([A-Z]{1,3}\d{0,2})\b")
+DOG_QUALIFIER = (
+    (re.compile(r"Autorizzazioni\s+Globali\s+di\s+Trasferimento", re.IGNORECASE),
+     "A10QUATER"),
+    (re.compile(r"Licenze\s+Globali\s+di\s+Progetto", re.IGNORECASE),
+     "A11C5BIS"),
+    (re.compile(r"Programmi\s+(?:di\s+Coproduzione\s+)?Intergovernativi",
+                re.IGNORECASE),
+     "A1C89"),
+)
+# art. 1 comma 2 carries no qualifier: it is the individual-licence allegato and
+# the qualifier slot is blank on those pages.
+DOG_DEFAULT_ARTICLE = "A1C2"
+
+# MEF: the spelled-out code on a line of its own, its own office, or the art. 27
+# banner. The anchored form is what keeps "Tabella dei codici delle valute" out.
+MEF_CODE_RE = re.compile(r"^\s*Tabella\s+([A-Z]{1,3}\d{0,2})\s*$", re.MULTILINE)
+MEF_ALT_RE = re.compile(
+    r"Dipartimento\s+del\s+Tesoro\s+Direzione\s+V|Operazioni\s+disciplinate\s+dall"
+    r"'\s*art\.\s*27\b",
+    re.IGNORECASE,
+)
+
+# MAE. Two forms, both checked last because neither is exclusive on its own:
+#
+#   export band   "MAECI -UAMA - CENTRO INFORMATICO Pagina 11 di 11 TAB M1".
+#                 Requiring "CENTRO INFORMATICO" is what makes it safe. The
+#                 shorter "MAECI-UAMA" also occurs in prose -- the 2025 Difesa
+#                 relation says its companies file "comunicazione al MAECI-UAMA"
+#                 -- and on those two pages the shorter form fires and the tight
+#                 one does not, which put a Difesa page under MAE. Measured over
+#                 2025 vol. II: 25 MAE pages, 2 Difesa, 0 elsewhere.
+#   office name   "Unita' Autorizzazioni Materiali Armamento" / "Unità ...".
+#                 Needed for volumes whose MAE pages carry no export band at all.
+#
+# The separator never spans a newline, for the reason documented on INLINE_CODE:
+# p202 of 2025 vol. II breaks "MAECI-" and "UAMA" across lines.
+MAE_RE = re.compile(
+    r"MAECI[^\S\n]*[-–][^\S\n]*UAMA[^\S\n]*-[^\S\n]*CENTRO[^\S\n]+INFORMATICO"
+    r"|Unit[ae]\w*\s+Autorizzazioni\s+Materiali\s+Armamento",
+    re.IGNORECASE,
+)
+# MAE pages without the export band still print the code as "TAB <code>" with
+# no period. Restricted to the family 2 vocabulary so that prose such as
+# "tabella AA" spelled out, or "TABELLE", cannot reach it.
+MAE_CODE_RE = re.compile(r"\bTAB\s+(?![.\w])([A-Z]{1,2}\d{1,2})\b")
+
+# Every DIFESA annesso is art. 2 comma 6 (maintenance and training services).
+DIFESA_ARTICLE = "A2C6"
+
+SAFE_CODE_RE = re.compile(r"[^A-Z0-9]+")
+
+
+def classify_page(text):
+    """(authority, article, annesso) for one page, or (None, None, None).
+
+    `text` is the page's extracted text.
+
+    The ministry's own office and export band are trusted wherever they appear
+    on the page, including in the body: those strings are printed only by the
+    ministry itself. The narrative *does* name other ministries -- the 2020 MEF
+    relation opens by praising the "Unità Autorizzazioni Materiali Armamento
+    del Ministero degli Affari Esteri" -- so the authority is decided by which
+    office is speaking, and only when no office speaks does the code's
+    typography break the tie.
+
+    Order is by exclusivity, measured over 2025 vol. II rather than guessed:
+
+    marker                          MAE   MEF   DOG   DIFESA
+    TAB. <code>                       0     0   526       0
+    Dipartimento del Tesoro / art.27 0    35     0       0
+    MAECI -UAMA - CENTRO INFORMATICO 25     0     0       0
+
+MAE goes last because it is the only one of the four that leaks: its office is
+named in other ministries' prose, so it is asked only once the three exclusive
+markers have declined. DIFESA goes first because its running header names both
+the ministry and the annesso and nothing else prints it.
+    """
+    difesa = DIFESA_RE.search(text)
+    if difesa:
+        return DIFESA, DIFESA_ARTICLE, difesa.group(1).upper()
+
+    if DOG_CODE_RE.search(text):
+        for pattern, article in DOG_QUALIFIER:
+            if pattern.search(text):
+                return DOG, article, None
+        return DOG, DOG_DEFAULT_ARTICLE, None
+
+    if MEF_CODE_RE.search(text) or MEF_ALT_RE.search(text):
+        return MEF, None, None
+
+    if MAE_RE.search(text) or MAE_CODE_RE.search(text):
+        return MAE, None, None
+
+    return None, None, None
+
+
+def safe_code(code):
+    """Filesystem-safe table name.
+
+    The archive's codes are already safe (A1, AA, MG13, UE, LGP); the only
+    risk is the "Appendice" suffix the Dogane summaries use, which would give
+    "M Appendice". It does not currently appear as a table header, but if it
+    ever does it must not turn into two path segments.
+    """
+    cleaned = SAFE_CODE_RE.sub("", str(code).upper())
+    return cleaned or "TAB"
+
+
+def relative_path(authority, article, code, year, extension):
+    """Out-relative path for one table.
+
+        MAE/A1<year>.PDF
+        MEF/AA<year>.PDF
+        DOG/A1C2/N<year>.PDF
+        DIFESA/A2C6/3A<year>.PDF
+
+    MAE and MEF carry no article directory because the reports do not subdivide
+    them by article; for DIFESA the annesso is the table name, so it lands in
+    the code position rather than adding a level of its own.
+    """
+    parts = [authority]
+    if article:
+        parts.append(article)
+    parts.append(f"{safe_code(code)}{year}{extension}")
+    return "/".join(parts)
+
+
+def article_label(authority, article):
+    """Human label for the log."""
+    if not article:
+        return ""
+    if authority == DOG:
+        return {
+            "A1C2": "art. 1 comma 2 -- operazioni a licenza",
+            "A1C89": "art. 1 commi 8 lett. a) e 9 lett. a) -- coproduzione",
+            "A11C5BIS": "art. 11 comma 5-bis -- licenze globali di progetto",
+            "A10QUATER": "art. 10 quater -- autorizzazioni globali di trasferimento",
+        }.get(article, article)
+    if authority == DIFESA:
+        return "art. 2 comma 6 -- manutenzione e addestramento"
+    return article

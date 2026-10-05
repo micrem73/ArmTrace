@@ -3,10 +3,23 @@
 IndividualTables2SQL — turn the per-table PDFs produced by
 Reports2PDFTables into CSV files (and, later, SQL).
 
-    Out/PDF/<tabella>/<tabella><anno>.PDF  ->  Out/CSV/<tabella>/<tabella><anno>.csv
+    Out/PDF/<authority>/[<article>/]<table><year>.PDF
+        ->  Out/CSV/<authority>/[<article>/]<table><year>.csv
+
+The directory layout is the ontology of the reports themselves, so it is
+mirrored rather than flattened: a table is identified by the ministry that
+produced it and, where the ministry subdivides by article, by the article.
+Reports2PDFTables.py builds the same tree and lib/ontology.py owns the tokens.
+
+Why that is not cosmetic: a table code is only unique within
+(authority, article). The MAE prints "TAB M1" for Intermediazioni per Operatore
+and the Dogane print "TAB. M1" for Esportazioni Definitive, and "TAB. N" appears
+twice in one volume -- art. 1 comma 2 and art. 1 commi 8/9. Keyed on the code
+alone the second overwrote the first, which is exactly what happened under the
+previous Out/PDF/<tabella>/ layout.
 
 Why CSV and not XLSX: the archive holds tables Excel cannot represent. One
-volume yields up to 65 tables (2025 vol. II), and tabula fragments a borderless
+volume yields up to 94 tables (2025 vol. II), and tabula fragments a borderless
 one into thousands of pieces. Excel caps a workbook at 255 sheets, a sheet at
 1048576 rows and a sheet at 16384 columns, and past any of those it refuses to
 open the file at all. CSV has no such cap: one table is one file of any length,
@@ -16,13 +29,6 @@ itself is not tracked.
 
 The year is a filename suffix, not a directory level, so one folder per table
 holds one file per reporting year.
-
-The table code is the filename stem. Three code schemes exist in the archive:
-
-    family 1  art. 27 double-letter  AA AA1 BB ... UE, MG1-MG9, MT1, MT7,
-              GF, NN, OO, PP
-    family 2  A1 .. P2                the 31 MAE detail tables
-    family 3  art. 27 single-letter  A B D E G J Q  (2012 vol. I)
 
 Usage:
     python IndividualTables2SQL.py --year 2023
@@ -56,8 +62,11 @@ except ImportError:
 
 import re
 
+from lib import ontology
+
 # Percorsi del progetto:
-#   Out/PDF/<tabella>/<tabella><anno>.PDF -> Out/CSV/<tabella>/<tabella><anno>.csv
+#   Out/PDF/<authority>/[<articolo>/]<tabella><anno>.PDF
+#   Out/CSV/<authority>/[<articolo>/]<tabella><anno>.csv
 OUT_DIR = "Out"
 
 # Estensioni prodotte e consumate dalla pipeline. reports_185_1990/ contiene
@@ -66,7 +75,7 @@ OUT_DIR = "Out"
 PDF_EXT = ".PDF"
 
 # Anno di riferimento predefinito (corrisponde alla cartella
-# reports_185_1990/<anno>/ da cui derivano i PDF in Out/PDF/<tabella>/)
+# reports_185_1990/<anno>/ da cui derivano i PDF in Out/PDF/<authority>/)
 YEAR = "2024"
 
 # Radice dei percorsi, impostabile da CLI con --base
@@ -106,14 +115,45 @@ class PDFTableExtractor:
 
     def __init__(self, input_dir=None, output_root=None, year=YEAR, base=BASE,
                  separator=CSV_SEPARATOR, encoding=CSV_ENCODING):
-        # Default: Out/PDF/<tabella>/<tabella><anno>.PDF
-        #       -> Out/CSV/<tabella>/<tabella><anno>.csv
+        # Default: Out/PDF/<authority>/[<articolo>/]<tabella><anno>.PDF
+        #       -> Out/CSV/<authority>/[<articolo>/]<tabella><anno>.csv
         self.input_dir = Path(input_dir) if input_dir else Path(base, OUT_DIR, "PDF")
         self.output_root = Path(output_root) if output_root else Path(base, OUT_DIR, "CSV")
         self.year = str(year)
         self.separator = separator
         self.encoding = encoding
         self.output_root.mkdir(parents=True, exist_ok=True)
+
+    def locate(self, pdf_path):
+        """(authority, article, code, year) for one per-table PDF.
+
+        Read back out of the path that step 1 wrote:
+
+            MAE/A12023.PDF              -> MAE,  None,  A1,  2023
+            MEF/AA2023.PDF              -> MEF,  None,  AA,  2023
+            DOG/A1C2/N12023.PDF         -> DOG,  A1C2,  N,   2023
+            DIFESA/A2C6/3A2023.PDF      -> DIFESA, A2C6, 3A,  2023
+
+        The depth is not assumed. The authority is the first component; if a
+        second component is present and is not the file, it is the article,
+        because only DOG and DIFESA have one. A path that does not start with a
+        known authority is still walked -- the year and code are what matter for
+        extraction -- but it is reported, because it means step 1 wrote something
+        this script does not expect.
+        """
+        path = Path(pdf_path)
+        try:
+            # Both sides are resolved first: Path.relative_to refuses to mix a
+            # relative base with an absolute path, and silently falling back to
+            # the bare filename would drop the ministry and flatten the tree.
+            rel = path.resolve().relative_to(self.input_dir.resolve())
+        except (ValueError, OSError):
+            rel = Path(path.name)
+        parts = list(rel.parts[:-1])
+        stem, year = self.split_stem(path.stem)
+        authority = parts[0] if parts else ontology.UNKNOWN
+        article = parts[1] if len(parts) > 1 else None
+        return authority, article, stem.upper(), year
 
     @staticmethod
     def split_stem(stem):
@@ -122,11 +162,13 @@ class PDFTableExtractor:
         Step 1 writes <tabella><anno>.PDF, so the code carries the year as a
         suffix rather than in a parent directory:
 
-            AA2023  ->  ("AA", "2023")     MT7  ->  ("MT7", None)
+            AA2023   ->  ("AA", "2023")     MG102023 -> ("MG10", "2023")
 
-        A table code never ends in four digits (the archive uses AA AA1 MG1 ...
-        A1 .. P2 and single letters), so a trailing four-digit group is always
-        the year and never part of the code.
+        A table code never ends in four digits. The longest are MG10..MG18 and
+        MT13 in the Dogane, so a trailing four-digit group is always the year and
+        never part of the code. Reading from the right is what makes MG10 and
+        MT13 work at all: an earlier pattern allowed only one trailing digit in
+        a code, which could not match them.
         """
         m = re.search(r"\d{4}$", stem)
         if m is None:
@@ -134,53 +176,51 @@ class PDFTableExtractor:
         return stem[:m.start()], m.group(0)
 
     def detect_pdf_type(self, pdf_path):
-        """Classify a per-table PDF by its filename.
+        """The table code, from the path step 1 wrote.
 
-        Reports2PDFTables writes Out/PDF/<code>/<code><anno>.PDF, so the stem
-        minus the trailing year IS the table code. The three code schemes in
-        the archive are:
+        Three code schemes exist in the archive:
 
-            family 1  art. 27 double-letter  AA AA1 BB ... UE  MG1 MG3 MT7
+            family 1  art. 27 double-letter  AA AA1 BB ... UE  MG1..MG18  MT13
             family 2  A1 .. P2                31 codes
             family 3  art. 27 single-letter  A B D E G J Q
 
-        Without the year-stripping step the code would come back as "AA2023"
-        and fall through to the unknown branch, which is the trap the previous
-        mapping (TAB_N1, TAB_O1, TAB_A2 ... -- names that appear nowhere in
-        the 43 reports) walked into and that wrote one sheet per extracted
-        fragment, the cause of the ~4000-sheet hang recorded in the README.
+        plus the DIFESA annessi, whose code is the annesso number. Without the
+        year-stripping step the code would come back as "AA2023" and fall
+        through to the unknown branch, which is the trap the previous mapping
+        (TAB_N1, TAB_O1, TAB_A2 ... -- names that appear nowhere in the reports)
+        walked into and that wrote one sheet per extracted fragment, the cause
+        of the ~4000-sheet hang recorded in the README.
         """
-        code, _ = self.split_stem(Path(pdf_path).stem)
-        return code.upper()
+        return self.locate(pdf_path)[2]
 
-    def table_semantics(self, pdf_type):
-        """Describe a code in terms a reader can act on, for the log.
+    def table_semantics(self, pdf_type, authority=None, article=None):
+        """Describe a table in terms a reader can act on, for the log.
 
         Returns (family, human label) or (None, None) when the code is not
-        recognised. The family matters downstream: families 1 and 3 are MEF
-        summary tables with a fixed column layout, family 2 is the MAE
-        per-operator/per-country detail.
+        recognised. The ministry comes first, because it is what disambiguates:
+        M1 is MAE "Intermediazioni per Operatore" and Dogane "Esportazioni
+        Definitive", and the code alone cannot say which.
         """
         code = pdf_type.upper()
-        if re.fullmatch(r"[A-Z]{2}\d?", code):
-            if code in ("MG1", "MG2", "MG3", "MG4", "MG5", "MG6", "MG7",
-                        "MG8", "MG9"):
-                return 1, "MAE licenze globali di progetto"
-            if code in ("MT1", "MT7"):
-                return 1, "MAE licenze globali di trasferimento"
+        if authority == ontology.DOG:
+            return 2, f"Dogane - {ontology.article_label(authority, article)}"
+        if authority == ontology.DIFESA:
+            return 4, (f"Difesa - {ontology.article_label(authority, article)}, "
+                       f"annesso {code}")
+        if re.fullmatch(r"[A-Z]{2}\d{0,2}", code):
             if code == "LGP":
-                return 1, "licenze globali di programma di cooperazione"
+                return 1, "MEF licenze globali di programma di cooperazione"
             if code in ("NN", "OO", "PP", "GF"):
-                return 1, "grafico ripartizione percentuale"
+                return 1, "MEF grafico ripartizione percentuale"
             if code == "UE":
-                return 1, "importazioni intra UE"
+                return 1, "MEF importazioni intra UE"
             if re.fullmatch(r"[A-Z]{2}", code):
-                return 1, "art. 27 riepilogo per istituti di credito"
-            return 1, "art. 27 riepilogo dettagliato"
+                return 1, "MEF art. 27 riepilogo per istituti di credito"
+            return 1, "MEF art. 27 riepilogo dettagliato"
         if code in FAMILY2_CODES:
             return 2, "MAE dettaglio operatore / paese"
         if re.fullmatch(r"[A-Z]\d?", code):
-            return 3, "art. 27 riepilogo"
+            return 3, "MEF art. 27 riepilogo"
         return None, None
 
     def text_status(self, pdf_path):
@@ -448,18 +488,19 @@ class PDFTableExtractor:
 
     def process_pdf(self, pdf_path):
         """Process a single PDF file"""
-        # L'anno e' il suffisso del nome del file, non piu' il nome della
-        # cartella: Out/PDF/<tabella>/<tabella><anno>.PDF
-        stem = Path(pdf_path).stem
-        table_name, file_year = self.split_stem(stem)
+        # Il nome del file porta solo il codice e l'anno; il ministero e
+        # l'articolo sono le directory che lo contengono:
+        #   Out/PDF/<authority>/[<articolo>/]<tabella><anno>.PDF
+        authority, article, table_name, file_year = self.locate(pdf_path)
         year = file_year or self.year
         if not table_name:
-            table_name = stem
-        print(f"\nProcessing: {stem}{PDF_EXT}")
+            table_name = Path(pdf_path).stem
+        where = "/".join(filter(None, [authority, article]))
+        print(f"\nProcessing: {where}/{table_name}{year}{PDF_EXT}")
 
-        # Detect PDF type
         pdf_type = self.detect_pdf_type(pdf_path)
-        print(f"  Type: {pdf_type}")
+        if authority not in ontology.AUTHORITIES:
+            print(f"  ⚠️  '{authority}' is not a known authority directory")
 
         # Try lattice method first
         print(f"  Extracting tables (lattice method)...")
@@ -487,7 +528,7 @@ class PDFTableExtractor:
             # (A1..P2), gli unici la cui struttura a colonne e' stata
             # verificata. Le famiglie 1 e 3 hanno intestazioni diverse e
             # vengono pulite e concatenate senza elaborazione dedicata.
-            family, label = self.table_semantics(pdf_type)
+            family, label = self.table_semantics(pdf_type, authority, article)
             if family is None:
                 print(f"  ⚠️  Codice '{pdf_type}' non riconosciuto")
             else:
@@ -500,11 +541,13 @@ class PDFTableExtractor:
                 return False
             processed_data = cleaned
 
-            # Save to CSV: Out/CSV/<tabella>/<tabella><anno>.csv
-            dest_dir = self.output_root / table_name
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            output_path = str(dest_dir / f"{table_name}{year}{CSV_SUFFIX}")
-            self.save_to_csv(processed_data, output_path, pdf_type)
+            # Save to CSV, mirroring the input tree:
+            #   Out/CSV/<authority>/[<articolo>/]<tabella><anno>.csv
+            rel = ontology.relative_path(authority, article, table_name,
+                                          year, CSV_SUFFIX)
+            output_path = Path(self.output_root, rel)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            self.save_to_csv(processed_data, str(output_path), pdf_type)
 
             print(f"  ✓ Saved to: {output_path}")
             return True
@@ -516,23 +559,29 @@ class PDFTableExtractor:
             return False
 
     def process_all(self):
-        """Process all PDF files in input directory"""
-        # Percorso previsto: Out/PDF/<tabella>/<tabella><anno>.PDF
-        pdf_files = sorted(self.input_dir.glob(f"*/*{self.year}{PDF_EXT}"))
+        """Process every per-table PDF for the selected year.
 
-        # Fallback: PDF sciolti nella root di input invece che in <tabella>/
-        if not pdf_files:
-            pdf_files = sorted(self.input_dir.glob(f"*{self.year}{PDF_EXT}"))
+        The tree is walked recursively rather than globbed at a fixed depth,
+        because the depth is what the ontology decides: MAE and MEF files sit
+        two levels down, DOG and DIFESA three.
+        """
+        # Atteso: Out/PDF/<authority>/[<articolo>/]<tabella><anno>.PDF
+        pdf_files = sorted(self.input_dir.rglob(f"*{self.year}{PDF_EXT}"))
 
         if not pdf_files:
             print(f"No PDF files found in {self.input_dir}")
             print("\nTo use this script:")
-            print(f"Atteso: {self.input_dir}/<tabella>/<tabella>{self.year}{PDF_EXT}")
+            print(f"Atteso: {self.input_dir}/<authority>/[<articolo>/]/"
+                  f"<tabella>{self.year}{PDF_EXT}")
             print("1. Esegui prima Reports2PDFTables per generare i PDF")
             print(f"2. Oppure passa input_dir=... (anno selezionato: {self.year})")
             return
 
+        unknown = sorted({self.locate(p)[0] for p in pdf_files}
+                         - set(ontology.AUTHORITIES))
         print(f"Found {len(pdf_files)} PDF file(s)")
+        if unknown:
+            print(f"⚠️  Directory not a known authority: {' '.join(unknown)}")
         print("=" * 70)
 
         success = 0
@@ -549,7 +598,8 @@ class PDFTableExtractor:
         print("Processing Complete!")
         print(f"  ✓ Success: {success}")
         print(f"  ✗ Failed: {failed}")
-        print(f"\nCSV files saved to: {self.output_root}/<tabella>/<tabella><anno>{CSV_SUFFIX}")
+        print(f"\nCSV files saved to: {self.output_root}/<authority>/"
+              f"[<articolo>/]<tabella><anno>{CSV_SUFFIX}")
 
 def main(argv=None):
     """Punto d'ingresso."""
@@ -588,10 +638,10 @@ def main(argv=None):
     csv_root = Path(args.base, OUT_DIR, "CSV")
 
     print("IndividualTables2SQL - PDF Table Extractor to CSV")
-    print("Supports: TABELLE A1..P2 (famiglia 2) e i codici art. 27")
+    print("Ministeri: " + "  ".join(ontology.AUTHORITIES))
     print(f"Anno: {args.year}")
-    print(f"Input:  {pdf_root}/<tabella>/<tabella>{args.year}{PDF_EXT}")
-    print(f"Output: {csv_root}/<tabella>/<tabella>{args.year}{CSV_SUFFIX}")
+    print(f"Input:  {pdf_root}/<authority>/[<articolo>/]<tabella>{args.year}{PDF_EXT}")
+    print(f"Output: {csv_root}/<authority>/[<articolo>/]<tabella>{args.year}{CSV_SUFFIX}")
     print("=" * 70)
 
     extractor = PDFTableExtractor(

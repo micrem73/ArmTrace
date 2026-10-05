@@ -19,18 +19,100 @@ reports_185_1990/                 # source reports, one folder per reporting yea
 ├── download_185.sh              # reproduce the download
 └── SOURCES.md                   # archive structure, legislature→year mapping, gaps
 
+Reports2PDFTables.py              # step 1 — volumes  -> Out/PDF
+IndividualTables2SQL.py           # step 2 — per-table PDFs -> Out/CSV
+lib/                              # imported by the two scripts, never run
+├── ontology.py                  #   ministries, article tokens, Out/ path shape
+└── indice.py                     #   ministry page ranges from a volume's INDICE
+
 Out/                             # generated locally, NOT in git (see "Binary files")
-├── PDF/<tabella>/<tabella><anno>.PDF   # one PDF per table  (step 1)
-└── CSV/<tabella>/<tabella><anno>.csv   # one CSV per table  (step 2)
+└── PDF|CSV/
+    ├── MAE/<tabella><anno>.PDF               # Ministero degli Affari Esteri
+    ├── MEF/<tabella><anno>.PDF               # Ministero dell'Economia e delle Finanze
+    ├── DOG/<articolo>/<tabella><anno>.PDF    # Agenzia delle Dogane e dei Monopoli
+    └── DIFESA/<articolo>/<tabella><anno>.PDF # Ministero della Difesa
 ```
 
 Neither folder is checked in: `reports_185_1990/` and `Out/` are rebuilt from
 `manifest.tsv` and the two scripts. The repository tracks only the scripts, the
-manifest, `download_185.sh`, `SOURCES.md` and `AGENTS.md`.
+manifest, `download_185.sh`, `lib/`, `SOURCES.md` and `AGENTS.md`.
 
-The folder name is the **reporting year** covered by the report, not the year it was published. Nothing in the scripts hardcodes a year: step 1 reads it from the `reports_185_1990/<anno>/…` path, and both steps key their output on it as a **filename suffix**, `Out/PDF/AA/AA2023.PDF` → `Out/CSV/AA/AA2023.csv`. One folder per table therefore holds one file per reporting year, and step 2 selects the year with `--year` (it matches the suffix, so the suffix and the flag must agree).
+The folder name is the **reporting year** covered by the report, not the year it was published. Nothing in the scripts hardcodes a year: step 1 reads it from the `reports_185_1990/<anno>/…` path, and both steps key their output on it as a **filename suffix**, `Out/PDF/MEF/AA2023.PDF` → `Out/CSV/MEF/AA2023.csv`. One folder per table therefore holds one file per reporting year, and step 2 selects the year with `--year` (it matches the suffix, so the suffix and the flag must agree).
 
 Adding a year means dropping its PDFs into `reports_185_1990/<anno>/` — no code change required.
+
+---
+
+## **The output tree is the ontology of the reports**
+
+`Out/` is partitioned by the ministry that produced each table, and by article
+where the ministry subdivides by article. This is not tidiness — a table code is
+only unique **within** `(authority, article)`, and the archive breaks that
+assumption constantly:
+
+| code | MAE | Dogane |
+|---|---|---|
+| `M1` | Intermediazioni per Operatore | Esportazioni Definitive |
+| `N1` | LGP per Operatore | Temporanee Esportazioni |
+| `O1` | LGT per Operatore | Importazioni Definitive |
+| `P1` | AGT per Operatore | Temporanee Importazioni |
+
+and inside the Dogane alone, `TAB. N` is printed twice in one volume — once
+under art. 1 comma 2 and once under art. 1 commi 8/9. Under the previous
+`Out/PDF/<tabella>/` layout the second write silently overwrote the first: the
+MAE `M1` survived and every Dogane `M`…`Q` table was gone from `Out/`. The
+authority level is what makes the split correct.
+
+### Authorities
+
+Read off the `INDICE` of each volume and cross-checked against the running
+header of every table page. `lib/ontology.py` holds the markers.
+
+| directory | ministry | tables |
+|---|---|---|
+| `MAE` | Affari Esteri e Cooperazione Internazionale — Unità Autorizzazioni Materiali Armamento | `A1`…`P2`, per operator and per country |
+| `MEF` | Economia e Finanze — Dipartimento del Tesoro, Direzione V | art. 27 credit-institution reporting: `AA`, `BB`, … `UE`, `GF`, `NN`, `OO`, `PP`, `LGP` |
+| `DOG` | Agenzia delle Dogane e dei Monopoli | the four allegati below |
+| `DIFESA` | Difesa — Segretariato Generale / DNA | art. 2 comma 6 maintenance and training, as `Annesso 2`, `3A`, `3B`, `3C`, `4` |
+
+Two of these are easy to miss from the `INDICE`. The Dogane sit *inside* the MEF
+part of the index and only become a separate ministry at the point where they
+report. The Difesa get no `Tabelle` line at all — their tables are `annessi`,
+and before this change they were not extracted, because their running header
+`MINISTERO DELLA DIFESA - Annesso 3A` matches none of the code patterns.
+
+### Articles
+
+Only `DOG` and `DIFESA` subdivide by article, and the subdivision is printed on
+the page rather than implied by position:
+
+| directory | allegato | article |
+|---|---|---|
+| `DOG/A1C2` | Operazioni a licenza | art. 1 comma 2 |
+| `DOG/A1C89` | Programmi di coproduzione intergovernativa | art. 1 commi 8 lett. a) e 9 lett. a) |
+| `DOG/A11C5BIS` | Operazioni a licenza globale di progetto | art. 11 comma **5-bis** |
+| `DOG/A10QUATER` | Operazioni ad autorizzazione globale di trasferimento | art. 10 **quater** |
+| `DIFESA/A2C6` | annessi 2, 3A, 3B, 3C, 4 | art. 2 comma 6 |
+
+Each Dogane table page carries a qualifier line naming its allegato
+(`Programmi Intergovernativi`, `Licenze Globali di Progetto`, `Autorizzazioni
+Globali di Trasferimento`, or blank for art. 1 comma 2), so the article is read
+off the table itself. Two consequences shaped the design:
+
+- The four covers are printed **consecutively**, and only then do the tables
+  follow, so positional inheritance would file every table under the last cover
+  read. The per-page qualifier is the only thing that works.
+- Article tokens keep the differentiators the law uses. `A10` alone cannot say
+  *quater* from *bis* or *quinquies* — all three appear in Law 185/1990, and
+  art. 10 quinquies is cited in the Dogane footnote of both 2020 and 2025 — and
+  comma 5 and comma 5-bis are different authorisations, so `A11C5BIS` and not
+  `A11C5`.
+
+For the Difesa the annesso *is* the table name, so it lands in the filename
+position (`DIFESA/A2C6/3A2023.PDF`) rather than adding a level of its own.
+
+A code is therefore identified by the triple `(authority, article, code)`, and
+that triple is the manifest key. Nothing downstream may key on the code alone.
 
 > The 2024 volumes keep their original filenames
 > (`lxvii_3_volume 1_442452.pdf`, `lxvii_3_volume 2_442453.pdf`) rather than the
@@ -52,21 +134,38 @@ to it by mistake, so the two are now one file. See
 
 ## **Table code families**
 
-The archive contains **three** mutually exclusive naming schemes for tables. A
-volume uses exactly one. This matters because step 2 dispatches on the code,
-and because the three schemes need different header detection.
+The archive contains **three** mutually exclusive naming schemes for tables, plus
+one unnumbered kind. A volume uses exactly one of the three. This matters
+because step 2 dispatches on the code, and because the three schemes need
+different header detection. **The code is not unique on its own** — read this
+table together with the authority section above.
 
 | family | scheme | example codes | meaning |
 |---|---|---|---|
 | **1** | art. 27, double letter | `AA` `AA1` `BB` `UE` `FG` `GF` | MEF summary tables |
-| **1** | art. 27, MAE detail | `MG1`…`MG9` `MT1` `MT7` `LGP` | global licences, 2024 and 2025 |
+| **1** | art. 27, MAE detail | `MG1`…`MG18` `MT1` `MT7` `MT13` | global licences — Dogane, 2024–2025, not MAE art. 27 |
+| **1** | art. 27, `LGP` | `LGP` | MEF, licenze globali di programma |
 | **1** | charts | `NN` `OO` `PP` `GF` | percentage breakdown charts |
 | **2** | `A1` … `P2` | `A1` `B7` `C1` `F2` `P2` | MAE per-operator / per-country detail, 31 codes |
 | **3** | art. 27, single letter | `A` `B` `D` `E` `G` `J` `Q` | earliest layout, e.g. 2012 vol. I |
+| **—** | `Annesso <n>` | `2` `3A` `3B` `3C` `4` | DIFESA, art. 2 comma 6 |
+
+> **Correction to an earlier claim in this file.** The `MG1`…`MG9`, `MT1`, `MT7`
+> codes were previously described here as "art. 27, MAE detail — global
+> licences". They are neither MAE nor art. 27: they are **Dogane**, `MG1`–`MG18`
+> under art. 11 comma 5-bis and `MT1`, `MT7`, `MT13` under art. 10 quater.
+> Verified by folio — `Out/PDF/.../MG1` is page 1959 and `MT1` page 2059 of 2025
+> vol. II, where the Dogane tables begin at 1508 and the MEF block ends at 1494 —
+> and by the fact that the 2025 vol. II bookmark tree contains no `MG`/`MT` entry
+> at all, while `LGP` (p442) sits inside the MEF block with `AA`…`UE`.
 
 Family 2 is a **closed set of 31 codes**, confirmed by the bookmark trees of
-2021 tom. I, 2023 vol. I and 2025 vol. I, which agree on every code. Family 1
-and 3 codes match `^[A-Z]{1,3}\d?$`.
+2021 tom. I, 2023 vol. I and 2025 vol. I, which agree on every code. Family
+1, 2 and 3 codes match `^[A-Z]{1,3}\d{0,2}$` — **two** trailing digits, not one:
+the Dogane series runs to `MG18`, and with a single-digit tail `TAB. MG10`
+matched nothing at all (the group takes `MG1`, the word boundary after it fails
+against the following `0`), which hid `MG10`–`MG18` and `MT13` from every
+detector and let the span of `MG8` swallow all of them.
 
 Family 2 is not always alone in a volume: 2024 vol. II is family 1 for its first
 600-odd pages and then carries the Agenzia delle Dogane annex in a fourth scheme
@@ -87,8 +186,8 @@ Per-family detection rules and the traps behind them are in
 ### **Reports2PDFTables.py**
 
 Splits a report volume into one PDF per table, written to
-`Out/PDF/<tabella>/<tabella><anno>.PDF`. For each table it finds the first page;
-the last page is one before the next table starts.
+`Out/PDF/<authority>/[<articolo>/]<tabella><anno>.PDF`. For each table it finds
+the first page; the last page is one before the next table starts.
 
 ```bash
 ./Reports2PDFTables.py --year 2023 --volume 2
@@ -124,11 +223,17 @@ any of them is written, because a table may run from one volume into the next.
 A single volume (`--volume 1`) still works, but a table cut at that volume's
 end can only be reported as cut — see *Tables that cross a volume boundary*.
 
-**How tables are found.** Two independent detectors, **unioned rather than
+**How tables are found.** Four independent detectors, **unioned rather than
 ranked**:
 
 - **embedded** — the PDF bookmark tree, present in only 6 of 43 volumes;
-- **header** — the table code printed in the page header.
+- **header** — the table code printed in the page header;
+- **annesso** — `MINISTERO DELLA DIFESA - Annesso 3A`, which is neither a
+  bookmark nor a table code, and which used to be missed entirely;
+- **indice** — not a table finder but a *placement* finder: the volume's own
+  table of contents says which ministry produced which page range, and is
+  preferred over reading ownership off page furniture wherever it exists
+  (see "Which ministry a table belongs to" below).
 
 Bookmarks are human-authored and win on a page conflict, but they are *not* a
 superset: on 2025 vol. II the outline omits `MG1`–`MG9` and `MT1`/`MT7`, which
@@ -146,6 +251,136 @@ whose title wraps onto a second line is lost. On 2024 it returns 28 codes
 instead of 31 in vol. I (losing `B5`) and 12 instead of 35 in vol. II. A code
 missing from the index is therefore not evidence that it is absent from the
 volume.
+
+**Which ministry a table belongs to.** In this order, and the report says which
+one it used.
+
+**1. The volume's own INDICE.** It states each ministry's page range outright:
+
+```
+MINISTERO DEGLI AFFARI ESTERI E DELLA COOPERAZIONE INTERNAZIONALE ... »  11
+  Tabelle ....................................................... »  65
+MINISTERO DELLA DIFESA .......................................... » 1232
+MINISTERO DELL'ECONOMIA E DELLE FINANZE ......................... » 1298
+  Tabelle ....................................................... » 1308
+  Relazione sull'attività dell'Agenzia delle dogane e dei monopoli » 1495
+  Tabelle ....................................................... » 1508
+```
+
+That is the document's own account of its structure, so it beats inferring
+ownership from a running header: no argument about which string is exclusive to
+whom, and no inheritance across pages that print no marker. `lib/indice.py` parses
+it and maps printed folios onto PDF pages. The index prints once, in the first
+volume, and covers the later volumes too — verified for 2016, 2018, 2020, 2022,
+2023 and 2025, where volumes I and II report identical ranges — so a later
+volume borrows its sibling's.
+
+**The heading is letterspaced in 2024.** It prints `I N D I C E`, where every
+other year prints `INDICE`, so a plain substring test for `INDICE` rejects it and
+2024 was recorded as having no index at all. The heading is matched on the page
+with whitespace squeezed out, against a spacing-tolerant pattern.
+
+**A parse must be validated before it is trusted**, because a wrong parse is
+silent. On 2018 vol. I the parser reads the "Volume I" heading as a ministry and
+produces `MEF block@1`, out of document order and entirely plausible. Rejected
+unless: at least three ministry blocks, strictly increasing folios, a folio map
+covering the volume, and at least one block inside this volume's own folio span.
+
+The folio offset is the **mode** of `folio − page` over every legible page, not a
+linear fit. Page 3 of 2023 vol. II reads `- 3 -`, so fitting across that
+discontinuity gives a slope of 2.6 instead of 1 and maps every boundary to
+nonsense.
+
+Cross-checked against the header markers on 2025 vol. II (966 pages) and 2023
+vol. II (576 pages): **agreement on every page where both speak.**
+
+**2. The page furniture, as fallback** — and a large part of the archive needs
+it, because the index is simply not there:
+
+| volume | index |
+|---|---|
+| 2017 I+II, 2019 I+II, 2021 ×3 | **none** — no `INDICE`, `SOMMARIO` or `INDEX` anywhere |
+| 2001–2011 | none, and no text layer either |
+| 2012 I+II+III, **2016 I+II, 2018 I+II** | index present but **unnumbered** for the ministries that matter → rejected |
+| 2020, 2022, 2023, 2024, 2025 | usable |
+
+The volumes with no index include high-yield ones — 2021 gives 31 + 27 + 15
+tables — so an index-only pipeline would strand around a hundred. For those the
+authority is read off each page's own furniture and inherited across neighbours,
+which is safe because each ministry's block is contiguous. Inheritance stops at
+a real boundary: where the pages before and after a gap disagree, the gap is
+reported as `UNPLACED` rather than guessed into one of the two.
+
+The discriminators are the ministries' own typographies, in pypdf reading order
+(which is neither the visual order nor `pdftotext -layout`'s — the export band
+is rotated, so its text lands at a varying position in the content stream):
+
+| ministry | what it prints | pages it fires on, 2025 vol. II |
+|---|---|---|
+| DOG | `TAB. <code>` — **with** the period | 526, all DOG |
+| MEF | `Tabella <code>`, `Dipartimento del Tesoro Direzione V` | 35, all MEF |
+| DIFESA | `MINISTERO DELLA DIFESA - Annesso 3A` | 13, all DIFESA |
+| MAE | `MAECI -UAMA - CENTRO INFORMATICO …` | 25, all MAE |
+
+**Order by measured exclusivity, not by apparent specificity.** MAE is asked
+last because it is the only one of the four that leaks: the 2025 Difesa relation
+says its companies file *"comunicazione al MAECI-UAMA"*, so the short form also
+fires on two Difesa pages. Requiring `- CENTRO INFORMATICO` — the fragment that
+makes it a production stamp rather than a mention — takes that to zero. Asking in
+order of "how specific does this look" put MAE second and misfiled those pages;
+the Difesa relazione then lost 9 pages to MAE and 33 more to unplaced.
+
+**3. The article, always from the page.** The INDICE bounds ministries but does
+not subdivide the Dogane, whose four allegati all sit inside a single block, so
+the article can only come from the table's own qualifier line. That part of the
+marker machinery is not redundant with the index.
+
+**`MIN_RUN` is waived for the Dogane.** A single-page hit is normally a prose
+cross-reference rather than a table — but that false positive came from the MEF
+art. 27 narrative, and of the 18 `MG` tables of art. 11 comma 5-bis nine run to
+a single page. Applying the threshold there dropped them and let the span of the
+surviving `MG8` swallow the rest.
+
+**The Dogane's own cover pages are skipped.** `All.1 - OPERAZIONI A LICENZA` and
+`All.1: OPERAZIONI A LICENZA` list that allegato's tables by name, so the header
+scan reads them as the starts of twelve tables and truncates the real ones. They
+are matched with the page's whitespace squeezed out, because pypdf shreds them
+into fragments (`All.1: OPE` arrives as `Al` / `l.1: OPE` / `RAZIONI A`) and no
+line ever holds the header. Exactly 9 pages match in 2025 vol. II, and they are
+the 9 index pages.
+
+**Gazzetta Ufficiale pages are skipped.** Reports quote and reprint Gazzette
+material, and the odd document is bound in whole. Pages carrying the header are
+not scanned for tables:
+
+| volume | pages | what it is |
+|---|---|---|
+| 2019 I | 710–808 | drug prices and patents, Serie generale 1588 — a foreign document |
+| 2025 II | 205–235 | CAT armament/dual-use annex, Serie generale 1319 |
+| 2016 I, 2018 I, 2022 I, 2023 II, 2024 vol. 2 | 39–46 each | Gazzette material quoted by the ministry |
+| 2020 I, 2017 I, 2021 TOMO_I, 2024 vol. 1 | 1–14 each | incidental |
+
+The 2019 block is why that volume used to carry a phantom 22-page table `I`: the
+gazette's prose cross-references "Tab. I" on two consecutive pages, which cleared
+`MIN_RUN`. It was the only `UNPLACED` table in the volume and is now gone, with
+MAE 23 and DIFESA 4 unchanged.
+
+**Assumed, and taken as settled: a page headed Gazzetta Ufficiale contains no
+table of interest.** So skipping them costs nothing and no per-volume
+before-and-after diff is owed. The assumption stays auditable rather than
+implicit — every run prints what it skipped, e.g. `pasted-in: 99 Gazzette
+UFFICIALe pages, no tables, skipped (p710-712, p714-808, p810)` — so an
+implausible count is visible rather than silent.
+
+A first attempt used the *absence of a valid running folio* instead, which is the
+more principled witness — a pasted-in document keeps its own pagination. It was
+abandoned: the folio signal is too noisy to threshold, since pypdf does not emit
+the running folio first on every page and garbled or blank pages interrupt any
+run. A 20-page minimum flagged 206 pages of 2019 vol. I in thirteen scattered
+runs and still missed the block it was written for. The gazette header is checked
+**inside** the page scan rather than in a pass of its own, because a second full
+extraction of a 1048-page volume added enough to push a run past 40 minutes.
+
 
 ### How trailing pages are removed
 
@@ -200,7 +435,7 @@ The volumes of a year are consecutive parts of one document, numbered
 continuously, and a table may straddle the join. **2025 Tabella F1** is the case
 in point: printed pages 1035–1042 close volume I, printed 1043–1104 open volume
 II, and the margin of the last page reads `Tabella F1 / Pagina 70 di 70` — one
-table of seventy pages. `Out/PDF/F1/F12025.PDF` is that table.
+table of seventy pages. `Out/PDF/MAE/F12025.PDF` is that table.
 
 The split used to be per volume, so the volume holding the tail wrote its file
 over the one holding the head, and only the tail survived. Every volume of a
@@ -254,9 +489,9 @@ on which copy survived. `resolve_repeats()` now keeps the best-attested copy
 reports what it dropped:
 
 ```
-duplicate  : 27 code(s) found in another volume of the same year and not a
+duplicate  : 27 table(s) found in another volume of the same year and not a
              split; kept copy wins
-    A1    p71-365 (295 pp) dropped, kept from 2021_LXVII_n5_TOMO_I
+    MAE/A1                 p71-365 (295 pp) dropped, kept from 2021_LXVII_n5_TOMO_I
 ```
 
 Only when the two spans are *consecutive* — the first ends where its volume
@@ -273,6 +508,17 @@ tables in vol. II. The per-year table, which includes it, is in
 The pipeline is currently developed against the **2016** reports. Earlier years
 are deferred, not broken — see [Archive coverage](./AGENTS.md#archive-coverage)
 for the per-year table.
+**Status:** **610 tables over the 22 in-scope volumes (2016+), zero UNPLACED.**
+The earlier code-only layout was verified separately at **479 tables, zero
+failures** across 28 volumes — a different scope and a different key, so the two
+counts are not comparable. **2024 was never in either count and does not work**:
+under the old keying it found 10 of 31 tables in vol. I and five phantom tables in
+vol. II. Per-year figures are in
+[AGENTS.md](./AGENTS.md#archive-coverage).
+
+The pipeline is developed against the **2016** reports; `--all` stops at 2015
+(`FIRST_YEAR`). Earlier years are deferred, not broken — see
+[Archive coverage](./AGENTS.md#archive-coverage).
 
 ### **IndividualTables2SQL.py**
 
@@ -286,16 +532,19 @@ python IndividualTables2SQL.py --year 2023 --input-dir Out/PDF --output-root Out
 | Flag | Meaning |
 |---|---|
 | `--year` | year to process (default `2024`); matches the filename suffix |
-| `--input-dir` | per-table PDFs (default `Out/PDF`) |
+| `--input-dir` | per-table PDFs (default `Out/PDF`), walked recursively |
 | `--output-root` | CSV root (default `Out/CSV`) |
 | `--base` | root for all paths (default `.`) |
 | `--sep` | field separator (default `;`) |
 | `--encoding` | CSV encoding (default `utf-8-sig`) |
 
+`locate()` reads the ministry and article back out of the path step 1 wrote
+(`DOG/A11C5BIS/MG102023.PDF` → `DOG`, `A11C5BIS`, `MG10`, `2023`);
 `split_stem()` splits the filename stem into table code and year (`AA2023` →
-`AA`, `2023`); `detect_pdf_type()` uses the code, `table_semantics()` maps it to
-a family and a human label. No archive code ends in four digits, so the trailing
-digit group is always the year.
+`AA`, `2023`); `detect_pdf_type()` uses the code; `table_semantics()` maps
+`(code, authority, article)` to a family and a human label. No archive code ends
+in four digits, so the trailing digit group is always the year — which is what
+lets `MG10` and `MT13` be read at all.
 
 **Why CSV and not XLSX.** The archive holds tables Excel cannot represent.
 `detect_pdf_type()` used to key on `TAB_N1`, `TAB_O1`, `TAB_A2` … names that
@@ -409,9 +658,9 @@ re-add LFS filter rules.**
 ## **ToDo**
 
 Engineering work is tracked in [AGENTS.md](./AGENTS.md#outstanding), which is
-authoritative for it. At the head of it: **2024 does not work** — 10 of 31 tables
-in vol. I, five phantom tables in vol. II — and it should be fixed before
-anything else is extended. What is left after that is the product roadmap:
+authoritative for it. At the head of it: **2024 does not work** — under the
+previous keying it found 10 of 31 tables in vol. I and five phantom tables in
+vol. II. What is left after that is the product roadmap:
 
 - Process the remaining years — see [Archive coverage](./AGENTS.md#archive-coverage) for what is deferred and why
 - Populate a MySQL db
