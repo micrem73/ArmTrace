@@ -5,6 +5,7 @@ per table.
 
     reports_185_1990/<anno>/<relazione>.pdf
         ->  Out/PDF/<authority>/[<articolo>/]<tabella><anno>.PDF
+        ->  Out/TRASH/<anno>/<volume>_p<a>-<b>.PDF   (the pages no table owns)
 
 The year is read from the reports_185_1990/<anno>/ path, so one script serves
 every reporting year. With many years present, --year is required.
@@ -15,6 +16,7 @@ Usage:
     ./Reports2PDFTables.py --report reports_185_1990/2023/2023_LXVII_n2_VOLUME_II.pdf
     ./Reports2PDFTables.py --all                 # every text-bearing volume
     ./Reports2PDFTables.py --year 2023 --dry-run # report only, write nothing
+    ./Reports2PDFTables.py --year 2023 --no-trash # report the trash, do not write it
 
 Requires: pypdf (pip install -r requirements.txt)
 
@@ -2022,6 +2024,36 @@ def resolve_repeats(volumes):
 # output
 # ==========================================================================
 
+def table_plan(readers, manifests):
+    """{(authority, article, code): [(volume_index, start, end)]}, the pages
+    each exported PDF will contain.
+
+    The single source of truth for "which pages does the output own". Both the
+    writer (split_pdf) and the trash dump (dump_trash) read it, so the two
+    cannot drift into disagreeing about what was written -- a second,
+    independently reconstructed notion of the claimed pages is exactly how a
+    coverage report starts lying.
+
+    A copy settled away by resolve_repeats is skipped, so its pages are claimed
+    by nobody and land in the trash; that is the point. The leading pages of a
+    table that continues into the next volume come from that volume's "continued"
+    entry and are attributed to it, so a page is never claimed twice and never
+    claimed by the volume it does not physically belong to.
+
+    Volumes are referenced by index rather than by reader object, so a caller
+    can hold the reader alive and compare plans without relying on identity.
+    """
+    plan = {}
+    for idx, manifest in enumerate(manifests):
+        for tkey, info in manifest["tables"].items():
+            if info.get("kept") is False:
+                continue
+            plan.setdefault(tkey, []).append((idx, info["start"], info["end"]))
+        for tkey, cont in manifest.get("continued", {}).items():
+            plan.setdefault(tkey, []).append((idx, cont["start"], cont["end"]))
+    return plan
+
+
 def split_pdf(readers, manifests, out_root, year):
     """Write one PDF per table under the ministry/article tree.
 
@@ -2046,20 +2078,16 @@ def split_pdf(readers, manifests, out_root, year):
     two ministries both print becomes two files rather than one overwriting the
     other -- which is the failure the authority level was introduced to fix. A
     copy settled away by resolve_repeats is skipped: one table, one file.
+
+    The plan comes from table_plan(), which dump_trash() reads as well.
     """
-    plan = {}
-    for reader, manifest in zip(readers, manifests):
-        for tkey, info in manifest["tables"].items():
-            if info.get("kept") is False:
-                continue
-            plan.setdefault(tkey, []).append((reader, info["start"], info["end"]))
-        for tkey, cont in manifest.get("continued", {}).items():
-            plan.setdefault(tkey, []).append((reader, cont["start"], cont["end"]))
+    plan = table_plan(readers, manifests)
 
     written = []
     for (authority, article, code), segments in plan.items():
         writer = PdfWriter()
-        for reader, start, end in segments:
+        for idx, start, end in segments:
+            reader = readers[idx]
             for p in range(start, end + 1):
                 writer.add_page(reader.pages[p - 1])
         rel = ontology.relative_path(authority, article, code, year, PDF_EXT)
@@ -2068,6 +2096,301 @@ def split_pdf(readers, manifests, out_root, year):
         with open(path, "wb") as fh:
             writer.write(fh)
         written.append(str(path))
+    return written
+
+
+# ==========================================================================
+# the pages no table owns
+# ==========================================================================
+#
+# What lands here is the complement of table_plan(), not a second detection
+# pass. Every page the exported PDFs contain is claimed by exactly one of them,
+# so whatever is left over is by definition unattributed -- and the arithmetic is
+# a closed system: claimed + trashed == every physical page of the volume, which
+# is asserted per volume below rather than hoped for.
+#
+# It is NOT the same thing as manifest["unassigned_pages"], which counts pages no
+# detector read a code on. Almost all of those sit INSIDE a derived span: ends
+# come from the next table's start, so a table's pages need not repeat its code.
+# And it is not the over-extension check either -- a page a table wrongly
+# swallowed (Tabella M holding TAB N) is attributed, so it never appears here.
+# That failure belongs to VerifyTables.check_page_overlap().
+
+TRASH_DIR = "TRASH"
+
+# Reason slugs, printed in the report and written to the TSV. An empty note means
+# the slug is the whole explanation.
+TRASH_REASONS = {
+    "front-matter": "copertina, INDICE, frontespizio: precede la prima tabella",
+    "volume-tail": "dopo l'ultima tabella: PAGINA BIANCA, chiusura, allegati",
+    "elenco": "ELENCO TABELLE SEGNALAZIONI della pagina",
+    "gazzetta-pasted": "pagina Gazzetta Ufficiale incollata nel volume",
+    "cut-at-boundary": "ritagliata: la tabella si ferma al confine che il volume stampa",
+    "trimmed-tail": "pagine finali tolte dalla tabella (stamp o PAGINA BIANCA di un altro documento)",
+    "dropped-copy": "copia scartata: stesso codice in piu' volumi, non uno spezzamento",
+    "given-up-reprint": "seconda stampa scartata: la stessa tabella stampata due volte nel volume",
+    "no-detector": "nessun rilevatore ha rivendicato questa pagina",
+}
+
+
+def claimed_pages(plan, volume_count, page_counts):
+    """{volume_index: {page: [table keys claiming it]}}.
+
+    A page claimed twice is possible in principle -- the spans are contiguous by
+    construction, so it should not be -- and the caller reports it rather than
+    letting it be counted as either attributed or trashed.
+    """
+    claims = [{} for _ in range(volume_count)]
+    for tkey, segments in plan.items():
+        for idx, start, end in segments:
+            # Clipped to the volume: a span that runs past the last page is a
+            # defect to report, not an IndexError to raise at the last volume of
+            # the run. See dump_trash(), which prints the overage.
+            last = page_counts[idx]
+            for p in range(max(1, start), min(end, last) + 1):
+                claims[idx].setdefault(p, []).append(tkey)
+    return claims
+
+
+def span_past_end(plan, volume_count, page_counts):
+    """{volume_index: [(code, end)]} for spans reaching past their volume.
+
+    build_manifest clamps every end to the page count, so this is empty in
+    practice. It exists because claimed_pages() clips defensively, and a silent
+    clip would hide the very defect it was protecting against.
+    """
+    over = {}
+    for tkey, segments in plan.items():
+        for idx, _start, end in segments:
+            if idx < volume_count and end > page_counts[idx]:
+                over.setdefault(idx, []).append((tkey[2], end))
+    return over
+
+
+def trash_runs(claimed, page_count):
+    """Maximal [start, end] ranges of pages no table claims, in page order."""
+    runs, start = [], None
+    for p in range(1, page_count + 1):
+        if p in claimed:
+            if start is not None:
+                runs.append((start, p - 1))
+                start = None
+        elif start is None:
+            start = p
+    if start is not None:
+        runs.append((start, page_count))
+    return runs
+
+
+def trash_reason(manifest, start, end, tables):
+    """(slug, note) for one unattributed run.
+
+    Only witnesses the manifest records exactly are asserted. `boundary` and
+    `dropped` name real page numbers and `listings`/`pasted_pages` are page
+    sets, so a match is a fact. `trimmed` records only a COUNT, so it is
+    consulted by adjacency -- the run begins where a trimmed table's own pages
+    stop -- and the note names the table rather than claiming a page list.
+
+    Order is most-specific first. A run that satisfies no witness is reported as
+    `no-detector`, which is the honest answer and not a failure: a volume
+    legitimately holds pages no table owns.
+    """
+    # Exact page sets. The whole run has to be inside the set: a run that is
+    # only partly pasted Gazzetta is a mixed region, and calling it Gazzetta
+    # would misdescribe the pages that are not.
+    #
+    # A PARTIAL overlap is not discarded, it is reported on whichever reason the
+    # run earns. 2025 vol. II p194-235 is one run of 42 pages of which 31 are
+    # the Gazzetta block: the run opens where MAE/P2 was cut, so that is what it
+    # is called, and the Gazzetta pages inside it are named -- otherwise the
+    # folder would say "42 pages, no reason" and hide both facts.
+    inside = []
+    for slug, pages in (("gazzetta-pasted", manifest.get("pasted_pages") or []),
+                        ("elenco", manifest.get("listings") or {})):
+        known = set(pages)
+        if not known:
+            continue
+        hit = [p for p in range(start, end + 1) if p in known]
+        if len(hit) == end - start + 1:
+            return slug, ""
+        if hit:
+            covered = (f"{hit[0]}-{hit[-1]}" if len(hit) > 1 else str(hit[0]))
+            inside.append(f"{len(hit)}p {slug} ({covered}) dentro il blocco")
+
+    def note(base=""):
+        """The run's own reason, plus whatever known region sits inside it."""
+        return "; ".join(filter(None, [base] + inside))
+
+    # Exact spans, one run to one dropped copy or one discarded reprint.
+    for tkey, info in (manifest.get("dropped") or {}).items():
+        if info["start"] == start and info["end"] == end:
+            where = "/".join(filter(None, tkey))
+            return "dropped-copy", note(f"{where}, tenuta la copia di "
+                                        f"{info['kept_from']}")
+    for info in manifest.get("repeated_prints") or []:
+        if info["start"] == start and info["end"] == end:
+            where = "/".join(str(part) for part in info["key"] if part)
+            return "given-up-reprint", note(
+                f"{where}, tenuta la stampa "
+                f"p{info['kept_from']}-{info['kept_to']}")
+
+    # A run opening exactly on a boundary the volume itself printed is what that
+    # clamp gave up. The authority is the one the index named, when it did.
+    for key, info in (manifest.get("boundary") or {}).items():
+        if start in info["pages"]:
+            who = info.get("authority")
+            return "cut-at-boundary", note(
+                f"{key} fermata a p{start}"
+                + (f", il volume assegna p{start} a {who}" if who else ""))
+
+    # Adjacency only: the pages immediately after a table that had its tail
+    # stripped off are those stripped pages, when nothing else claims them. The
+    # manifest records a COUNT here and no page numbers, so the match is made on
+    # position and bounded by the count -- an adjacency match larger than the
+    # count recorded is somebody else's pages and is not claimed.
+    for key, count in (manifest.get("trimmed") or {}).items():
+        for info in tables.values():
+            if info["end"] + 1 == start and end - start + 1 <= count:
+                return "trimmed-tail", note(f"{key}, -{count}p finale/i")
+
+    if start == 1:
+        return "front-matter", note()
+    if end == manifest.get("page_count"):
+        return "volume-tail", note()
+    return "no-detector", note()
+
+
+def dump_trash(volumes, plan, out_root, year, write=True):
+    """Write Out/TRASH/<anno>/<volume>_p<a>-<b>.PDF for every unattributed run.
+
+        Out/TRASH/2025/2025_LXVII_n4_VOLUME_II_p001-066.PDF
+        Out/TRASH/2025/2025_LXVII_n4_VOLUME_II.tsv
+
+    One file per contiguous run, because a run is the unit a person triages: the
+    pages between two tables, or the block of Gazzetta pages bound into the
+    volume, is one thing to look at. The TSV beside them gives every run its page
+    range, size and reason, which is what makes the folder greppable rather than
+    a pile of PDFs.
+
+    `write=False` prints the accounting and writes nothing, so --dry-run still
+    reports the coverage -- which is the number a reader most wants from a run
+    that cannot be trusted yet.
+
+    Two things this deliberately does not do. It does not decide that an
+    unattributed page is a defect: most are not (cover, INDICE, relation prose,
+    Gazzetta pages), so the reason is reported rather than judged. And it does
+    not reproduce the verifier's over-extension check -- a page a table wrongly
+    swallowed is attributed and never reaches here.
+
+    Guarded per volume, for the reason build_manifest is: one volume must not
+    cost the others.
+    """
+    page_counts = [len(v["reader"].pages) for v in volumes]
+    claims = claimed_pages(plan, len(volumes), page_counts)
+    overage = span_past_end(plan, len(volumes), page_counts)
+
+    written = []
+    for idx, volume in enumerate(volumes):
+        # Guarded per volume, for the reason build_manifest is: the trash is a
+        # review artefact and must never be the thing that costs a run its PDFs.
+        # The per-table PDFs are already on disk by the time this is called.
+        try:
+            written += dump_volume_trash(idx, volume, claims[idx],
+                                         overage.get(idx, []), out_root,
+                                         year, write)
+        except Exception as exc:
+            print(f"    TRASH FAILED for {volume['label']} (artefacts are safe): "
+                  f"{type(exc).__name__}: {exc}")
+    return written
+
+
+def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
+    """One volume's share of dump_trash(). Returns the paths written."""
+    manifest = volume["manifest"]
+    reader = volume["reader"]
+    stem = volume["label"]
+    page_count = len(reader.pages)
+    written = []
+
+    # A span running past the volume's last page is reported, not clipped
+    # silently. It cannot happen from build_manifest, which clamps every end to
+    # the page count, so a non-empty list is a real finding.
+    if overage:
+        print(f"    SPAN PAST END: {len(overage)} span(s) reach past p{page_count}"
+              f" in {stem} (clipped when the trash was written): "
+              + ", ".join(f"{code} p{end}" for code, end in overage[:6]))
+
+    # The closed system: assert the arithmetic before writing anything, so a
+    # mismatch is a reported defect rather than a silently wrong folder.
+    twice = sorted(p for p, keys in claimed.items() if len(keys) > 1)
+    runs = trash_runs(claimed, page_count)
+    trashed = sum(end - start + 1 for start, end in runs)
+    covered = len(claimed) + trashed
+    if covered != page_count:
+        print(f"    TRASH ACCOUNTING FAILED for {stem}: {covered} pages "
+              f"accounted for out of {page_count}")
+    if twice:
+        print(f"    DOUBLE-CLAIMED: {len(twice)} page(s) claimed by two "
+              f"tables in {stem} (first p{twice[0]}) -- not trashed")
+
+    print(f"    trash       : {trashed:5} pages unattributed in "
+          f"{len(runs)} run(s) of {page_count} "
+          f"({trashed / page_count:.0%} of the volume)")
+    if runs:
+        print(f"                 -> {Path(out_root, OUT_DIR, TRASH_DIR, year)}/"
+              f"{stem}_p<a>-<b>{PDF_EXT} + {stem}.tsv")
+
+    rows = []
+    for start, end in runs:
+        slug, note = trash_reason(manifest, start, end, manifest["tables"])
+        rows.append((start, end, end - start + 1, slug, note))
+
+    if not write or not rows:
+        return written
+
+    folder = Path(out_root, OUT_DIR, TRASH_DIR, year)
+    folder.mkdir(parents=True, exist_ok=True)
+    # Clear this volume's own previous trash before writing, so a run that now
+    # yields fewer blocks does not leave the old ones behind: a stale file here
+    # would be indistinguishable from a current one. Scoped to this volume's stem
+    # and to _p*-PDF / .tsv -- never a recursive delete, and never anything in
+    # Out/PDF.
+    for stale in folder.glob(f"{stem}_p*{PDF_EXT}"):
+        stale.unlink()
+    for stale in folder.glob(f"{stem}*.tsv"):
+        stale.unlink()
+
+    names = []
+    for start, end, size, slug, note in rows:
+        writer = PdfWriter()
+        for p in range(start, end + 1):
+            writer.add_page(reader.pages[p - 1])
+        # An outline entry per run, so a folder of 14 PDFs opened in a viewer is
+        # navigable without reading the filenames.
+        try:
+            writer.add_outline_item(
+                f"p{start}-{end} ({size}pp) {slug}"
+                + (f" -- {note}" if note else ""), 0)
+        except Exception:
+            pass              # an outline is a convenience, never a failure
+        path = folder / f"{stem}_p{start:03d}-{end:03d}{PDF_EXT}"
+        with open(path, "wb") as fh:
+            writer.write(fh)
+        written.append(str(path))
+        names.append(path.name)
+
+    tsv = folder / f"{stem}.tsv"
+    with open(tsv, "w", encoding="utf-8") as fh:
+        fh.write("start\tend\tpages\treason\tnote\tfile\n")
+        for (start, end, size, slug, note), name in zip(rows, names):
+            fh.write(f"{start}\t{end}\t{size}\t{slug}\t{note}\t{name}\n")
+    written.append(str(tsv))
+
+    for start, end, size, slug, note in rows[:8]:
+        print(f"        p{start}-{end:<6} {size:5}pp  {slug:16}"
+              + (f" {note}" if note else ""))
+    if len(rows) > 8:
+        print(f"        ... {len(rows) - 8} more run(s) in {tsv.name}")
     return written
 
 
@@ -2358,6 +2681,9 @@ def main(argv=None):
                         help="stampa il report senza scrivere i PDF")
     parser.add_argument("--manifest", default="",
                         help="scrivi anche il manifest JSON in questo percorso")
+    parser.add_argument("--no-trash", action="store_true",
+                        help="non scrivere Out/TRASH/ (le pagine non attribuite "
+                             "restano solo nel report)")
     args = parser.parse_args(argv)
 
     jobs = group_by_year(collect_jobs(args))
@@ -2452,13 +2778,29 @@ def main(argv=None):
                 print(f"    REPORT FAILED (artefacts are safe): "
                       f"{type(exc).__name__}: {exc}\n")
 
-        if not args.dry_run and any(v["manifest"]["tables"] for v in volumes):
-            out_root = args.out or args.base or "."
-            written = split_pdf([v["reader"] for v in volumes],
-                                [v["manifest"] for v in volumes], out_root, year)
+        out_root = args.out or args.base or "."
+        readers = [v["reader"] for v in volumes]
+        manifests = [v["manifest"] for v in volumes]
+        plan = table_plan(readers, manifests)
+        if not args.dry_run and plan:
+            written = split_pdf(readers, manifests, out_root, year)
             print(f"    wrote      : {len(written)} PDF in "
                   f"{Path(out_root, OUT_DIR, 'PDF')}/<authority>/"
                   f"[<articolo>/]<tabella>{year}.PDF")
+
+        # The pages no table owns, written beside them. The accounting is printed
+        # on every run -- including --dry-run -- because coverage is the number a
+        # reader most wants from a run whose output cannot yet be trusted; only
+        # the files are conditional.
+        if args.no_trash:
+            print("    trash       : skipped (--no-trash)")
+        else:
+            trashed = dump_trash(volumes, plan, out_root, year,
+                                 write=not args.dry_run)
+            if trashed and not args.dry_run:
+                pdfs = sum(1 for p in trashed if p.endswith(PDF_EXT))
+                print(f"    trashed    : {pdfs} PDF + {len(trashed) - pdfs} TSV in "
+                      f"{Path(out_root, OUT_DIR, TRASH_DIR, year)}/")
         print()
         del volumes
 

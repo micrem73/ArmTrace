@@ -25,7 +25,7 @@ pip install -r requirements.txt
 # 2. the source reports: 2001-2025, 51 PDFs, into reports_185_1990/
 reports_185_1990/download_185.sh reports_185_1990 reports_185_1990/manifest.tsv
 
-# 3. step 1 — one PDF per table  ->  Out/PDF/
+# 3. step 1 — one PDF per table  ->  Out/PDF/  (+ Out/TRASH/ for the rest)
 ./Reports2PDFTables.py --year 2025 --volume both
 
 # 4. step 2 — one CSV per table   ->  Out/CSV/
@@ -66,8 +66,9 @@ reports_185_1990/                 # source reports, one folder per reporting yea
 └── SOURCES.md                   # archive structure, legislature→year mapping, gaps
 
 Out/                             # generated locally, NOT in git
-├── PDF|<authority>/[<article>/]<table><year>.PDF
+├── PDF/<authority>/[<article>/]<table><year>.PDF
 ├── CSV/<authority>/[<article>/]<table><year>.csv
+├── TRASH/<year>/<volume>_p<a>-<b>.PDF + <volume>.tsv
 └── VERIFY/verify-<year>.{log,json,html}
 ```
 
@@ -187,6 +188,7 @@ Splits a report volume into one PDF per table, written to
 | `--base` | root for all paths (default `.`) |
 | `--out` | output root (default `<base>/Out`) |
 | `--dry-run` | print the coverage report, write nothing |
+| `--no-trash` | don't write `Out/TRASH/` (the unattributed pages stay in the report only) |
 | `--manifest` | append a JSON manifest to this path — pass it to step 3 |
 
 Volume naming varies across the archive (`volume 1`, `VOLUME_I`, `TOMO_II`,
@@ -204,6 +206,31 @@ page ranges, which is what places a table under a ministry in the first place.
 
 Every run reports what it found *and what it skipped*, so a decision to leave
 something out stays visible rather than silent.
+
+**Every page of every volume is accounted for, and the leftovers are written out.**
+Step 1 knows which pages each exported PDF contains, so the pages *no* table owns
+are known too — not as a count but as files. They land in `Out/TRASH/<year>/`, one
+PDF per contiguous run, with a TSV giving each run its range, size and reason:
+
+```
+Out/TRASH/2025/2025_LXVII_n4_VOLUME_II.tsv
+start  end  pages  reason          note
+194    235  42     cut-at-boundary MAE/P2 fermata a p194 …; 31p gazzetta-pasted (205-235) dentro il blocco
+260    272  13     no-detector      3p elenco (270-272) dentro il blocco
+```
+
+So a run of pages is one thing to open and look at, and *why* it is unattributed
+is greppable rather than inferred. On 2025 that is 72 pages per volume, 7%.
+
+Most of it is not a defect — a cover, the INDICE, relation prose, the 31 Gazzetta
+Ufficiale pages bound into vol. II — so the reason is reported rather than judged.
+Two things TRASH is **not**: it is not the count of pages no detector read a code
+on (most of those sit *inside* a table's span, since ends are derived from the
+next start), and it does not catch a table that wrongly swallowed its neighbour's
+pages, because those pages *are* attributed. That failure is
+`VerifyTables.py`'s `check_page_overlap`. The arithmetic is a closed system —
+claimed + trashed = every physical page — and it is asserted per volume rather
+than assumed.
 
 **A table's length is checked against its own margin stamp.** Each table was
 exported as a document of its own and pasted into the volume, so every page

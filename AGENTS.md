@@ -202,6 +202,19 @@ strong signal the detectors work on it. Caveats:
   `Out/PDF/` or `Out/CSV/`: it is an audit, and an audit that can alter what it
   audits is not one. Everything it produces goes to `Out/VERIFY/`. Do not "fix"
   a finding by editing the verifier's output paths.
+- **The claimed and the trashed pages are disjoint and together are every page of
+  the volume.** `Out/TRASH/<anno>/<volume>_p<a>-<b>.PDF` holds the pages no
+  exported PDF contains, computed as the complement of `table_plan()` — the *same*
+  function `split_pdf()` writes from, so the two cannot drift. Never write a page
+  into both, and never reconstruct the claimed set a second way in order to
+  compute the trash: two independent notions of "owned" is exactly how a coverage
+  number starts lying. The TSV beside them records each run's reason. Measured
+  2025: **72 pages per volume, 7%** (69pp of front matter + 3 trimmed tails in
+  vol. I; in vol. II the 42pp cut at p194, of which 31 are the Gazzetta block).
+  **TRASH is not `unassigned_pages`** — that counts pages no detector read a code
+  on, and nearly all of those sit *inside* a derived span — **and it does not
+  catch over-extension**, since a page `Tabella M` wrongly swallowed is
+  *attributed*. That stays `VerifyTables.check_page_overlap()`.
 
 ---
 
@@ -798,6 +811,22 @@ nothing in the archive names them and only repetition can find them.
 
 ### Outstanding
 
+- **2016 vol. II leaves 358 of 768 pages unattributed, and they are tables.**
+  Found by `Out/TRASH/`, not by the verifier: `Out/TRASH/2016/2016_LXVII_n5_VOLUME_II_p286-643.PDF`
+  is 358 pages of Dogane data printing `TAB. M` on 278 of them, `TAB. N` 19,
+  `TAB. O` 28, `TAB. P` 20. The header scan detects only the *suffixed* series
+  (`M1`…`P2`, from p644) and never the four bare codes, so the main art. 1
+  comma 2 allegato is absent from the output entirely while the summary tables
+  beside it are exported. The run is reported as `cut-at-boundary` because that
+  is what opened it (UNKNOWN/PP stops at p286 on the INDICE block edge) — the
+  reason names the boundary, and the TSV is where the reader finds out the block
+  is 358 pages of tables rather than prose. The bare-letter series *is* found in
+  2025 (`DOG/A1C2` carries `M`, `N`, `O`, `P`) and in 2024 it is misread as
+  `M2`/`N2`/`O2`/`P2` (see §4), so the codes themselves are not the obstacle —
+  2016 loses them because nothing else in that volume witnesses them. Worth a
+  detector pass of its own, since the bare series is the *main* art. 1 comma 2
+  allegato and its absence is invisible to every check that only looks at the
+  manifest.
 - **2024 is measured and failing — fix it before extending anything else.** Ten
   of 31 tables in vol. I, five phantom tables in vol. II, family misdetected as
   3, `A4` trimmed by 17 pages. Every cause is named in §4 and in *2024: measured,
