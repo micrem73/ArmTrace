@@ -211,6 +211,43 @@ CODE_RE = re.compile(rf"^{CODE_TAIL}$")
 #     reads as a table code. A real code never has its keyword split from it.
 INLINE_CODE = re.compile(rf"\b(?i:TAB|TABELLA)\b\.?[^\S\n]+({CODE_TAIL})\b")
 
+# "TAB. M - APPENDICE": the Dogane print an appendix as its base code plus this
+# word, and the appendix is a DIFFERENT table, not more of the same one. TAB. M
+# is "Esportazione Definitiva (EX)" and TAB. M - APPENDICE is "Riesportazione
+# (RE)": a different operation type, a different set of rows, and the volume's
+# own summary lists it separately ("Riesportazione (RE) M Appendice - M1
+# Appendice - M2 Appendice", 2025 vol. II p462). Read as a bare code, INLINE_CODE
+# above matches "TAB. M" and hands the appendix to the base table: M came out
+# 291pp instead of 273pp, and six of its tables carried a second one inside.
+#
+# Exactly six codes have one, and the covers say which: only EX and IM have a
+# "re-" counterpart, so M, M1, M2, O, O1 and O2 do, and the temporanee (N, P and
+# their riepiloghi) do not. Under art. 1 commi 8/9 only the O series has data,
+# because the M appendix there is a single row worth EUR 0,00 (p464) and the
+# table was never printed.
+#
+# Two shapes have to be handled, for the reason ELENCO_ROW documents: pypdf
+# breaks the keyword wherever the font was subsetted, so the M appendix cover
+# arrives as 'Riesportazione (RE)' / 'T' / 'AB. M - APPENDICE'. Losing that one
+# page would leave it inside M's span, since a table's end is derived from the
+# next table's start.
+#
+# The word is required rather than inferred from a dash, so the summary line
+# "Tab. M - Appendice - Riesportazioni (RE)" is matched as a mention and not as
+# a table opening: the dash and the word must be the header's ending, not the
+# start of a title.
+APPENDIX_CODE = re.compile(
+    rf"(?i:T\s*A\s*B\s*\.\s*)({CODE_TAIL})\s*[-–—]\s*APPENDICE\s*$"
+)
+
+# The suffix the code carries from then on, and it is deliberately glued to the
+# base code rather than separated by a space. The manifest code and the
+# filename stem have to be the same string: the verifier reads the code back out
+# of the filename (split_stem), so a manifest saying "M APPENDICE" against a
+# file named MAPPENDICE2025.PDF would build a vocabulary the manifest cannot
+# match and report every appendix file as not carrying its own code.
+APPENDIX_SUFFIX = "APPENDICE"
+
 # Bookmark titles come in two shapes needing two patterns:
 #   "03_2023_TAB_A1", "2025 TAB A1 (EXP per Operatore)"   separated
 #   "tabellaAA_2025", "tabellaFG_2025 (1)"                glued
@@ -419,6 +456,29 @@ def same_table(printed, detected):
     # capital is not a truncated code, it is a different word.
     return (digits_s == digits_l and letters_l.startswith(letters_s)
             and len(letters_s) >= 2)
+
+
+def appendix_code(lines):
+    """The appendix table this page opens, as a code of its own, or None.
+
+    Read from the running header, and from a pair of adjacent lines as well as
+    from each line singly, because the Dogane cover page shreds the keyword
+    ('T' / 'AB. M - APPENDICE') -- the same two probes listing_codes() and
+    page_code_listed() use, for the same reason.
+
+    Unbounded on purpose, like style 3: a positional window cannot separate a
+    running header from a prose cross-reference, and the word APPENDICE is a
+    strong enough discriminator on its own.
+    """
+    for i, line in enumerate(lines):
+        probes = [line]
+        if i + 1 < len(lines):
+            probes.append(line + " " + lines[i + 1])
+        for probe in probes:
+            m = APPENDIX_CODE.search(probe)
+            if m:
+                return m.group(1).upper() + APPENDIX_SUFFIX
+    return None
 
 
 def is_blank(lines):
@@ -869,6 +929,9 @@ def page_code(lines, text, vocabulary, family):
     style 3  inline "TAB A1" in a running header (families 2, and 1/3 too)
     style 4  leading "Tabella D" against the index vocabulary (family 3)
     style 5  the DIFESA annesso, "MINISTERO DELLA DIFESA - Annesso 3A"
+
+    Plus one shape that is deliberately not a style of its own: the Dogane
+    appendix "TAB. M - APPENDICE" returns style 3 with a suffixed code.
     """
     # Style 5: checked first and without a vocabulary, because these tables sit
     # outside all three code families and print no table code at all -- the
@@ -878,6 +941,26 @@ def page_code(lines, text, vocabulary, family):
     m = ANNEXO_RE.search(text)
     if m:
         return m.group(1).upper(), 5
+
+    # The appendix, ahead of every other style. Style 3 would read the bare base
+    # code off the very same line and hand the appendix back to the table it
+    # belongs to, which is the defect this shape exists to fix.
+    #
+    # Deliberately NOT gated on classify_page() saying DOG. The page that
+    # carries the appendix's own title has the keyword shredded into 'T' /
+    # 'AB. M - APPENDICE', so the ontology cannot classify that page either, and
+    # gating on it loses the cover page -- which the end derivation then hands
+    # straight back to the base table, since one table's end is the next
+    # table's start minus one.
+    #
+    # Style 3 is returned rather than a new number so that MIN_RUN keeps
+    # governing it, which is what carries the one-page appendices: the Dogane
+    # waive that threshold, and any other ministry still drops a single-page hit
+    # as a prose cross-reference. A style of its own would exempt these pages
+    # from the rule everywhere.
+    appendix = appendix_code(lines)
+    if appendix:
+        return appendix, 3
 
     # Style 4: family 3 only, where the index is the sole reliable source
     # because those codes appear on the index page and nowhere in the body.

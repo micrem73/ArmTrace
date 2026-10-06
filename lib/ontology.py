@@ -130,7 +130,23 @@ DIFESA_RE = re.compile(
 # Dogane. The period in "TAB." is the discriminator against MAE's "TAB"; the
 # code may sit a little way along the line from the keyword, because the export
 # band is rotated and lands between them.
-DOG_CODE_RE = re.compile(r"TAB\.[^\n]{0,40}?\b([A-Z]{1,3}\d{0,2})\b")
+#
+# The keyword is spelled out letter by letter with \s* between them, for the
+# reason recorded on MEF_BANNER_SQUEEZED: pypdf breaks these pages wherever the
+# font was subsetted, so "TAB. M" arrives as 'T' / 'AB. M' on 13 pages of 2025
+# vol. II and classify_page() returned None for all of them. That was survivable
+# while the pages were anonymous interior -- fill_provenance() gave them the
+# ministry from their neighbours -- but the M appendix cover at p743 is the
+# FIRST page of a table, and its missing article split the table in two: one
+# file keyed (DOG, None, MAPPENDICE) holding a single page, and another keyed
+# (DOG, A1C2, MAPPENDICE) holding the other 17. Only the pages carrying an
+# article take part in grouping, so a single unclassifiable opening page is
+# enough to create a table of its own.
+#
+# The tolerance is confined to the keyword itself. The separator before the code
+# still cannot span a newline, and the period is still required, so MAE's "TAB"
+# and a prose "TAB." are unaffected.
+DOG_CODE_RE = re.compile(r"T\s*A\s*B\s*\.[^\n]{0,40}?\b([A-Z]{1,3}\d{0,2})\b")
 DOG_QUALIFIER = (
     (re.compile(r"Autorizzazioni\s+Globali\s+di\s+Trasferimento", re.IGNORECASE),
      "A10QUATER"),
@@ -250,10 +266,16 @@ the ministry and the annesso and nothing else prints it.
 def safe_code(code):
     """Filesystem-safe table name.
 
-    The archive's codes are already safe (A1, AA, MG13, UE, LGP); the only
-    risk is the "Appendice" suffix the Dogane summaries use, which would give
-    "M Appendice". It does not currently appear as a table header, but if it
-    ever does it must not turn into two path segments.
+    The archive's codes are already safe (A1, AA, MG13, UE, LGP), and the one
+    that is not is the Dogane appendix -- which is now real: step 1 reads
+    "TAB. M - APPENDICE" as the table MAPPENDICE (see APPENDIX_CODE there), so
+    this is what keeps that word from turning into a path segment.
+
+    Note the code is *glued* rather than space-separated, "MAPPENDICE" and not
+    "M APPENDICE", and that is load-bearing rather than cosmetic. The verifier
+    reads the code back out of the filename stem, so the manifest and the
+    filename have to hold the same string; a space here would be stripped on the
+    way to disk and the two would then disagree.
     """
     cleaned = SAFE_CODE_RE.sub("", str(code).upper())
     return cleaned or "TAB"

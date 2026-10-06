@@ -41,7 +41,7 @@ human decides.
 2016.
 
 Descending, not ascending, and the reason is coverage per unit of effort: 2025
-yields 110 tables across 2 volumes and exercises every code family, all four
+yields 119 tables across 2 volumes and exercises every code family, all four
 ministries, the ELENCO index, a garbled section and a cross-volume stitch; 2016
 yields 43 across 2 volumes. Fixing the rich volume first means the traps that
 would bite ten times are found once. 2024 is second for the opposite reason —
@@ -82,7 +82,7 @@ note below the table.
 
 | year | files | pages | PASS | FAIL | WARN | SKIP | status |
 |---|---|---|---|---|---|---|---|
-| **2025** | 110 | 1952 | 81 | **0** | 29 | 0 | baseline, FAIL-free, awaiting judgement |
+| **2025** | 119 | 1952 | 111 | **0** | 8 | 0 | FAIL-free, awaiting judgement |
 | 2016 | | | | | | | not started |
 | 2017 | | | | | | | not started |
 | 2018 | | | | | | | not started |
@@ -93,20 +93,29 @@ note below the table.
 | 2023 | | | | | | | not started |
 | 2024 | | | | | | | not started |
 
-**What the 29 WARNs on 2025 are**, so that they are accounted for rather than
-chased — four populations, none of them a fixable defect:
+**What the 8 WARNs on 2025 are**, so that they are accounted for rather than
+chased — three populations, none of them a fixable defect:
 
 | count | check | files | why it cannot be closed |
 |---|---|---|---|
-| 21 | `uniqueness.own_code_ratio` | M1–P2 of the Dogane, 3A/3B, most of the MEF annex | a table prints its code on its first page and then a running header without it. 41 pages of Tabella EE carry "EE" once; that is the shape of every real art. 27 table. The check passes them because a printed index or the manifest attests the code, and the WARN is the honest "the table exists, its pages do not repeat it" |
 | 5 | `completeness.stamp_total` | B1, C1, E, F1, L | the stamp's digits are in one of the broken fonts, so the total cannot be *read*. What can be checked — that it is identical on every page of the file, i.e. one document and not a pasted one — is checked and holds, on 4, 52, 70, 97 and 221 pages |
-| 3 | `edges.unreadable_pages` | A1, A4, H1 | the pages are garbled: no `ToUnicode` in the font, so there is no text to check the file edges against (§3). Permanent by construction |
-| 1 | `uniqueness.own_code_absent` | H1 | "H1" is on no *legible* page; 9 of its 32 pages are garbled and carry it invisibly. The file is found by a human-authored bookmark, so it is real — the WARN is the verifier saying it cannot confirm which table it is |
+| 2 | `edges.unreadable_pages` | A1, A4 | the pages are garbled: no `ToUnicode` in the font, so there is no text to check the file edges against (§3). Permanent by construction |
+| 1 | `uniqueness.own_code_absent` + `edges.unreadable_pages` | H1 | "H1" is on no *legible* page; 9 of its 32 pages are garbled and carry it invisibly. The file is found by a human-authored bookmark, so it is real — the WARN is the verifier saying it cannot confirm which table it is |
 
 Note the last one is a WARN and not a FAIL precisely because the bookmark
 attests it: that is the `attested` flag doing its job. It was a FAIL until the
 manifest was taught to count as a witness too (see `manifest_tables()`), which
 had been silently broken since the ministry tree made `tables` a list.
+
+The other 21 WARNs of the 110-file baseline were all `own_code_ratio`, and the
+check is **gone**: a table that prints its code on its first page and a plain
+running header after that is the ordinary shape of a real table, so a ratio
+never carried a verdict. 41 pages of Tabella EE carry "EE" once; the nine Dogane
+appendices carry theirs on the cover alone. The count survives in the detail of
+`own_code_run` because it is the cheapest thing in the report to judge by eye.
+What still catches a file holding the wrong table is `foreign_table` (another
+code repeated over `MIN_RUN` pages) and `own_code_absent` (this file's own code
+on no legible page).
 
 ### Before touching anything: write the baseline down
 
@@ -254,6 +263,40 @@ Each of these is a bug that shipped.
   steals the start of the real `Tabella UE` at p543. Resolved by the bookmark.
 - **Prose stop-list: do not put `E` or `I` in it.** Both are genuine family-2
   codes; suppressing them cost 4 tables on 2019 vol. I.
+- **An appendix is a different table, not more of the one it is appended to, and
+  it prints the base code.** `TAB. M` is `Esportazione Definitiva (EX)`;
+  `TAB. M - APPENDICE` is `Riesportazione (RE)` — a different operation type, a
+  different set of rows, and the Dogane's own summary lists it separately
+  (`Riesportazione (RE) M Appendice – M1 Appendice – M2 Appendice`, 2025 vol. II
+  p462). `INLINE_CODE` matches `TAB. M` and stops, so the appendix went to the
+  base table: **M was 291pp instead of 273pp**, and six of its tables carried a
+  second one inside — the same shape as the `MG8` defect below, reached from the
+  other direction. `APPENDIX_CODE` returns `MAPPENDICE`, and the suffix is
+  **glued, not spaced**, because the verifier reads the code back out of the
+  filename stem: a manifest saying `"M APPENDICE"` against a file named
+  `MAPPENDICE2025.PDF` builds a vocabulary the manifest cannot match.
+  Three sub-traps, each measured:
+  - **The cover page's keyword is shredded** into `'T'` / `'AB. M - APPENDICE'`,
+    as on every other page of that table (13 pages of 2025 vol. II read `None`
+    from `classify_page` for this reason). `appendix_code()` probes a joined
+    pair of lines. Lose that one page and it is handed back to `M`, because a
+    table's end is the next table's start minus one.
+  - **Gating the shape on `classify_page() == DOG` is therefore wrong**, and
+    fixing the ontology's `DOG_CODE_RE` to tolerate the same shredding is what
+    makes the key whole. Without it the opening page grouped as
+    `(DOG, None, MAPPENDICE)` — one page, its own file — while the rest keyed
+    `(DOG, A1C2, MAPPENDICE)`: 120 files instead of 119, with a stray
+    `Out/PDF/DOG/MAPPENDICE2025.PDF` holding a single page. Only pages carrying
+    an article take part in grouping, so one unclassifiable opening page is
+    enough to invent a table.
+  - **Style 3 is returned, not a style of its own**, so `MIN_RUN` keeps governing
+    these pages. The Dogane waive that threshold, which is what carries the
+    one-page appendices (`M1APPENDICE`, `O2APPENDICE`, …); a new style number
+    would exempt them from the rule everywhere. `N`, `P` and their riepiloghi
+    have **no** appendix, because only EX and IM have a "re-" counterpart.
+    Nine of them exist on 2025 vol. II: `M`/`M1`/`M2`/`O`/`O1`/`O2` under
+    art. 1 c. 2, `O`/`O1`/`O2` under art. 1 commi 8/9 (the A1C89 `M` appendix is
+    a single row worth € 0,00, p464, and was never printed).
 - **A volume can carry an annex in a code scheme of its own, and it collides
   with the year-mate's vocabulary.** 2024 vol. II is family 1 (`AA`…`UE`) from
   p88, then the Agenzia delle Dogane annex takes over at printed 1707 (pdf p701,
@@ -445,14 +488,15 @@ Each of these is a bug that shipped.
   rather than loudly: wrong, plausible, and invisible. `manifest_tables()` now
   reads both shapes; **check for this class before trusting a verifier run**,
   because a manifest that parses is not a manifest that is read.
-- **A table's code may legitimately be printed only on its first page**, and the
-  ratio check cannot tell that from a prose mention — `own_code_ratio` is 1/41
-  for Tabella EE and 1/6 for the 2025 phantom `P`, the same shape. What
-  separates them is a second witness, so `attested` counts the manifest as well
-  as a printed index and a bookmark. The Difesa annessi are the reason it has
-  to: they are in **no index and no bookmark tree** at all (the INDICE gives
-  DIFESA no "Tabelle" line), so Annesso 3B — header on 1 page of 8 — has
-  nothing but step 1 to vouch for it.
+- **A table's code may be printed only on its first page**, and the ratio check
+  cannot tell that from a prose mention — it is 1/41 for Tabella EE and 1/6 for
+  the 2025 phantom `P`, the same shape, so it could never decide anything and
+  only ever warned on correct files. `own_code_ratio` is **removed**; `attested`
+  stays a reported field, and `foreign_table` plus `own_code_absent` are what
+  now catch a file holding the wrong table. (The Difesa annessi are why the
+  attestation idea survives at all: they are in **no index and no bookmark tree**
+  — the INDICE gives DIFESA no "Tabelle" line — so Annesso 3B, header on 1 page
+  of 8, has nothing but step 1 to vouch for it.)
 - **Several bookmark trees carry container entries with no page** (`'araba.pdf'`,
   `'0001.pdf'`, 2024 vol. II's `'RELAZIONE ARMAMENTI - file MEF CORRETTO.pdf'`).
   Skip them.
@@ -692,6 +736,15 @@ annesso number is both the code and the last path segment; the letter must stay
 adjacent and uppercase, or `Annesso 4 TABELLA RIASSUNTIVA` reads as annesso "4 T"
 and splits one table in two.
 
+**The Dogane carry a fifth kind of table under the same two articles**, and it
+is the one the article level alone cannot separate: `MAPPENDICE`, `M1APPENDICE`,
+`M2APPENDICE`, `OAPPENDICE`, `O1APPENDICE`, `O2APPENDICE` sit beside their base
+codes with the *same* qualifier line, because `Riesportazione (RE)` is a
+different operation type under the same authorisation, not a different one. Only
+the printed suffix distinguishes them, so it is carried in the code itself
+(`MAPPENDICE`, §4 "An appendix is a different table"). Nine on 2025 vol. II; the
+A1C89 series has three, since its `M` appendix was never printed.
+
 **Article tokens keep the differentiators the law uses.** comma 5 and comma 5-bis
 are different authorisations, and art. 10 has bis/quater/quinquies — so
 `A11C5BIS` and `A10QUATER`, never `A11C5` or `A10`. Only `DOG` and `DIFESA`
@@ -808,6 +861,14 @@ the manifest confirms. Re-running step 1 clears both with no code change.
 Also worth knowing: `MG8`, `P`, `N` and `M`/`O`/`MT7` all sit in the Dogane
 annexes, which announce their tables in **prose** rather than an index, so
 nothing in the archive names them and only repetition can find them.
+
+That audit predates the ministry tree, and two of its eight have since been
+closed by it (`M` and `O` no longer hold `TAB N` / `TAB P`, because the article
+level separates them). A ninth finding was never in it, because no check could
+see it: **the Dogane appendix sat inside its base table** (§4, "An appendix is a
+different table"), so `M` was 291pp rather than 273pp and six tables carried a
+second one within them. The current run over **119 files** is
+**111 PASS, 0 FAIL, 8 WARN, 0 SKIP**.
 
 ### Outstanding
 
