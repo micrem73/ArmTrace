@@ -153,6 +153,26 @@ MEF_ALT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# The same banner, matched with whitespace squeezed out, because pypdf shreds
+# these pages: 2025 vol. II prints the office line as "Dip" / "artimento del
+# Tesoro Direzione V - Uffici" / "o VIII" and the law line as "Operazio" / "ni
+# disciplinate dall'art. 27", so every word MEF_ALT_RE is built from is broken
+# across two lines and neither alternative matches. Only the MEF prints this
+# banner, and it prints it on every page of its relation and of its annex, so it
+# is what marks a page as belonging to the art. 27 section.
+MEF_BANNER_SQUEEZED = ("DipartimentodelTesoroDirezioneV", "art.27")
+
+
+def is_mef_section(text):
+    """True when a page carries the MEF art. 27 section banner.
+
+    Read against the page with whitespace squeezed out, for the reason recorded
+    on MEF_BANNER_SQUEEZED: the words are split across lines by the extractor,
+    not by the typesetting.
+    """
+    squeezed = re.sub(r"\s+", "", text)
+    return any(marker in squeezed for marker in MEF_BANNER_SQUEEZED)
+
 # MAE. Two forms, both checked last because neither is exclusive on its own:
 #
 #   export band   "MAECI -UAMA - CENTRO INFORMATICO Pagina 11 di 11 TAB M1".

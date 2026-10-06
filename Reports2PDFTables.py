@@ -77,6 +77,81 @@ except ImportError:
 
 from lib import indice, ontology
 
+
+def block_at(edges, page):
+    """Ministry owning a page per the volume's INDICE, or None.
+
+    None where the index does not reach: before its first block, or in a volume
+    it only partly covers. A missing boundary is not a boundary, so callers
+    treat it as "nothing to enforce here" rather than "belongs to nobody".
+    """
+    if not edges:
+        return None
+    return indice.block_for_page(edges, page)
+
+
+# A page that opens another body's section: the ministry's own name, then its
+# office, then no table. "DIREZIONE DOGANE / Ufficio controlli dogane / R E L A
+# Z I O N E" on 2021 vol. II p586 is the first of four (p586, p594, p601, p607)
+# and each opens a Dogane allegato.
+#
+# Matched on the line ordering rather than on a name, because the names are the
+# whole problem: the MEF's own pages open with "Ministero dell'Economia e delle
+# Finanze", so a name test would fire on the annex it is meant to end. What
+# separates them is that a table page names a code and a section-opening page
+# does not, so the caller only consults this where the volume's listing says no
+# table may follow.
+SECTION_OPEN_MAX_LINE = 3
+
+
+def is_section_open(lines, promised):
+    """True for a page that opens a new body's section rather than a table.
+
+    Three conditions, and all three are needed:
+
+      * a body named in the first few lines, where a running header sits. The
+        window is small because the archive puts the volume furniture above it;
+      * NO code on the page -- not one the volume's ELENCO promised, and not one
+        of any other shape. A table page always names its table, even when the
+        name is the bare "AA" of the MEF annex;
+      * a second body-ish line, which is what an opening page has and a title
+        banner does not. "DIREZIONE DOGANE" is followed by "Ufficio controlli
+        dogane"; "Ministero dell'Economia e delle Finanze" is followed by a table
+        title.
+    """
+    head = lines[:SECTION_OPEN_MAX_LINE]
+    if not any("ministero" in ln.lower() or "direzione" in ln.lower()
+               or "agenzia" in ln.lower() for ln in head):
+        return None
+    for line in lines:
+        bare = line.strip().rstrip(".")
+        if CODE_RE.match(bare) and any(same_table(bare, c) for c in promised):
+            return None
+    # No table title either. "Tabella <code> - <title>" is the annex's own
+    # opening and must not be read as a new section.
+    for line in lines[:SECTION_OPEN_MAX_LINE + 2]:
+        if ELENCO_TITLE.match(line) or LEADING_CODE.match(line.strip()):
+            return None
+    return next((ln.strip() for ln in head
+                 if "direzione" in ln.lower() or "agenzia" in ln.lower()
+                 or "ministero" in ln.lower()), None)
+
+
+def record_boundary(outside, where, page, authority, count):
+    """Note in `outside` that `where` stops at `page`, accumulating the count.
+
+    A table can hit both boundaries at once -- on 2025 vol. II the DIFESA
+    annesso 4 is cut by the INDICE at the INTERNO leaf and by the listing further
+    on -- and the report wants one line per table naming every witness that
+    fired, not one line per witness.
+    """
+    entry = outside.setdefault(where, {"pages": [], "authority": None,
+                                       "total": 0})
+    if page not in entry["pages"]:
+        entry["pages"].append(page)
+    entry["authority"] = entry["authority"] or authority
+    entry["total"] += count
+
 REPORTS_DIR = "reports_185_1990"
 OUT_DIR = "Out"
 
@@ -171,6 +246,179 @@ def is_allegato_page(text):
     return bool(ALLEGATO_HEAD.search(_WS.sub("", text)))
 
 
+# ==========================================================================
+# the ELENCO TABELLE SEGNALAZIONI: an index of the tables that follow it
+# ==========================================================================
+#
+# The MEF prints, ahead of its own table annex, a list of the tables that
+# follow: "Tabella AA  Esportazioni definitive per Istituti di Credito",
+# "Tabella FG  Finanziamenti/Garanzie per Istituti di Credito", and so on, then
+# an ELENCO GRAFICI for the four chart pages. On 2025 vol. II it is pages
+# 270-272 and it names all 35 codes of the annex -- which is the volume's own
+# statement of what its table section contains, and the only one: none of these
+# codes appears in the INDICE, and the four charts appear in no outline.
+#
+# It is read as an index, and therefore in the order printed, because that is
+# what it is. That gives three things no other witness offers:
+#
+#   * the vocabulary of the annex, harvested exactly, so a code that only the
+#     running header names is corroborated rather than guessed;
+#   * the codes expected *after* the index, so a table the header scan misses
+#     and no outline names is still known to exist;
+#   * the boundary of the annex itself, which is what stops the last table
+#     before it from running on into the Dogane annex that follows.
+#
+# Three ways the text arrives, all of them handled here:
+#
+#   * the heading is shredded: "ELENC" / "O TABELLE SEGNALAZIONI" on 2025,
+#     "ELENCO TABELLE" whole on older volumes, so the marker is matched with
+#     whitespace squeezed out;
+#   * so is the word Tabella: "Ta" / "bella FG - Finanziamenti-Garanzie" on the
+#     relation pages, "Tabe" / "lla AA" in the index itself. Hence the entry
+#     pattern tolerates a break between the keyword and the code, and the
+#     volume's own page_break rule is reused rather than reinvented;
+#   * the ELENCO continues over more than one page (2025: three, and the
+#     previous read stopped at the first eight codes), so a run of pages is read
+#     as one list.
+#
+# What an index page is *not*: a table page. On 2025 vol. II the MEF table pages
+# carry "ELENCO TABELLE / SEGNALAZIONI / Operazioni disciplinate dall'art. 27"
+# in a trailing header block of their own, so the marker is honoured in the TOP
+# lines only, and a page is accepted as a listing only once it has named a
+# handful of codes -- the way a real index differs from a page that mentions
+# one.
+
+# "Tabella AA", "Tab. M", and the shredded forms pypdf produces from them:
+# "Ta" / "bella FG - Finanziamenti-Garanzie", "Tabe" / "lla AA".
+#
+# The break can fall anywhere inside the keyword, so the keyword is spelled out
+# with \s* between its letters rather than matched whole. Whitespace is *not*
+# squeezed out, unlike the heading test above: squeezing merges the code into
+# the title that follows it ("TabellaAAEsportazioni"), and then no lookahead can
+# tell AA from AAE. The separator between keyword and code is therefore
+# required, which is what the archive prints.
+ELENCO_ROW = re.compile(
+    rf"(?i:T\s*a\s*b\s*e\s*l\s*l\s*a|TAB\s*\.\s*)\s+({CODE_TAIL})(?![A-Za-z0-9])"
+)
+
+# The heading, whitespace squeezed, so "ELENC"+"O TABELLE" is one word.
+ELENCO_HEAD = re.compile(r"ELENCOTABELLE|ELENCOGRAFICI|ELENCODELLETABELLE")
+
+# A table title: "Tabella FG - Finanziamenti-Garanzie per intermediari", shredded
+# by pypdf into "Ta" / "bella FG - Finan...". The trailing title is REQUIRED,
+# which is what separates a real table opening from the same word in prose --
+# "come da elencazione sintetica della tabella KK1" carries no dash after the
+# code and is not a table start. ELENCO_ROW above deliberately allows no title,
+# because inside a listing the title is on the next line.
+ELENCO_TITLE = re.compile(
+    rf"(?i:T\s*a\s*b\s*e\s*l\s*l\s*a|TAB\s*\.\s*)\s+({CODE_TAIL})(?![A-Za-z0-9])"
+    rf"\s*[-–—:]\s*\S"
+)
+
+# A real listing names many codes on a page. The MEF index names 12-16; a table
+# page whose running header mentions the ELENCO names one.
+ELENCO_MIN_CODES = 6
+
+# How far past the MEF section banner a table title may sit. The banner is three
+# shredded lines -- "Mi"/"nistero dell'Economia e delle Finanze",
+# "Dip"/"artimento del Tesoro Direzione V - Uffici"/"o VIII",
+# "Operazio"/"ni disciplinate dall'art. 27" -- so the title lands two or three
+# lines below it, never further. Generous, because the point is only to stop the
+# search before the table's own body.
+TITLE_LINES = 6
+
+# How far below the banner a bare code line may sit and still be this page's
+# own stamp. The MEF annex prints it fifth or sixth, under a four-line banner;
+# the first table row is below it. Matches BARE_CODE_MAX_LINE in VerifyTables.py,
+# which is the same rule reached independently by the audit.
+BARE_CODE_MAX_LINE = 8
+
+# Where the ELENCO of a ministry sits, and how far its section runs. A listing
+# ends at the next listing of the same ministry, at a ministry boundary, or at
+# the end of the volume -- whichever comes first. Bounded, because an
+# unterminated section would swallow the Dogane annex into the MEF's.
+ELENCO_MAX_PAGES = 400
+
+
+def listing_codes(text):
+    """The table codes named on one ELENCO page, in printed order.
+
+    Empty for a page that is not a listing: the marker has to appear in the top
+    lines (the MEF table pages repeat it in a trailing block), and the page has
+    to name enough codes to be a list rather than a mention.
+    """
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    if not lines:
+        return []
+    if not ELENCO_HEAD.search(_WS.sub("", "\n".join(lines[:12])).upper()):
+        return []
+    found = []
+    for i, line in enumerate(lines):
+        # A row is "Tabella <code>" and pypdf breaks it wherever the font was
+        # subsetted: "Ta" / "bella FG - ..." on a relation page, "Tabe" / "lla
+        # AA" inside the index, and on one page of the 2025 listing "lla IA" /
+        # "A" -- where the break falls inside the code itself. So each line is
+        # joined with the next two and the code read off the join, which covers a
+        # break anywhere in "Tabella" or immediately after it.
+        #
+        # No digit-one fold: the listing is human-authored and prints the code as
+        # it is, and 2025 has both "Tabella II" and "Tabella II1" as distinct
+        # tables -- folding maps both onto I1 and neither is recognisable
+        # afterwards. same_table() absorbs the shredding instead, at comparison
+        # time, where it cannot alter a code.
+        probes = [line + " " + " ".join(lines[i + 1:i + 3])]
+        if i + 1 < len(lines):
+            probes.append(line + " " + lines[i + 1])
+        for probe in probes:
+            m = ELENCO_ROW.match(probe)
+            if m:
+                code = m.group(1).upper()
+                if code not in found:
+                    found.append(code)
+                break
+    return found if len(found) >= ELENCO_MIN_CODES else []
+
+
+def _split_code(code):
+    """("AA", "1") for "AA1". The code tail is capitals then digits throughout."""
+    i = 0
+    while i < len(code) and code[i].isalpha():
+        i += 1
+    return code[:i], code[i:]
+
+
+def same_table(printed, detected):
+    """True if an index reading and a page reading can name the same table.
+
+    The one disagreement in the archive is a *letter* lost to the shredding.
+    pypdf breaks 2025 vol. II's "Tabella IAA" into "Tabe" / "lla IA" / "A", so
+    the listing yields "IA" and the table page yields "IAA": same letters, same
+    digits, one capital missing. IBB is the same case.
+
+    A missing *digit* is deliberately NOT forgiven, because in this archive a
+    digit is a different table: "Tabella II" and "Tabella II1" are two tables,
+    as are AA and AA1, and every family-2 pair A1/A2, B1..B7. Folding them
+    together here would hide exactly the confusion AGENTS.md section 4 warns
+    about. So the rule is: one extra capital, nothing else.
+
+    This only widens a comparison. It never decides that a code exists, so
+    nothing is created by being generous here.
+    """
+    if printed == detected:
+        return True
+    short, long = sorted((printed, detected), key=len)
+    if len(long) != len(short) + 1:
+        return False
+    letters_s, digits_s = _split_code(short)
+    letters_l, digits_l = _split_code(long)
+    # Same digits, one more capital at the end, and the shorter reading is itself
+    # a code the archive uses. "IA"/"IAA" yes. "AA"/"AA1" no, because the digits
+    # differ. "FG"/"F" no, because no table in the archive is called F: a lone
+    # capital is not a truncated code, it is a different word.
+    return (digits_s == digits_l and letters_l.startswith(letters_s)
+            and len(letters_s) >= 2)
+
+
 def is_blank(lines):
     """True for a separator page: no text, or the Italian "PAGINA BIANCA"."""
     if not lines:
@@ -259,6 +507,13 @@ PROSE_STOPLIST = {
 # pages, and a single hit is always ambiguous. Applied to style 3 only; see
 # build_manifest for why.
 MIN_RUN = 2
+
+# Two prints of the same table are hundreds of pages apart -- the MEF relation
+# prints LGP inline and the annex prints it again 178 pages later -- while the
+# interruptions inside one table's run are a handful of pages. 40 sits well clear
+# of both: the widest interruption measured is 20 pages (the Dogane M table of
+# 2025 vol. II), and the narrowest reprint gap is 173.
+REPRINT_GAP = 40
 
 # ==========================================================================
 # the printed page number, and what it is for
@@ -662,6 +917,129 @@ def page_code(lines, text, vocabulary, family):
     return None, None
 
 
+def page_code_listed(lines, listed, banner):
+    """The code of a table the volume's own ELENCO promised, opening this page.
+
+    A detector of its own rather than another style inside page_code(), because
+    the witness is different in kind: the volume lists the table, and the page
+    opens it. Neither means much alone -- a code can be listed and never printed,
+    and "Tabella" appears in prose -- but together they cannot lie about a table
+    that does not exist.
+
+    This is what finds the MEF tables the relation prints inline on 2025 vol. II,
+    pp 263-267: UE, LGP, IAA, FG and KK1, each titled "Tabella <code> - <title>"
+    and each invisible to every other detector, because pypdf returns the title
+    shredded into fragments ("Ta" / "bella FG - Finanziamenti-Garanzie per
+    intermediari") so INLINE_CODE never sees the keyword whole, and no outline
+    names the inline print. They are the pages the DIFESA annesso was swallowing
+    whole, and two of them (p263, p267) style 3 was reading as the wrong table
+    from a prose mention further up the page.
+
+    Requires all three of: a code the listing named, the art. 27 banner the MEF
+    puts on the page, and a real title after the code, which is what separates
+    this from "come da elencazione sintetica della tabella KK1" on p263. No
+    listing, no detection -- a code nobody promised cannot be manufactured here.
+    """
+    if not listed or not banner:
+        return None
+    # The title follows the banner, so the search starts where the banner does
+    # rather than at the top of the page. That is what finds IAA on 2025 vol. II
+    # p265, where the page carries the tail of LGP's rows first and the new
+    # section block -- banner, title and body -- starts two thirds down: read
+    # from the top, the title is invisible; read from the banner, it is the
+    # first thing after it.
+    start = 0
+    for i, line in enumerate(lines):
+        # Both halves of the banner are matched, because pypdf cuts between them:
+        # "Dip" / "artimento del Tesoro Direzione V", and the law line arrives as
+        # "Operazio" / "ni disciplinate dall'art. 27".
+        if "disciplinate" in line or "ipartimento" in line:
+            start = i
+            break
+    for i in range(start, min(start + TITLE_LINES + 2, len(lines))):
+        line = lines[i]
+        probes = [line + " " + " ".join(lines[i + 1:i + 3])]
+        if i + 1 < len(lines):
+            probes.append(line + " " + lines[i + 1])
+        for probe in probes:
+            m = ELENCO_TITLE.match(probe)
+            if m:
+                code = m.group(1).upper()
+                if any(same_table(code, known) for known in listed):
+                    return code
+
+    # The third shape, and the reason the four MEF charts needed a bookmark tree
+    # to be found at all. In the annex the code is printed BARE on its own line
+    # -- "AA", then "Esportazioni definitive per Istituti di credito", then
+    # "Ta€ella" where the euro sign has been substituted for the letter b of
+    # Tabella. So the keyword is unusable and only the code is legible:
+    #
+    #     Ministero dell'Economia e delle Finanze
+    #     Dipartimento del Tesoro Direzione V - Ufficio VIII
+    #     ELENCO TABELLE
+    #     Operazioni disciplinate dall'art. 27, legge 09/07/1990, n. 185 -Smi
+    #     AA                          <- the code, alone
+    #     Esportazioni definitive per Istituti di credito - Riepilogo generale
+    #     Ta€ella                     <- "Tabella", corrupted
+    #
+    # Gated three ways, all of which are needed. The code must be one the ELENCO
+    # promised; the page must carry the MEF banner; and the code must sit in the
+    # header region, above the body -- AGENTS.md section 4 records the bare "I" in
+    # a Dogane table list, 108 lines down a page, which is exactly this shape
+    # without the position. The first table row below the code is never eligible.
+    for i, line in enumerate(lines):
+        if i >= start + BARE_CODE_MAX_LINE:
+            break
+        if not CODE_RE.match(line):
+            continue
+        code = line.upper()
+        if any(same_table(code, known) for known in listed):
+            return code
+    return None
+
+
+def listed_pages(candidates, listings):
+    """({page: code}, {page: ministry}) from the volume's own ELENCO.
+
+    The first is what it says: the tables the listing promised and a page opens.
+    The second is what the same pass finds around them -- the pages where a new
+    body's section begins. Both come out of the same held pages, and both need
+    the listing: a code is only trusted because the listing promised it, and a
+    section only counts as the end of the annex because the listing said what
+    that annex contains.
+
+    Run over the held pages once the whole volume has been read, because the
+    listing names the tables that follow it while a ministry may print one of
+    them inline *before* it. So the listing cannot be applied as the scan goes
+    past, and the pages it applies to have to be held -- see the comment on
+    `candidates` in scan_headers.
+
+    A code found this way REPLACES whatever style 3 read on the page. Style 3 is
+    the weakest witness in the pipeline and this is a stronger one, so where they
+    disagree the listing wins: on 2025 vol. II p267 style 3 returns FG, read from
+    a cross-reference in the prose above the page's own title, while the page
+    opens Tabella KK1 and the listing promises KK1.
+    """
+    if not listings or not candidates:
+        return {}, {}
+    promised = set()
+    for codes in listings.values():
+        promised.update(codes)
+    found, sections = {}, {}
+    for page in sorted(candidates):
+        lines, banner = candidates[page]
+        code = page_code_listed(lines, promised, banner)
+        if code:
+            found[page] = code
+            continue
+        # Not a table, and not the header of one. If it opens another body's
+        # section, that is the end of the annex this listing introduced.
+        opening = is_section_open(lines, promised)
+        if opening:
+            sections[page] = opening
+    return found, sections
+
+
 def scan_bookmarks(reader):
     """{code: first page} from the PDF bookmark tree.
 
@@ -727,6 +1105,18 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
     """
     page_codes, weak_pages = {}, set()
     unassigned, garbled, ciphered, foreign = [], [], [], []
+    listings = {}
+    # The opening lines of every page no other detector claimed, kept so the
+    # ELENCO can be consulted against them afterwards. Necessary because a
+    # listing names the tables that FOLLOW it, yet a ministry may also print one
+    # of those tables inline in its relation, *before* the listing: the MEF does
+    # exactly that on 2025 vol. II, where LGP, IAA, FG and KK1 appear on
+    # pp 264-267 and again in the annex on pp 388-442. So the listing cannot be
+    # applied as the pages go past; it has to be applied at the end, to pages
+    # already seen. Holding the opening lines is what makes that possible without
+    # extracting every page of the volume a second time -- which, on a
+    # 1048-page volume, costs more than the whole rest of the run.
+    candidates = {}
     sink = [] if pasted is None else pasted
     for i, page in enumerate(reader.pages):
         page_no = i + 1
@@ -754,7 +1144,22 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
             facts["blank"][page_no] = is_blank(lines)
             facts["numbers"][page_no] = printed_numbers(lines)
             facts["fingerprints"][page_no] = header_fingerprint(lines)
-        if not lines or is_index_page(lines):
+        if not lines:
+            continue
+        # An index of tables, read as one. Tested before is_index_page() because
+        # that test is the wrong shape for this: it keys on the word
+        # "SEGNALAZIONI", and 2021 tom. II prints its first ELENCO page as
+        # "ELENCO TABELLE" without it, so the page falls through to the body
+        # scan and the first annex table is detected *inside* the index, then
+        # clamped to the index's own page. What separates a listing from a table
+        # page is the heading and a pageful of codes, which is what this checks;
+        # is_index_page() below still catches the other index layouts, which
+        # carry no "Tabella <code>" rows to read.
+        named = listing_codes(text)
+        if named:
+            listings[page_no] = named
+            continue
+        if is_index_page(lines):
             continue
         # An allegato cover or summary lists its own tables by name; treating
         # that listing as table starts invents a dozen tables and truncates the
@@ -763,6 +1168,16 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
             continue
 
         code, style = page_code(lines, text, vocabulary, family)
+        # Held for a second look: either the page claims nothing, or what it
+        # claims came from style 3, which is the weakest witness there is -- an
+        # unbounded scan of the body that cannot tell a running header from a
+        # prose mention. Style 6 is stronger, and it is only available once the
+        # volume's ELENCO has been read. What is stored is what style 6 needs and
+        # nothing more: the opening lines, and whether the MEF section banner is
+        # on the page at all, which is a substring test on the squeezed text and
+        # is the cheaper of the two.
+        if not code or style == 3:
+            candidates[page_no] = (lines, ontology.is_mef_section(text))
         if not code:
             unassigned.append(page_no)
             continue
@@ -774,7 +1189,8 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
         # table is provisional unless at least one of its pages is backed.
         if style == 1 and "ELENCO TABELLE" not in text:
             weak_pages.add(page_no)
-    return page_codes, weak_pages, unassigned, garbled, ciphered, foreign
+    return (page_codes, weak_pages, unassigned, garbled, ciphered, foreign,
+            listings, candidates)
 
 
 def body_starts(reader, vocabulary):
@@ -814,7 +1230,7 @@ def body_starts(reader, vocabulary):
 
 
 def provenance_from_indice(reader, sibling=None):
-    """{page: authority} from the volume's own INDICE, or (None, reason).
+    """({page: authority}, source, block_edges) from the volume's own INDICE.
 
     The INDICE states which ministry produced which folio range. That is the
     document's own account of its structure, so it beats inferring ownership from
@@ -842,6 +1258,11 @@ def provenance_from_indice(reader, sibling=None):
     wrong rather than absent, which is the failure mode that matters: on 2018
     vol. I the parser reads the "Volume I" heading as a ministry and produces
     "MEF block@1", out of document order and entirely plausible.
+
+    `block_edges` is the same parse kept *unfiltered* -- every ministry the
+    index names, including those that file no tables -- because it answers a
+    different question: where a table's span has to stop. It is None when the
+    parse is rejected, and so is every clamp built on it.
     """
     offset, coverage = indice.folio_map(reader)
     _page, blocks = indice.find_indice(reader)
@@ -855,14 +1276,16 @@ def provenance_from_indice(reader, sibling=None):
             blocks = None
     ok, reason = indice.validate(blocks, offset, coverage, len(reader.pages))
     if not ok:
-        return None, reason
+        return None, reason, None
     ranges = indice.authority_ranges(blocks, offset)
     if not ranges:
-        return None, "INDICE names no ministry that produces tables"
+        return None, "INDICE names no ministry that produces tables", None
+    edges = indice.block_edges(blocks, offset, len(reader.pages))
     return ({page: indice.authority_for_page(ranges, page, offset)
              for page in range(1, len(reader.pages) + 1)},
             f"INDICE, {len(ranges)} ministry block(s), folio=page{offset:+d}, "
-            f"{coverage:.0%} legible")
+            f"{coverage:.0%} legible",
+            edges)
 
 
 def fill_provenance(raw, page_count):
@@ -968,11 +1391,20 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
     raw_prov = {}
     pasted = []
     facts = {"blank": {}, "numbers": {}, "fingerprints": {}}
-    page_codes, weak_pages, unassigned, garbled, ciphered, foreign = scan_headers(
-        reader, vocabulary, family, stamps, raw_prov, pasted, facts
-    )
+    page_codes, weak_pages, unassigned, garbled, ciphered, foreign, listings, \
+        candidates = scan_headers(reader, vocabulary, family, stamps, raw_prov,
+                                  pasted, facts)
 
-    from_indice, source = provenance_from_indice(reader, sibling)
+    # The ELENCO consulted over the held pages. Style 6: the volume lists the table
+    # and the page opens it, which no header shape can do. Where style 3 had also
+    # claimed the page, the listing wins -- see listed_pages().
+    listed_codes_found, foreign_sections = listed_pages(candidates, listings)
+    for page, code in listed_codes_found.items():
+        page_codes[page] = (code, 6)
+        unassigned = [p for p in unassigned if p != page]
+    listed_found = len(listed_codes_found)
+
+    from_indice, source, edges = provenance_from_indice(reader, sibling)
     if from_indice:
         provenance = {page: authority for page, authority in from_indice.items()
                       if authority}
@@ -987,15 +1419,99 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
     # Group the per-page detections into tables. This happens here rather than
     # inside scan_headers because the key needs the page's provenance, which is
     # only complete once the gaps have been filled.
+    #
+    # A code can be detected on two disjoint runs, and that is a real shape rather
+    # than an error: the MEF prints a table once in its relation, inline, and
+    # again in the annex its ELENCO introduces. 2025 vol. II does that with UE
+    # (p263 and p446), LGP (p264 and p442), IAA (p265 and p388), FG (p266 and
+    # p340) and KK1 (p267 and p441), each inline print carrying its own title and
+    # section banner. Joining the runs would give one table a span covering every
+    # page between them -- most of the relation prose -- so they are kept apart
+    # and the table keeps one of them.
+    #
+    # Which copy it keeps is the volume's to decide, and the volume's own ELENCO
+    # is the first witness: it names the table as one of those that follow the
+    # listing, so the annex print is the one indexed and the inline print in the
+    # relation is given up. Failing that the outline, then the longer run, then
+    # the earlier. The prints given up are reported, never dropped silently.
     groups = {}
-    for page, (code, style) in page_codes.items():
+    for page in sorted(page_codes):
+        code, style = page_codes[page]
         authority = provenance.get(page, ontology.UNKNOWN)
         article = articles.get(page)
         tkey = (authority, article, code)
-        entry = groups.setdefault(tkey, {"pages": [], "style": style})
+        entry = groups.setdefault(tkey, {"pages": [], "style": style, "runs": []})
         entry["pages"].append(page)
+        if entry["runs"] and page == entry["runs"][-1][-1] + 1:
+            entry["runs"][-1].append(page)
+        else:
+            entry["runs"].append([page])
         if style == 1 and page not in weak_pages:
             weak_pages.add(page)
+
+    repeated_prints = []
+    split_groups = {}
+    for tkey, entry in groups.items():
+        runs = entry["runs"]
+        # Two kinds of gap separate two prints of one table.
+        #
+        # A WIDE one, where nothing else explains the silence. A table's pages do
+        # not all carry its code -- the Dogane's M runs 250 pages with 20 of them
+        # silent -- so a small gap means an interruption, not a second print. The
+        # relation print and the annex print of the same MEF table are hundreds of
+        # pages apart, which no such interruption reaches; 40 is well clear of the
+        # widest interruption measured and well inside the gap it must catch.
+        #
+        # And one that CONTAINS A LISTING PAGE. The ELENCO is the volume's own
+        # index of the tables that follow it, so a run of table pages cannot
+        # continue across it: whatever came before is a different thing from
+        # whatever comes after. That is the only thing separating two prints ten
+        # pages apart in 2021 vol. II, where the MEF relation quotes four saldi
+        # rows as bare codes at p6-9 and the annex prints the real Tabella AA at
+        # p16, with the listing on p13-15 in between.
+        far = []
+        for i in range(1, len(runs)):
+            gap = range(runs[i - 1][-1] + 1, runs[i][0])
+            if runs[i][0] - runs[i - 1][-1] > REPRINT_GAP \
+                    or any(p in listings for p in gap):
+                far.append(i)
+        if not far:
+            split_groups[tkey] = entry
+            continue
+        # Split the run list at each wide gap, then keep the cluster the volume
+        # itself points at.
+        clusters = [[runs[0]]]
+        for i in far:
+            clusters.append([runs[i]])
+        marked = embedded.get(tkey[2])
+        # The annex copy comes first in the ranking, and the reason is the
+        # ELENCO: it names this table as one of the tables that follow the
+        # listing, so the print after the listing is the copy the volume
+        # indexes. The inline print in the relation is a second printing of the
+        # same table, and it is the one given up. Only where the volume has no
+        # listing does the outline decide, then the longer run, then the earlier.
+        promised_after = [p for p in sorted(listings)
+                          if any(same_table(tkey[2], c)
+                                 for c in listings[p])]
+        after = promised_after[-1] if promised_after else None
+        kept = max(clusters, key=lambda grp: (
+            after is not None and grp[-1][-1] > after,
+            marked is not None and any(r[0] <= marked <= r[-1] for r in grp),
+            sum(len(r) for r in grp), -grp[0][0]))
+        for grp in clusters:
+            if grp is kept:
+                continue
+            pages = [p for r in grp for p in r]
+            repeated_prints.append({
+                "key": list(tkey), "start": pages[0], "end": pages[-1],
+                "pages": len(pages),
+                "kept_from": kept[0][0], "kept_to": kept[-1][-1],
+                "reason": "stessa tabella stampata due volte nel volume",
+            })
+        entry["pages"] = [p for r in kept for p in r]
+        entry["runs"] = kept
+        split_groups[tkey] = entry
+    groups = split_groups
 
     # A single-page hit is a prose cross-reference, not a table -- but only for
     # style 3, which cannot tell a running header from "come da elencazione
@@ -1009,6 +1525,11 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
     # first page of the short ones. Of the 18 MG tables of art. 11 comma 5-bis,
     # nine run to a single page, and applying the threshold there dropped them
     # while the span of the surviving MG8 swallowed the rest.
+    # MIN_RUN applies to style 3 only -- and so, automatically, not to style 6:
+    # the threshold tests the style, and a table the volume's own ELENCO lists
+    # and the page opens is not a prose cross-reference however few pages it
+    # repeats its code on. The five MEF tables the 2025 relation prints inline
+    # are one page each, so the threshold would reject all five.
     tables, singletons = {}, []
     for tkey, entry in groups.items():
         run = len(entry["pages"])
@@ -1061,7 +1582,7 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
     # Verified 28/28 codes on 2019 vol. I with zero interruptions.
     ordered = sorted(tables.items(), key=lambda kv: kv[1]["start"])
     last_page = len(reader.pages)
-    trimmed = {}
+    trimmed, outside = {}, {}
     for idx, (tkey, info) in enumerate(ordered):
         code = tkey[2]
         # Placement first: it decides the path, and the per-table log lines
@@ -1069,13 +1590,93 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
         # detector actually saw, not over the derived span, which reaches to the
         # next table's start and would let a neighbour that inherited into the
         # tail outvote the table itself.
+        seen = info.get("seen") or [info["start"]]
         info["authority"], info["article"] = resolve_placement(
-            info.get("seen") or [info["start"]], provenance, articles)
+            seen, provenance, articles)
         info.pop("seen", None)
         where = "/".join(filter(None, [info["authority"], info["article"], code]))
+        # The last page on which a detector actually read this table's code, as
+        # a floor no clamp may go below.
+        floor = max(seen)
 
         end = ordered[idx + 1][1]["start"] - 1 if idx + 1 < len(ordered) else last_page
         info["end"] = max(info["start"], end)
+        # What the derivation alone would have produced. Both clamps report
+        # against this, so "how many pages did we take off" stays a single
+        # number however many witnesses fired.
+        derived = info["end"]
+
+        # Deriving the end from the next start assumes the next table starts
+        # where the next table starts. When it does not -- when the page after
+        # this table belongs to another ministry's section, which the document's
+        # own index states outright -- the derived end reaches into somebody
+        # else's pages and a file grows prose it has nothing to do with. The
+        # index is a better witness than the next start, so it wins, and the
+        # pages it claims are dropped from this table.
+        #
+        # Never below the last page on which the table's own code was actually
+        # read: if the index and the page furniture disagree about a table, the
+        # disagreement is left visible in the report rather than resolved by
+        # deleting the table's own pages.
+        block = block_at(edges, info["start"]) if edges else None
+        if block is not None:
+            # Scanned forwards from the floor, not backwards from the end: the
+            # first page past the table that the index gives to somebody else is
+            # the boundary. A backwards scan would find the *last* page of the
+            # next ministry's block and report the whole of it as trimmed.
+            boundary = next((p for p in range(floor + 1, info["end"] + 1)
+                             if block_at(edges, p) != block), None)
+            if boundary is not None:
+                record_boundary(outside, where, boundary,
+                                block_at(edges, boundary), derived - boundary)
+                info["end"] = boundary
+
+        # Third boundary, and the one that catches a volume with no INDICE at all: the
+        # ELENCO is only ever printed at the HEAD of an annex, so the section it
+        # introduces ends where the next ministry's own opening page begins. The
+        # witness is a page whose first lines name a ministry and print neither a
+        # table code nor a table title -- the shape of "DIREZIONE DOGANE /
+        # Ufficio controlli dogane / R E L A Z I O N E" on 2021 vol. II p586,
+        # which is 367 pages of UE table past its last row.
+        #
+        # Narrow on purpose: the line must sit in the header region and the page
+        # must carry no code the listing promised, because the MEF's own pages
+        # open with "Ministero dell'Economia e delle Finanze" and are tables.
+        ministry_break = next((
+            p for p in range(max(floor, info["start"]) + 1, info["end"] + 1)
+            if p in foreign_sections), None)
+        if ministry_break is not None:
+            record_boundary(outside, where, ministry_break,
+                            foreign_sections[ministry_break],
+                            derived - ministry_break + 1)
+            info["end"] = ministry_break - 1
+
+        # Second, independent boundary: the ELENCO TABELLE SEGNALAZIONI. The
+        # ministry prints it immediately before its own table annex, naming the
+        # tables that follow, so a table detected before a listing page cannot
+        # reach past it. On 2025 vol. II the DIFESA annesso 4 detected at p254
+        # took the derived end p272, which swallowed the MEF relation, its three
+        # inline tables and the entire listing. The listing page is a boundary
+        # the document prints itself, which makes this clamp independent of the
+        # INDICE: a volume with no INDICE still gets it.
+        #
+        # Only the FIRST listing page inside the span is a boundary. A listing
+        # continues over several pages (2025 vol. II: p270-272), and the later
+        # ones are pages of the listing, not a further section starting.
+        if listings:
+            listing_page = next((p for p in sorted(listings)
+                                 if info["start"] <= p <= info["end"]), None)
+            if listing_page is not None and listing_page > floor:
+                # The listing itself belongs to no table, so it is not a boundary
+                # on its own: what the table must not cross is the ministry's
+                # change of section, which the listing marks. So the clamp stops
+                # the table one page short of the first page of the section that
+                # follows, and the pages between are left unassigned rather than
+                # attributed to a table they do not belong to.
+                record_boundary(outside, where, listing_page, None,
+                                derived - listing_page + 1)
+                info["end"] = listing_page - 1
+
         info["end"], dropped, note = trim_trailing(info["start"], info["end"],
                                                    stamps)
         if dropped:
@@ -1117,10 +1718,28 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
             continue
         final[new_key] = info
 
+    # Codes the volume's own ELENCO says exist but no detector found. Reported
+    # rather than invented: an index page names the tables that follow it, so a
+    # code on one with no table anywhere after it is a detection failure, and
+    # where it was named is exactly the information needed to go and look.
+    listed_missing = []
+    if listings:
+        found = {code for _a, _art, code in final}
+        for page in sorted(listings):
+            for code in listings[page]:
+                if not any(same_table(code, seen) for seen in found):
+                    listed_missing.append((page, code))
+
     return {
         "family": family,
         "page_count": last_page,
         "provenance_source": source,
+        "listings": {p: c for p, c in sorted(listings.items())},
+        "listed_missing": listed_missing,
+        "listed_found": listed_found,
+        "listed_tables": len({code for _c, s in page_codes.values()
+                              if s == 6}),
+        "repeated_prints": repeated_prints,
         "pasted_pages": sorted(foreign),
         "pasted_ranges": [list(r) for r in indice.page_ranges(foreign)],
         "vocabulary": sorted(vocabulary),
@@ -1136,6 +1755,7 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
         "ciphered_pages": len(ciphered),
         "stamped_pages": len(stamps),
         "trimmed": trimmed,
+        "boundary": outside,
     }, facts
 
 
@@ -1489,6 +2109,29 @@ def report(manifest, label):
     if manifest["vocabulary"]:
         print(f"    index      : {len(manifest['vocabulary'])} codes "
               f"{' '.join(manifest['vocabulary'])}")
+    if manifest.get("listings"):
+        listed = sum(len(c) for c in manifest["listings"].values())
+        pages = ", ".join(f"p{p}({len(c)})" for p, c
+                          in manifest["listings"].items())
+        print(f"    ELENCO     : {listed} codes named ahead of the annex on "
+              f"{len(manifest['listings'])} page(s) {pages}")
+    if manifest.get("listed_found"):
+        print(f"    ELENCO hit : {manifest['listed_found']} page(s) claimed by "
+              f"the volume's own listing alone, covering "
+              f"{manifest.get('listed_tables', 0)} table(s) no header or "
+              f"outline named")
+    if manifest.get("listed_missing"):
+        print(f"    LISTED BUT NOT FOUND: {len(manifest['listed_missing'])} "
+              f"code(s) the volume's own index promises and no detector found: "
+              + " ".join(f"{c}@p{p}" for p, c in manifest["listed_missing"][:12]))
+    if manifest.get("repeated_prints"):
+        print(f"    reprinted  : {len(manifest['repeated_prints'])} table(s) "
+              f"printed twice in the volume; one copy exported")
+        for info in manifest["repeated_prints"][:8]:
+            where = "/".join(str(part) for part in info["key"] if part)
+            print(f"        {where:12} p{info['start']}-{info['end']} "
+                  f"({info['pages']}pp) given up, kept p{info['kept_from']}"
+                  f"-{info['kept_to']}")
     if manifest["conflicts"]:
         print(f"    conflicts  : {len(manifest['conflicts'])}, resolved to bookmark")
         for c in manifest["conflicts"][:6]:
@@ -1512,6 +2155,15 @@ def report(manifest, label):
                            sorted(manifest["trimmed"].items()))
         print(f"    stripped   : {len(manifest['trimmed'])} trailing pages "
               f"removed ({detail})")
+    if manifest.get("boundary"):
+        print(f"    bounded    : {len(manifest['boundary'])} table(s) stopped at "
+              f"a section boundary the volume prints (INDICE or ELENCO)")
+        for where, info in list(manifest["boundary"].items())[:8]:
+            at = ", ".join(f"p{p}" for p in info["pages"])
+            who = f" (p{info['pages'][0]} starts {info['authority']})" \
+                if info["authority"] else ""
+            print(f"        {where:22} -{info['total']} trailing page(s), "
+                  f"stopped before {at}{who}")
     notes = [(k[2], i["stamp_note"]) for k, i in manifest["tables"].items()
              if i.get("stamp_note")]
     for code, note in notes[:6]:

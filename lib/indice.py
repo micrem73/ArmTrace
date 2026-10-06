@@ -219,6 +219,52 @@ def authority_ranges(blocks, offset):
     return out
 
 
+# --------------------------------------------------------------------------
+# where a ministry's block ENDS
+# --------------------------------------------------------------------------
+#
+# authority_ranges() answers "which of the four ministries that file tables owns
+# this page", and drops every ministry that files none. A span needs the other
+# question: where does this ministry's block stop, so a table cannot run on into
+# the pages the index hands to somebody else. The ministries that file no tables
+# have to stay in that answer -- on 2025 vol. II the block boundary between
+# DIFESA and MEF is not a ministry boundary at all: INTERNO owns the single
+# folio between them, and it is that leaf which closes the last DIFESA annesso.
+#
+# So the edges are kept unfiltered here, and only provenance (which pages a
+# table may be filed under) uses the filtered list.
+
+def block_edges(blocks, offset, page_count):
+    """[(first_page, ministry)] for every block, in page order.
+
+    The index lists the ranges of the whole document, including the later
+    volumes, so blocks landing outside this volume are dropped. A volume the
+    index only partly covers therefore clamps less, never wrongly: pages before
+    the first edge, or after the last one that a page exists for, have no
+    boundary and are left alone.
+    """
+    edges = []
+    for name, folio, _tables in blocks:
+        page = folio - offset
+        if 1 <= page <= page_count:
+            edges.append((page, name))
+    return sorted(edges)
+
+
+def block_for_page(edges, page):
+    """Ministry owning a page, or None where no block reaches.
+
+    Same bisect as authority_for_page(), over the unfiltered edges.
+    """
+    chosen = None
+    for start, name in edges:
+        if start <= page:
+            chosen = name
+        else:
+            break
+    return chosen
+
+
 def authority_for_page(ranges, page, offset):
     """Ministry owning a page, from the INDICE ranges. None if before all."""
     folio = page + offset
