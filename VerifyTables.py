@@ -201,6 +201,25 @@ VERIFIER_CODE = re.compile(rf"^{CODE_TOKEN}$")
 # next. That is how the 2025 MEF charts print themselves.
 BARE_KEYWORD = re.compile(r"(?i)tabella|tab\.|tab")
 
+# --------------------------------------------------------------------------
+# the DIFESA annessi, which are not art. 27 codes at all
+# --------------------------------------------------------------------------
+#
+# The Difesa files its tables under art. 2 comma 6 as "annessi" and prints no
+# table code anywhere: the running header is
+# "MINISTERO DELLA DIFESA - Annesso 3A" and the annesso number *is* the table
+# name. So the code space is a different one -- digits, optionally followed by a
+# capital (2, 3A, 3B, 3C, 4) -- and neither the code-shape check nor the
+# code-on-the-page check could see any of it. All five Difesa files of 2025 were
+# reported FAIL on that basis, and every one of them was a correct file.
+#
+# The ministry tree is what made them visible to the verifier at all: under the
+# older flat layout these tables collided with the art. 27 codes on the bare
+# code, so none of them had ever been written out.
+ANNEXO = re.compile(
+    r"(?i:MINISTERO\s+DELLA\s+DIFESA)\s*[-–—]?\s*(?i:Annesso)\s*([0-9]+[A-Z]?)")
+ANNEXO_CODE = re.compile(r"^[0-9]+[A-Z]?$")
+
 # How far down a page a bare code line may sit and still be read as the page's
 # own stamp. The 2025 charts print theirs in the fourth line; a table cell
 # that happens to read as a code sits much further down.
@@ -491,6 +510,14 @@ def page_code(lines, vocabulary):
     line is the last resort, and is only safe because the vocabulary is
     already restricted to codes that repeat somewhere in the volume.
     """
+    # A Difesa annesso carries no art. 27 code anywhere on the page, so it is
+    # read first and from its own marker: "MINISTERO DELLA DIFESA - Annesso 3A".
+    # Without this the page reads as having no code at all, and
+    # uniqueness.own_code_absent then fails a file that is nothing but table.
+    m = ANNEXO.search("\n".join(lines))
+    if m:
+        return m.group(1).upper()
+
     for line in lines:
         m = VERIFIER_LEADING.match(line)
         if m:
@@ -580,8 +607,14 @@ def check_layout(path, code, year, known_years, checks, authority="",
     if known_years and year not in known_years:
         checks.bad("layout.known_year",
                    f"anno '{year}' non presente in manifest.tsv")
-    if not CODE_RE.match(code) and not VERIFIER_CODE.match(code):
-        checks.bad("layout.code_shape", f"codice '{code}' non ha forma art. 27")
+    # Three code spaces, not one. art. 27 families print AA/AA1/MG13/UE, the
+    # family-2 ministry prints A1/P2, and the Difesa annexes are numbered 2, 3A,
+    # 4. Judging a Difesa annesso against the art. 27 shape fails a correct file,
+    # which is what happened to all five of them in 2025.
+    if not (CODE_RE.match(code) or VERIFIER_CODE.match(code)
+            or ANNEXO_CODE.match(code)):
+        checks.bad("layout.code_shape",
+                   f"codice '{code}' non ha forma art. 27 ne di annesso Difesa")
     if not any(c["verdict"] == FAIL for c in checks.items):
         where = "/".join(filter(None, [authority, article])) or "flat"
         checks.ok("layout", f"{where}/{stem}{PDF_EXT}")
@@ -1243,8 +1276,9 @@ def check_provenance(volumes, files):
         manifest = volume.get("manifest")
         if not manifest:
             return None, "nessun manifest.json: le spanse non sono verificabili"
-        for code, info in manifest.get("tables", {}).items():
-            if info.get("kept") is False:
+        for info in manifest_tables(manifest):
+            code = info.get("code")
+            if not code or info.get("kept") is False:
                 continue
             for p in range(info["start"], info["end"] + 1):
                 claims[(volume["report"], p)].append(
@@ -1256,8 +1290,8 @@ def check_provenance(volumes, files):
         manifest = volume.get("manifest")
         tables = {}
         if manifest:
-            tables = {c: i for c, i in manifest.get("tables", {}).items()
-                      if i.get("kept") is not False}
+            tables = {i["code"]: i for i in manifest_tables(manifest)
+                      if i.get("code") and i.get("kept") is not False}
         starts = {i["start"] for i in tables.values()}
         ends = {i["end"] for i in tables.values()}
         for p in range(1, pages + 1):
@@ -1649,6 +1683,424 @@ def print_check_legend():
     sys.stdout.write(check_legend_text())
 
 
+# ==========================================================================
+# the HTML report: one file a person can click through
+# ==========================================================================
+#
+# The text log is the record and the JSON is the machine-readable form; neither
+# is any good for the question a person actually has, which is "show me the file
+# with the problem". This writes a third view of the SAME payload, in the same
+# pass, so the three cannot describe different runs.
+#
+# Three constraints, all of them learned the hard way:
+#
+#   * Self-contained. No CDN, no webfont, no build step. It has to open from a
+#     file:// URL on a machine with no network, which is where a person actually
+#     is when reading an audit.
+#   * Links are RELATIVE, via os.path.relpath from the report's own directory.
+#     An absolute path breaks the moment the tree is moved or the report is
+#     mailed; a relative one keeps working. It also means the report is written
+#     where the log is, so it links to the PDFs through the same Out/ tree.
+#   * Links, not an embedded <iframe>. Inlining 110 PDFs would make a
+#     multi-hundred-megabyte file and browsers refuse local iframes anyway; a
+#     plain href hands off to whatever PDF viewer the system has.
+#
+# Verdict is always written as a word as well as shown in colour, so the report
+# stays readable for a colour-blind reader and in a monochrome print.
+
+VERDICT_ORDER = {FAIL: 0, WARN: 1, SKIP: 2, PASS: 3}
+
+# Colours are chosen for contrast in both light and dark rather than for
+# saturation. --v-* are the per-verdict accents; the rest is a neutral ramp.
+HTML_CSS = """
+:root{
+  --bg:#fff; --fg:#1a1a1a; --muted:#5a5f66; --line:#d8dce0; --head:#f2f4f6;
+  --fail:#b3261e; --warn:#8a5a00; --skip:#4b5563; --pass:#3f6b45;
+  --failbg:#fdecea; --warnbg:#fdf3e2; --skipbg:#f1f3f5; --passbg:#eef5ef;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#14171a; --fg:#e6e8ea; --muted:#9aa2ab; --line:#333a40; --head:#1d2126;
+    --fail:#f2b8b5; --warn:#e8c07a; --skip:#aab3bd; --pass:#a8d5b0;
+    --failbg:#2a1614; --warnbg:#2a2317; --skipbg:#1f2429; --passbg:#16211a;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;padding:1.2rem 1.4rem 4rem;background:var(--bg);color:var(--fg);
+  font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+h1{font-size:1.25rem;margin:0 0 .2rem}
+.sub{color:var(--muted);margin:0 0 1rem}
+h2{font-size:1rem;margin:2rem 0 .5rem;padding-bottom:.3rem;
+  border-bottom:1px solid var(--line)}
+h3{font-size:.9rem;margin:1.2rem 0 .4rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.04em}
+a{color:inherit}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:.35rem .5rem;border-bottom:1px solid var(--line);
+  vertical-align:top}
+th{background:var(--head);position:sticky;top:0;cursor:pointer;
+  user-select:none;white-space:nowrap}
+th:hover{outline:1px solid var(--muted)}
+th .arrow{color:var(--muted);font-size:.7em;margin-left:.2rem}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tr.row{cursor:pointer}
+tr.row:hover{background:var(--head)}
+tr.v-FAIL td.vcell{color:var(--fail);font-weight:600}
+tr.v-WARN td.vcell{color:var(--warn);font-weight:600}
+tr.v-SKIP td.vcell{color:var(--skip)}
+tr.v-PASS td.vcell{color:var(--pass)}
+tr.v-PASS td.code,tr.v-PASS td.fname{opacity:.62}
+tr.hidden{display:none}
+/* An expander row starts hidden and is revealed by its parent being visible. */
+tr.checks td{padding-top:0;border-bottom:1px solid var(--line)}
+details>summary{cursor:pointer;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"\\25B8";display:inline-block;width:1rem;
+  color:var(--muted)}
+details[open]>summary::before{content:"\\25BE"}
+.dot{display:inline-block;width:.62rem;height:.62rem;border-radius:50%;
+  vertical-align:middle;margin-right:.4rem}
+.checks{background:var(--head);border-radius:4px;padding:.5rem .7rem;
+  margin:.2rem 0 .6rem}
+.chk{display:flex;gap:.5rem;padding:.1rem 0;font-size:12.5px}
+.chk .id{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  white-space:nowrap;color:var(--muted)}
+.chk .vd{flex:0 0 3.4rem;font-weight:600}
+.chk .vd.PASS{color:var(--pass)} .chk .vd.WARN{color:var(--warn)}
+.chk .vd.FAIL{color:var(--fail)} .chk .vd.SKIP{color:var(--skip)}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;
+  margin:.6rem 0}
+.chip{border:1px solid var(--line);background:var(--bg);color:var(--fg);
+  border-radius:999px;padding:.2rem .7rem;font:inherit;font-size:12.5px;
+  cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--head);font-weight:600}
+.chip .n{color:var(--muted);margin-left:.3rem}
+.chip.v-FAIL[aria-pressed="true"]{background:var(--failbg);color:var(--fail)}
+.chip.v-WARN[aria-pressed="true"]{background:var(--warnbg);color:var(--warn)}
+.chip.v-PASS[aria-pressed="true"]{background:var(--passbg);color:var(--pass)}
+#q{border:1px solid var(--line);background:var(--bg);color:var(--fg);
+  border-radius:4px;padding:.35rem .6rem;font:inherit;min-width:19rem}
+.meta{color:var(--muted);font-size:12.5px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.legend{font-size:12.5px}
+.legend td:first-child{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  white-space:nowrap;color:var(--muted)}
+ul.codes{margin:.3rem 0;padding-left:1.2rem}
+ul.codes li{display:inline-block;margin:.1rem .4rem .1rem 0}
+.pill{display:inline-block;border-radius:3px;padding:0 .4rem;font-size:12px}
+.note{border-left:3px solid var(--line);padding:.3rem .7rem;margin:.6rem 0;
+  color:var(--muted);font-size:12.5px}
+"""
+
+HTML_JS = """
+const rows=[...document.querySelectorAll('tr.row')];
+const q=document.getElementById('q');
+const chips=[...document.querySelectorAll('.chip[data-v]')];
+const VERD={FAIL:0,WARN:1,SKIP:2,PASS:3};
+let on=new Set(chips.map(c=>c.dataset.v));
+function apply(){
+  const s=q.value.trim().toLowerCase();
+  let n=0;
+  for(const r of rows){
+    const show=on.has(r.dataset.v)&&(!s||r.dataset.s.includes(s));
+    r.classList.toggle('hidden',!show);
+    // The expander row is a SIBLING, so it has no verdict of its own and is
+    // not in `rows`. Hiding the parent alone would leave it stranded on screen
+    // below a filtered-out row, which looks like a rendering bug.
+    const d=r.nextElementSibling;
+    if(d&&d.classList.contains('checks'))d.classList.toggle('hidden',!show);
+    if(show)n++;
+  }
+  document.getElementById('shown').textContent=n;
+}
+q.addEventListener('input',apply);
+for(const c of chips){
+  c.addEventListener('click',()=>{
+    if(on.has(c.dataset.v))on.delete(c.dataset.v);else on.add(c.dataset.v);
+    c.setAttribute('aria-pressed',on.has(c.dataset.v));
+    apply();
+  });
+}
+for(const r of rows){
+  r.addEventListener('click',ev=>{
+    if(ev.target.tagName==='A')return;
+    const d=r.nextElementSibling;
+    if(d&&d.classList.contains('checks')){
+      d.classList.remove('hidden');
+      d.querySelector('details').open=!d.querySelector('details').open;
+    }
+  });
+}
+let dir=1;
+const KEY={vcell:'v',code:'code',pages:'pages',auth:'auth',own:'own'};
+for(const th of document.querySelectorAll('th[data-k]')){
+  th.addEventListener('click',()=>{
+    const k=KEY[th.dataset.k]||th.dataset.k;
+    const num=(k==='pages'||k==='own');
+    dir=-dir;
+    // Sort each expander row WITH its parent, or a re-sort tears the table
+    // apart: the panel would stay behind while its file moved.
+    const pairs=rows.map(r=>[r,r.nextElementSibling]);
+    pairs.sort((a,b)=>{
+      const ra=a[0],rb=b[0];
+      let x=ra.dataset[k],y=rb.dataset[k];
+      if(num){x=parseFloat(x)||0;y=parseFloat(y)||0;return (x-y)*dir;}
+      if(k==='v')return (VERD[ra.dataset.v]-VERD[rb.dataset.v])*dir;
+      return x.localeCompare(y)*dir;
+    });
+    const tb=th.closest('tbody');
+    for(const [r,d] of pairs){tb.appendChild(r);if(d)tb.appendChild(d);}
+    for(const o of document.querySelectorAll('th .arrow'))o.remove();
+    th.insertAdjacentHTML('beforeend','<span class="arrow">\\u25BC</span>');
+  });
+}
+apply();
+"""
+
+
+def _esc(text):
+    """HTML-escape, quotes included, for attribute and text positions."""
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def write_html_report(payload, path):
+    """Write the clickable report for one year. Returns the path, or None.
+
+    Reads only `payload`, so it cannot disagree with the log or the JSON: they
+    are all rendered from the same dict in the same pass.
+
+    `path` is where the report lands; the PDF links are computed relative to
+    *its* directory, which is why it is written next to the log rather than
+    somewhere convenient.
+    """
+    path = Path(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(html_report(payload, path), encoding="utf-8")
+    except Exception as exc:
+        # A report that cannot be written must not take the run down: the log
+        # and the JSON are already on disk and they are the record. Same
+        # reasoning as "write the artefacts before the summary" in step 1.
+        print(f"  ⚠️  report HTML non scritto: {type(exc).__name__}: {exc}")
+        return None
+    return path
+
+
+def html_report(payload, path):
+    """The whole report as one self-contained HTML document.
+
+    Split out from write_html_report() so the rendering is a pure function of
+    its inputs: same payload and same destination, same bytes, no I/O, nothing
+    to go stale.
+
+    `path` is needed, not just the payload: the PDF links are relative to where
+    the report itself sits, which is not out_root. The report lands in
+    Out/VERIFY/ and the tables in Out/PDF/, so the honest link is
+    `../PDF/MEF/UE2025.PDF`. Computed against out_root instead it came out as
+    `Out/PDF/...` and every one of the 110 links was dead -- which is the worst
+    failure this report can have, because the whole point of it is that a click
+    opens a file.
+    """
+    year = payload.get("year", "?")
+    summary = payload.get("summary") or {}
+    verdicts = summary.get("verdicts") or {}
+    files = payload.get("files") or []
+    here = Path(path).resolve().parent
+
+    # FAIL first, then WARN: the sort order is the report's argument about what
+    # matters, so it is the default and not a preference.
+    ordered = sorted(files, key=lambda f: (VERDICT_ORDER.get(f.get("verdict"), 9),
+                                           str(f.get("code"))))
+
+    out = [
+        "<!DOCTYPE html>",
+        '<html lang="it"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width,initial-scale=1">',
+        f"<title>VerifyTables — {year}</title>",
+        f"<style>{HTML_CSS}</style></head><body>",
+        f"<h1>VerifyTables — {year}</h1>",
+        f'<p class="sub">{summary.get("files", len(files))} file, '
+        f'{summary.get("pages", 0)} pagine &middot; generato da '
+        f'{_esc(payload.get("verifier", ""))}</p>',
+    ]
+
+    counts = " ".join(
+        f'<span class="pill v-{v}" style="background:var(--{v.lower()}bg);'
+        f'color:var(--{v.lower()})">{v} {verdicts.get(v, 0)}</span>'
+        for v in (FAIL, WARN, SKIP, PASS))
+    out.append(f'<p class="meta">{counts}</p>')
+
+    # ---- filters -------------------------------------------------------
+    out.append('<div class="chips">')
+    for v in (FAIL, WARN, SKIP, PASS):
+        out.append(
+            f'<button class="chip v-{v}" data-v="{v}" aria-pressed="true">'
+            f'{v}<span class="n">{verdicts.get(v, 0)}</span></button>')
+    out.append('<input id="q" type="search" '
+               'placeholder="filtra per codice, percorso o controllo '
+               '(es. MG, own_code_ratio)">'
+               '<span class="meta">&nbsp;<span id="shown">0</span> '
+               'righe visibili</span></div>')
+
+    # ---- the table -----------------------------------------------------
+    out.append("<table><thead><tr>"
+               '<th data-k="vcell" class="num">verdetto</th>'
+               '<th data-k="code">codice</th>'
+               '<th data-k="pages" class="num">pagine</th>'
+               '<th data-k="auth">ministero</th>'
+               '<th data-k="own" class="num">codice proprio</th>'
+               "<th>file</th><th class=\"num\">controlli</th>"
+               "</tr></thead><tbody>")
+
+    for f in ordered:
+        verdict = f.get("verdict") or PASS
+        code = f.get("code") or "?"
+        pages = f.get("pages") or 0
+        own = f.get("own_code_pages")
+        own_txt = f"{own}/{pages}" if isinstance(own, int) and pages else "—"
+        path = f.get("path") or ""
+        # Relative, so the report survives being moved or mailed. An absolute
+        # path would break the moment the tree was copied anywhere else.
+        try:
+            rel = os.path.relpath(Path(path).resolve(), here) if path else ""
+        except (ValueError, OSError):
+            rel = path
+        where = "/".join(p for p in (f.get("authority"), f.get("article"))
+                         if p) or "—"
+
+        checks = f.get("checks") or []
+        flagged = [c for c in checks if c.get("verdict") in (FAIL, WARN, SKIP)]
+
+        # The search haystack: what a person would type to find this row.
+        hay = " ".join([str(code), rel, str(f.get("authority") or ""),
+                        str(f.get("article") or "")]
+                       + [str(c.get("id")) for c in checks]).lower()
+
+        out.append(
+            f'<tr class="row v-{verdict}" data-v="{verdict}" '
+            f'data-code="{_esc(code)}" data-pages="{pages}" '
+            f'data-auth="{_esc(f.get("authority") or "")}" '
+            f'data-own="{own if isinstance(own, int) else -1}" '
+            f'data-s="{_esc(hay)}">'
+            f'<td class="vcell"><span class="dot" style="background:'
+            f'var(--{verdict.lower()})"></span>{verdict}</td>'
+            f'<td class="code"><code>{_esc(code)}</code></td>'
+            f'<td class="num">{pages}</td>'
+            f'<td>{_esc(where)}</td>'
+            f'<td class="num">{own_txt}</td>'
+            f'<td class="fname">'
+            + (f'<a href="{_esc(rel)}">{_esc(rel)}</a>' if rel else "—")
+            + "</td>"
+            f'<td class="num">{len(flagged) or ""}</td></tr>')
+
+        # One expander row per file, carrying every check -- including the PASS
+        # ones, so a reader can see what was actually asserted and not only what
+        # went wrong.
+        if checks:
+            rows_html = []
+            for c in checks:
+                v = c.get("verdict") or PASS
+                rows_html.append(
+                    f'<div class="chk"><span class="vd {v}">{v}</span>'
+                    f'<span class="id">{_esc(c.get("id"))}</span>'
+                    f'<span>{_esc(c.get("detail"))}</span></div>')
+            extra = []
+            # Rendered as sentences, not as reprs of dicts. "leggibilità:
+            # {'pages': 3, 'garbled': 0}" is a debugging artefact, not a report,
+            # and the stamp is the most-read field in the panel.
+            stamp = f.get("stamp") or {}
+            if stamp.get("pages_with_stamp"):
+                extra.append(
+                    f"timbro su {stamp['pages_with_stamp']} pagine, "
+                    f"totale {'leggibile' if stamp.get('readable') else 'non leggibile'}"
+                    f"{', concordante' if stamp.get('agrees') else ''}")
+            if f.get("attested"):
+                extra.append("codice attestato da un indice o da un segnalibro")
+            leg = f.get("legibility") or {}
+            if leg:
+                bits = [f"{leg.get('pages', 0)} pagine"]
+                if leg.get("garbled"):
+                    bits.append(f"{leg['garbled']} illeggibili (no ToUnicode)")
+                if leg.get("ciphered"):
+                    bits.append(f"{leg['ciphered']} cifrate (Identity-H)")
+                extra.append("leggibilità: " + ", ".join(bits))
+            if f.get("title_expected"):
+                extra.append(f"titolo atteso: {_esc(f['title_expected'])}")
+            tail = (f'<div class="meta">{" &middot; ".join(extra)}</div>'
+                    if extra else "")
+            out.append(f'<tr class="checks hidden"><td colspan="7">'
+                       f'<details><summary>{_esc(code)} — '
+                       f'{len(checks)} controlli</summary>'
+                       f'<div class="checks">{"".join(rows_html)}</div>'
+                       f"{tail}</details></td></tr>")
+
+    out.append("</tbody></table>")
+
+    # ---- what the numbers do not say ------------------------------------
+    prov = summary.get("provenance") or {}
+    if prov:
+        out.append("<h2>provenienza</h2>")
+        out.append(
+            f'<p class="meta">{prov.get("volumes", 0)} volumi, '
+            f'{prov.get("pages", 0)} pagine, '
+            f'{prov.get("claimed_pages", 0)} attribuite a una tabella, '
+            f'{len(prov.get("unattributed_pages") or [])} non attribuite, '
+            f'{len(prov.get("duplicated_pages") or [])} duplicate.</p>')
+        note = summary.get("provenance_note")
+        if note:
+            out.append(f'<div class="note">{_esc(note)}</div>')
+        classes = prov.get("non_table_classes") or {}
+        if classes:
+            out.append('<h3>pagine non tabellari</h3><ul class="codes">')
+            out.extend(f"<li>{_esc(k)}: <b>{v}</b></li>"
+                       for k, v in sorted(classes.items()))
+            out.append("</ul>")
+
+    index = summary.get("index") or {}
+    if index:
+        out.append("<h2>indice</h2>")
+        out.append(
+            f'<p class="meta">{index.get("indexed_codes", 0)} codici elencati '
+            f'su {index.get("files", 0)} file.</p>')
+        if index.get("missing_files"):
+            out.append("<h3>elencati e senza file</h3><ul class=\"codes\">")
+            out.extend(f"<li><code>{_esc(c)}</code></li>"
+                       for c in index["missing_files"][:80])
+            out.append("</ul>")
+        # Atteso, non un difetto: i Dogane e i Difesa non hanno indice. Serve
+        # elencarlo perche' il numero e' impressionante, e chiamarlo problema
+        # sarebbe falso. Vedi AGENTS.md sezione 6.
+        if index.get("unattested_files"):
+            codes = index["unattested_files"]
+            out.append(
+                f'<div class="note">{len(codes)} file senza voce in un indice '
+                f'&mdash; <b>atteso</b>: i suoi codici sono in nessun indice e '
+                f'nessun segnalibro, perch&eacute; le loro allegati sono '
+                f'annunciati in prosa (gli MG/MT dei Dogane) e il DIFESA non ha '
+                f'una riga "Tabelle" nell\'INDICE. Non &egrave; un controllo in '
+                f'fallimento per questi.</div>')
+            out.append(f'<p class="meta">{" ".join(_esc(c) for c in codes)}</p>')
+
+    stray = summary.get("stray_files") or []
+    if stray:
+        out.append("<h2>file estranei</h2><ul class=\"codes\">")
+        out.extend(f"<li><code>{_esc(s)}</code></li>" for s in stray[:80])
+        out.append("</ul>")
+
+    # ---- legend ---------------------------------------------------------
+    out.append("<h2>legenda dei controlli</h2>")
+    out.append('<table class="legend"><tbody>')
+    for ident, meaning in CHECK_LEGEND:
+        out.append(f"<tr><td>{_esc(ident)}</td><td>{_esc(meaning)}</td></tr>")
+    for ident, meaning in LEGEND_GROUPS:
+        out.append(f"<tr><td>{_esc(ident)}:</td><td>{_esc(meaning)}</td></tr>")
+    out.append("</tbody></table>")
+
+    out.append(f"<script>{HTML_JS}</script></body></html>\n")
+    return "\n".join(out)
+
+
 def locate_span(volumes, code):
     """Where step 1 says a table lives, as (label, start, end, pages, source).
 
@@ -1658,15 +2110,38 @@ def locate_span(volumes, code):
     """
     for volume in volumes:
         manifest = volume.get("manifest") or {}
-        info = manifest.get("tables", {}).get(code)
-        if info:
+        for info in manifest_tables(manifest):
+            if info.get("code") != code:
+                continue
             return (Path(volume["report"]).stem, info["start"], info["end"],
                     info.get("pages"), info.get("source"))
-        cont = (manifest.get("continued") or {}).get(code)
-        if cont:
+        for cont in (manifest.get("continued") or []):
+            if cont.get("code") != code:
+                continue
             return (Path(volume["report"]).stem, cont["start"], cont["end"],
                     cont.get("total_pages"), "continued")
     return None
+
+
+def manifest_tables(manifest):
+    """Step 1's table records, whichever shape the manifest was written in.
+
+    Two shapes exist and the verifier has to read both. Step 1 wrote `tables` as
+    a mapping of code to record until the ministry tree landed, and writes a
+    LIST of records since -- json has no tuple keys, so the (authority, article,
+    code) triple became three fields on each record. Calling .get() on the list
+    raises AttributeError and set() on it raises TypeError, so a verifier written
+    against the mapping silently loses every attestation the moment step 1
+    changes: no manifest, no "this code is named by the reports", and a file that
+    is perfectly real is reported FAIL for it.
+    """
+    tables = (manifest or {}).get("tables")
+    if isinstance(tables, dict):
+        return [{**info, "code": code} if isinstance(info, dict) else info
+                for code, info in tables.items()]
+    if isinstance(tables, list):
+        return [t for t in tables if isinstance(t, dict)]
+    return []
 
 
 def build_findings(results, volumes):
@@ -1875,6 +2350,11 @@ def main(argv=None):
     parser.add_argument("--log", default="",
                         help="percorso del log (default: "
                              "<out>/VERIFY/verify-<anno>.log)")
+    parser.add_argument("--html", default="",
+                        help="percorso del report HTML cliccabile (default: "
+                             "<out>/VERIFY/verify-<anno>.html)")
+    parser.add_argument("--no-html", action="store_true",
+                        help="non scrivere il report HTML")
     parser.add_argument("--sample", type=int, default=0,
                         help="leggi solo N pagine per file (rapido, meno "
                              "completo)")
@@ -2000,10 +2480,14 @@ def main(argv=None):
                     if m:
                         hits[m.group(1).upper()] += 1
 
-            m_tables = (manifest or {}).get("tables", {})
-            manifest_codes |= set(m_tables)
+            # manifest_tables() rather than the raw field: step 1 writes a list
+            # of records since the ministry tree, and set() on a list of dicts
+            # raises TypeError -- which is what kept every manifest code out of
+            # the vocabulary, and every attested table from being attested.
+            m_tables = manifest_tables(manifest)
+            manifest_codes |= {t["code"] for t in m_tables if t.get("code")}
             vocab = volume_vocabulary(hits, set(elenco), set(marks),
-                                      set(m_tables))
+                                      manifest_codes)
 
             volumes.append({
                 "label": label,
@@ -2035,11 +2519,21 @@ def main(argv=None):
                 results.append(cached)
                 continue
             entry = per_authority.get(item["code"])
-            # Attested = the reports themselves name this table, in an index
-            # or in a human-authored bookmark. It is what lets a table whose
-            # code is printed only on its first page pass the ratio check; see
-            # check_uniqueness for why the ratio alone cannot decide it.
-            attested = bool(entry) or item["code"] in bookmark_codes
+            # Attested = somebody other than this file says the table exists: an
+            # index of tables, a human-authored bookmark, or step 1's own
+            # manifest. It is what lets a table whose code is printed only on
+            # its first page pass the ratio check; see check_uniqueness for why
+            # the ratio alone cannot decide it.
+            #
+            # The manifest counts, and has to. The Difesa annessi are in no
+            # index and in no bookmark tree -- the INDICE gives DIFESA no
+            # "Tabelle" line at all -- so without the manifest as a witness
+            # Annesso 3B, which prints its header on 1 page of 8, is reported as
+            # not being a table. Step 1 reading the same header on the same page
+            # is weaker evidence than a printed index, but it is not nothing, and
+            # the alternative is failing files that are correct.
+            attested = (bool(entry) or item["code"] in bookmark_codes
+                       or item["code"] in manifest_codes)
             result = verify_file(
                 item["path"], item["code"], item["year"],
                 vocab_of(volumes, item["code"]), entry, known_years,
@@ -2086,6 +2580,28 @@ def main(argv=None):
         # saved log is the terminal output rather than a second rendering of
         # it that could drift.
         buffer = io.StringIO()
+
+        # The log is written FIRST, from what has been captured so far, and
+        # rewritten at the end with the summary appended. Order matters and it
+        # used to be the wrong way round: the JSON was written first and the log
+        # last, so a run that died between them -- piped into `head`, which
+        # closes the pipe and raises BrokenPipeError on the next print --
+        # left a JSON with no log beside it. The log is the artefact a person
+        # actually reads, so it is the one that must not be the casualty.
+        log_path = Path(args.log) if args.log else Path(
+            verify_root, f"verify-{year}.log")
+        html_path = (Path(args.html) if args.html else
+                     Path(verify_root, f"verify-{year}.html"))
+        write_html = not args.no_html
+
+        def flush_log(extra=""):
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(buffer.getvalue() + extra
+                                + check_legend_text(), encoding="utf-8")
+
+        if not args.dry_run:
+            flush_log()
+
         with contextlib.redirect_stdout(Tee(sys.stdout, buffer)):
             if not args.dry_run:
                 target = Path(args.json) if args.json else Path(
@@ -2097,14 +2613,28 @@ def main(argv=None):
 
             report_year(year, payload)
 
+            if not args.dry_run:
+                # The paths are printed into the log itself, so the log names all
+                # of its own outputs and a reader is never left guessing where
+                # another one went.
+                print(f"  -> {log_path}")
+                if write_html:
+                    print(f"  -> {html_path}")
+                flush_log()
+
         if not args.dry_run:
-            log_path = Path(args.log) if args.log else Path(
-                verify_root, f"verify-{year}.log")
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_path.write_text(buffer.getvalue() + check_legend_text(),
-                                encoding="utf-8")
             logs_written.append(log_path)
             print(f"  -> {log_path}")
+
+        if write_html and not args.dry_run:
+            # After the log, and outside the redirect: the HTML is a third view
+            # of a payload that is already on disk, so it can never be the thing
+            # that takes the run down. write_html_report() swallows its own
+            # errors for the same reason.
+            written = write_html_report(payload, html_path)
+            if written:
+                logs_written.append(written)
+                print(f"  -> {written}")
 
     print("=" * 78)
     print(f"Totale: {sum(totals.values())} file  "
