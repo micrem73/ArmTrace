@@ -7,7 +7,127 @@ and the measured coverage per year.
 Human-facing description of the pipeline — what it does, how to install and run
 it, why the design is what it is — is in [README.md](./README.md). The files are
 complementary rather than duplicated. Where they overlap, **this file is
-authoritative** for the coverage table, the regex traps and the disproven list.
+authoritative** for the working method (§1a), the coverage table, the regex
+traps and the disproven list.
+
+---
+
+## 1a. Working method: one year at a time
+
+**A change is debugged against ONE year, and only then measured against the
+others.** Not the reverse, and not as a rule for the finished pipeline — §6's
+archive-wide runs still exist and are still the coverage record. It is the rule
+for *getting a fix right*, and it exists because of the arithmetic:
+
+| loop step | 2025 only | all 22 volumes |
+|---|---|---|
+| generate (write) | **13 min** | ~67 min |
+| verify, cold cache | **12 min** | ~4 h |
+| verify, warm cache | **<1 min** | ~5 min |
+
+Measured on this archive. A full iteration over everything costs ~5 h, so it
+cannot be run after every edit — which means a change *gets* measured against
+the whole archive only occasionally, and only for changes somebody remembered
+to check. Checking one year costs ~15 min, so it happens after every edit.
+
+The loop is: **fix a bug → regenerate that year → run the verifier on that year
+→ read the verdicts.** Repeat until the user judges it clean. Then move to the
+next year. **The user judges "no bug"**, not the agent: the verifier reports, a
+human decides.
+
+### Order: 2025 first, then down
+
+2025 → 2024 → 2023 → 2022 → 2021 (three volumes) → 2020 → 2019 → 2018 → 2017 →
+2016.
+
+Descending, not ascending, and the reason is coverage per unit of effort: 2025
+yields 110 tables across 2 volumes and exercises every code family, all four
+ministries, the ELENCO index, a garbled section and a cross-volume stitch; 2016
+yields 43 across 2 volumes. Fixing the rich volume first means the traps that
+would bite ten times are found once. 2024 is second for the opposite reason —
+it is the year that has *never been run* (§6), so its ground truth is unknown
+and it is expected to be the longest single session.
+
+### One engine, thin per-year scripts
+
+**`Reports2PDFTables.py` stays the engine and holds all detection logic. A
+per-year script is a thin entry point that imports it and pins year and
+volumes — it is NOT a fork.**
+
+```
+Reports2PDFTables.py          the engine; every detector lives here
+Reports2PDFTables_2025.py     ~20 lines: imports the engine, pins 2025 / both volumes
+Reports2PDFTables_2024.py     same shape
+```
+
+This was a deliberate choice against forking, and the reason is §2: the
+invariants in this file ("the manifest key is the triple", "nothing hardcodes a
+year", "step 1 and step 2 must agree on the layout") are only enforceable if
+there is one copy of the code to enforce them on. Ten forked copies drift, the
+drift is invisible, and `is_mef_section` ends up existing ten times with ten
+subtly different bodies. A per-year override is *data* — an expected table
+count, a list of known traps — never forked logic.
+
+### Milestones are tags, not files
+
+A year being clean is recorded as a git tag, `2025-clean`, so it is an
+immutable reproducible snapshot rather than a copy of a file that then drifts.
+Tag on the commit that closed the year, and note the finding in this file.
+
+### Baselines, as measured
+
+One row per year, written before the first fix and updated when the year closes.
+`FAIL` is what must reach zero. `WARN` is not a defect in itself — see the
+note below the table.
+
+| year | files | pages | PASS | FAIL | WARN | SKIP | status |
+|---|---|---|---|---|---|---|---|
+| **2025** | 110 | 1952 | 81 | **0** | 29 | 0 | baseline, FAIL-free, awaiting judgement |
+| 2016 | | | | | | | not started |
+| 2017 | | | | | | | not started |
+| 2018 | | | | | | | not started |
+| 2019 | | | | | | | not started |
+| 2020 | | | | | | | not started |
+| 2021 | | | | | | | not started |
+| 2022 | | | | | | | not started |
+| 2023 | | | | | | | not started |
+| 2024 | | | | | | | not started |
+
+**What the 29 WARNs on 2025 are**, so that they are accounted for rather than
+chased — four populations, none of them a fixable defect:
+
+| count | check | files | why it cannot be closed |
+|---|---|---|---|
+| 21 | `uniqueness.own_code_ratio` | M1–P2 of the Dogane, 3A/3B, most of the MEF annex | a table prints its code on its first page and then a running header without it. 41 pages of Tabella EE carry "EE" once; that is the shape of every real art. 27 table. The check passes them because a printed index or the manifest attests the code, and the WARN is the honest "the table exists, its pages do not repeat it" |
+| 5 | `completeness.stamp_total` | B1, C1, E, F1, L | the stamp's digits are in one of the broken fonts, so the total cannot be *read*. What can be checked — that it is identical on every page of the file, i.e. one document and not a pasted one — is checked and holds, on 4, 52, 70, 97 and 221 pages |
+| 3 | `edges.unreadable_pages` | A1, A4, H1 | the pages are garbled: no `ToUnicode` in the font, so there is no text to check the file edges against (§3). Permanent by construction |
+| 1 | `uniqueness.own_code_absent` | H1 | "H1" is on no *legible* page; 9 of its 32 pages are garbled and carry it invisibly. The file is found by a human-authored bookmark, so it is real — the WARN is the verifier saying it cannot confirm which table it is |
+
+Note the last one is a WARN and not a FAIL precisely because the bookmark
+attests it: that is the `attested` flag doing its job. It was a FAIL until the
+manifest was taught to count as a witness too (see `manifest_tables()`), which
+had been silently broken since the ministry tree made `tables` a list.
+
+### Before touching anything: write the baseline down
+
+For each year, **generate it and run the verifier BEFORE the first fix, and
+record the verdicts.** The verifier reports four verdicts — PASS / FAIL / WARN /
+SKIP — and "no bug" is not the same as "no FAIL":
+
+- **FAIL** is a real defect. Zero is the target.
+- **WARN** is usually not fixable by design. §5 rules OCR out of scope, and the
+  garbled and ciphered pages (§3) cannot yield text at all, so a WARN on those
+  is permanent. Each WARN must be *accounted for*, not chased.
+- **SKIP** means the check had no witness. Fine.
+
+The point of the written baseline is that "no bug" then becomes a comparison
+rather than an impression. §6 records that 2024 "was never run" and that the
+2025 audit sat un-actioned for a while; both are what happens without one.
+
+**Where output goes.** Generate into a scratch `--out` while a year is being
+debugged, and write to `Out/` only once the year is judged clean. Overwriting
+`Out/` mid-session invalidates any `Out/VERIFY/verify-<anno>.json` referring to
+the previous run, which is the only record of what the last output actually was.
 
 ---
 
@@ -228,6 +348,98 @@ Each of these is a bug that shipped.
   the marker condemns `NN`, `OO`, `PP`, `GF`. What separates a real index is
   how many codes it names: the MEF ELENCO lists fifteen on one page, a chart
   page names one.
+- **`ELENCO TABELLE SEGNALAZIONI` is an index of the tables that FOLLOW it, and
+  it is the only witness for 35 tables per volume.** Not of the tables already
+  found: it is printed immediately before a ministry's own table annex and names
+  what comes next. Three consequences, all now implemented:
+  - It is the **boundary** that stops the last table before it from running on
+    into the annex. On 2025 vol. II the DIFESA annesso 4 detected at p254 took
+    the derived end p272 and swallowed the whole MEF relation, its three inline
+    tables and the listing. Separately the INDICE says p259 starts INTERNO, so
+    the two clamps are independent witnesses and either alone fixes it.
+  - It is a **detector** (style 6). The MEF prints five of its tables *inline in
+    the relation*, before the listing, each titled `Tabella <code> - <title>`
+    and each shredded by pypdf into `Ta` / `bella FG - Finanziamenti-Garanzie`,
+    so `INLINE_CODE` never sees the keyword whole. And in the annex the code is
+    printed **bare**, with `Tabella` corrupted to `Ta€ella` by a substituted
+    euro sign, so only the code is legible. Both shapes need the listing as the
+    whitelist; 2021 vol. II goes from 2 MEF tables to 35 on this alone.
+  - It **cannot be applied as the scan goes past**, because a ministry may print
+    a listed table *before* the listing. The pages it applies to have to be held
+    (`candidates` in `scan_headers`) and consulted once the volume is read; a
+    second extraction pass over 1048 pages costs more than the whole rest of the
+    run.
+- **A bare code line needs three gates, not one.** A code in the header region
+  that the volume's own ELENCO promised, on a page carrying the MEF art. 27
+  banner. Without the third gate AGENTS.md's own example bites: the Dogane
+  annexes list MG-table numbers in prose and one of those lines is a lone `I`,
+  108 lines down a page, which reads as Tabella I. `BARE_CODE_MAX_LINE = 8`.
+- **A ministry prints the same table twice**, once inline in the relation and
+  once in the annex, and the two prints are hundreds of pages apart (2025 vol.
+  II: UE, LGP, IAA, FG, KK1 on pp 263-269 and again on pp 340-446). Grouping the
+  detections by code joins them and gives one table a span covering all the
+  prose in between. Two kinds of gap separate prints and both must count: a
+  **wide** one (`REPRINT_GAP = 40`, against a widest measured interruption of
+  20) and one **containing a listing page** — 2021 vol. II quotes four saldi as
+  bare codes at p6-9 and prints the real Tabella AA at p16, ten pages later, with
+  the ELENCO on p13-15 in between. The copy kept is the one the listing indexes.
+- **An annex ends where the next body's section opens**, which is the only
+  boundary available in a volume with no INDICE. 2021 vol. II's UE took the
+  derived end p917 and swallowed 332 pages of Dogane relation; p586 reads
+  `DIREZIONE DOGANE / Ufficio controlli dogane / R E L A Z I O N E`. A name test
+  alone is useless — the MEF's own pages open with `Ministero dell'Economia e
+  delle Finanze` — so it takes all three of: a body named in the first three
+  lines, **no** promised code anywhere on the page, and no table title.
+- **Three code spaces, not one, and the verifier has to know all of them.** The
+  Difesa annexes are numbered `2`, `3A`, `3B`, `3C`, `4` and print **no table
+  code anywhere** — the running header is `MINISTERO DELLA DIFESA - Annesso 3A`
+  and the annesso number *is* the name. So `layout.code_shape` (which asks
+  "is this art. 27 shaped?") fails all five, and `uniqueness.own_code_absent`
+  fails them again because the string `4` never appears on the page. Both were
+  5 FAILs on correct files. The ministry tree is what exposed them: under the
+  flat layout these collided with the art. 27 codes on the bare code and were
+  never written at all.
+- **`verify-<anno>.html` is the third view of the same payload, and it is the one
+  a person opens.** Alongside the log and the JSON, written in the same pass so
+  the three cannot describe different runs: sortable table of all files, click
+  to the PDF, `▸` expands every check with its verdict and detail. Three things
+  it must stay:
+  - **Links are relative to the report's own directory**, not to `out_root`.
+    They differ: the report lands in `Out/VERIFY/` and the tables in
+    `Out/PDF/`, so the honest href is `../PDF/MEF/UE2025.PDF`. Computed against
+    `out_root` it came out as `Out/PDF/...` and **all 110 links were dead** —
+    the worst failure this report can have, since the point of it is that a
+    click opens a file. Verify by resolving every href, not by eyeballing one.
+  - **Self-contained**: inline CSS and vanilla JS, no CDN, no webfont. It has to
+    open from `file://` on a machine with no network. Links rather than an
+    embedded `<iframe>`, because inlining 110 PDFs makes a multi-hundred-MB file
+    and browsers refuse local iframes anyway.
+  - **The verdict is a word as well as a colour**, so it survives a colour-blind
+    reader and a monochrome print.
+- **Write the log BEFORE the JSON, not after.** The JSON was written first and
+  the log last, so a run that died between them left a JSON with no log beside
+  it — which is what happens when the verifier is piped into `head`: the pipe
+  closes and the next `print` raises `BrokenPipeError`. The log is the artefact a
+  person actually reads, so it is the one that must not be the casualty. It is
+  now flushed early and rewritten at the end. (Cost me one confused round.)
+- **A manifest shape change silently disarms the verifier.** Step 1 wrote
+  `tables` as a mapping of code → record until the ministry tree, and writes a
+  **list** of records since (json has no tuple keys, so the
+  `(authority, article, code)` triple became three fields). The verifier called
+  `.get(code)` and `set(m_tables)` on it — `AttributeError`, `TypeError` — and
+  with `--manifest` unset there was no attestation at all, so the source column
+  read `sconosciuta` and every real table lost its witness. It failed *silently*
+  rather than loudly: wrong, plausible, and invisible. `manifest_tables()` now
+  reads both shapes; **check for this class before trusting a verifier run**,
+  because a manifest that parses is not a manifest that is read.
+- **A table's code may legitimately be printed only on its first page**, and the
+  ratio check cannot tell that from a prose mention — `own_code_ratio` is 1/41
+  for Tabella EE and 1/6 for the 2025 phantom `P`, the same shape. What
+  separates them is a second witness, so `attested` counts the manifest as well
+  as a printed index and a bookmark. The Difesa annessi are the reason it has
+  to: they are in **no index and no bookmark tree** at all (the INDICE gives
+  DIFESA no "Tabelle" line), so Annesso 3B — header on 1 page of 8 — has
+  nothing but step 1 to vouch for it.
 - **Several bookmark trees carry container entries with no page** (`'araba.pdf'`,
   `'0001.pdf'`, 2024 vol. II's `'RELAZIONE ARMAMENTI - file MEF CORRETTO.pdf'`).
   Skip them.
@@ -246,6 +458,8 @@ Each of these cost real time. Do not retry them.
 | `pdffonts` → `uni = no` | Confirms the fault, recovers nothing. |
 | fontTools `CharStrings` | `['.notdef', 'uniE019', 'uniE026', …]` — the subsetter copied each PUA codepoint into the glyph name, so `uniE019` *is* U+E019 renamed. Only outlines remain. |
 | OCR of the garbled/ciphered pages | **Out of scope by decision**, not by accident. |
+| Squeezing whitespace out of a listing page to read its codes | The code runs straight into the title: `TabellaAAEsportazionidefinite…`, and then no lookahead can tell `AA` from `AAE`. Match the keyword with `\s*` between its letters instead and keep the real separator before the code. |
+| `ontology.MEF_ALT_RE` as the "is this an MEF art. 27 page" test | It does not match those pages. pypdf shreds every word it is built from — `Dip` / `artimento del Tesoro Direzione V`, `Operazio` / `ni disciplinate dall'art. 27` — so neither alternative survives. Use `is_mef_section()`, which squeezes the whitespace first. |
 
 Garbling does not break step 1: it only needs page boundaries, and the stamp
 comparison works on garbled pages because one PUA codepoint per character means
@@ -329,6 +543,84 @@ reports what it dropped. Only when two spans are *consecutive* — the first end
 where its volume ends, the second starts where its volume starts, neighbours —
 are both kept and joined; anything else would invent a table out of two
 unrelated ones.
+
+### How the detectors are combined, in one place
+
+The README says "several independent witnesses, unioned rather than ranked" and
+stops there, because the reason only matters to whoever changes them. So:
+
+| detector | what it reads | how many volumes have it |
+|---|---|---|
+| **embedded** | the PDF bookmark tree | 6 of 43 (§ Archive coverage) |
+| **header** | styles 1–5: the code in a page header, the ministry's own furniture, the DIFESA annesso | every text-bearing volume |
+| **listed** (style 6) | the volume's own ELENCO TABELLE SEGNALAZIONI, cross-checked against the page | 2016–2025, the MEF annex |
+| **title** | the table title repeated in the body | family 3 only, where codes appear on the index page and nowhere else |
+| **indice** | the volume's INDICE: not a table finder but a **placement** finder, saying which ministry owns which page range | 11 of 22 |
+
+**Why union and not rank.** No single witness is sufficient, in either
+direction. The bookmark tree is human-authored and wins a page conflict, but it
+is not a superset — 2025 vol. II's outline omits `MG1`–`MG9` and `MT1`/`MT7`
+entirely, which only the header scan finds. Conversely the header scan reads
+prose as headers ("come da elencazione sintetica della tabella KK1"), which is
+why a rank that put the bookmark second was never right either. An index naming a
+table no other signal can see is a third kind of evidence again, and it is what
+makes the MEF annex detectable in a volume with no outline.
+
+**The three tests `continuation_pages()` requires before claiming a join** — all
+three must agree, because the next volume opening on something *else* is the
+normal case (2023 vol. III starts the Dogane relations where vol. II ended on
+Tabella UE):
+
+1. the cut table must reach the last page of its volume carrying a **printed
+   number** — blanks and covers carry none, so a table that simply ends there
+   is rejected;
+2. the next volume's first numbered page must be the **successor** of that page's,
+   and the run taken must stay consecutive — which rejects a volume that restarts
+   its own numbering (2019), and an unreadable footer ends a run rather than
+   letting it bridge a gap;
+3. the pages taken must carry the **running header** the cut table ended on,
+   read from the previous volume so an unrelated page cannot pose as the match.
+
+Test 3 works on garbled pages, which is where a split table hides: one Private
+Use Area codepoint stands for exactly one original character, so two pages
+carrying the same header produce byte-identical strings in either volume.
+`TAIL_PAGES = 2` is deliberate — a table often closes on a differently shaped
+page (F1's `Totale autorizzazioni` sheet) and dropping it would lose the figures.
+
+### Gazzetta Ufficiale pages, per volume
+
+`is_pasted()` skips any page whose squeezed text carries `GAZZETTAUFFICIALE`,
+because the reports quote and reprint Gazzette material and the odd document is
+bound in whole. Measured page ranges, so a run that suddenly skips a large block
+is recognisable as this rather than as a detection failure:
+
+| volume | pages | what it is |
+|---|---|---|
+| 2019 I | 710–808 | drug prices and patents, Serie generale 1588 — a foreign document |
+| 2025 II | 205–235 | CAT armament/dual-use annex, Serie generale 1319 |
+| 2016 I, 2018 I, 2022 I, 2023 II, 2024 vol. 2 | 39–46 each | Gazzette material quoted by the ministry |
+| 2020 I, 2017 I, 2021 TOMO_I, 2024 vol. 1 | 1–14 each | incidental |
+
+The 2019 block is why that volume used to carry a phantom 22-page table `I`: the
+gazette's prose cross-references "Tab. I" on two consecutive pages, which cleared
+`MIN_RUN`. It was the only `UNPLACED` table in the volume and is now gone, with
+MAE 23 and DIFESA 4 unchanged.
+
+**Assumed, and taken as settled: a page headed Gazzetta Ufficiale contains no
+table of interest.** So skipping them costs nothing and no per-volume
+before-and-after diff is owed. The assumption stays auditable rather than
+implicit — every run prints what it skipped, e.g. `pasted-in: 31 Gazzetta
+UFFICIALe pages, no tables, skipped (p205-235)` — so an implausible count is
+visible rather than silent.
+
+A first attempt used the *absence of a valid running folio* instead, which is the
+more principled witness — a pasted-in document keeps its own pagination. It was
+abandoned: the folio signal is too noisy to threshold, since pypdf does not emit
+the running folio first on every page and garbled or blank pages interrupt any
+run. A 20-page minimum flagged 206 pages of 2019 vol. I in thirteen scattered
+runs and still missed the block it was written for. The gazette header is checked
+**inside** the page scan rather than in a pass of its own, because a second full
+extraction of a 1048-page volume added enough to push a run past 40 minutes.
 
 ### Archive coverage
 
