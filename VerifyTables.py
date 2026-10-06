@@ -101,6 +101,7 @@ from Reports2PDFTables import (
     INLINE_CODE,
     LEADING_CODE,
     MIN_RUN,
+    appendix_code,
     STAMP_BAND,
     STAMP_NUM,
     STAMP_SIZE,
@@ -139,13 +140,9 @@ FIRST_CODE_LOOKUP = 3
 # on a shared word like "Riepilogo".
 TITLE_OVERLAP = 0.6
 
-# Fraction of a file's pages that must carry the file's own code before the
-# file counts as carrying that table at all. Calibrated on 2025: every real
-# table sits at 0.9 or above, and the two files that fail (a 6-page stretch of
-# Dogane narrative, a 139-page file that is really three tables) sit at 0.17
-# and 0.41. Anything between is a warning rather than a failure, because a
-# long table may legitimately print its code only on its first page.
-OWN_CODE_RATIO_FAIL = 0.5
+# There is deliberately no minimum fraction here any more. See check_uniqueness:
+# a low ratio is the ordinary shape of a real table, not a finding, so the
+# threshold only ever produced warnings on correct files.
 
 # Below this share of readable pages, the code checks are skipped rather than
 # failed: a file whose text layer was destroyed cannot be asked which table it
@@ -195,6 +192,19 @@ VERIFIER_INLINE = re.compile(
     rf"\b(?i:TAB|TABELLA)\b\.?[^\S\n]+({CODE_TOKEN})(?![A-Za-z0-9])")
 VERIFIER_LEADING = re.compile(rf"^(?i:Tabella)\.?\s+({CODE_TOKEN})$")
 VERIFIER_CODE = re.compile(rf"^{CODE_TOKEN}$")
+
+# The Dogane appendix: "TAB. M - APPENDICE" is its own table, not more of M.
+# Step 1 splits on it and writes MAPPENDICE2025.PDF (see APPENDIX_CODE there),
+# so the verifier has to read the same shape -- and read it BEFORE
+# VERIFIER_INLINE, which matches the bare "TAB. M" on the very same line and
+# would report every appendix file as holding a foreign table.
+#
+# The suffix is glued to the code, so the code-shape check has to accept it too:
+# layout.code_shape compares against this, and volume_vocabulary() admits a code
+# only if it matches. Both were written before the split existed.
+VERIFIER_APPENDIX = re.compile(
+    rf"(?i:T\s*A\s*B\s*\.\s*)({CODE_TOKEN})\s*[-–—]\s*APPENDICE\s*$")
+VERIFIER_APPENDIX_CODE = re.compile(rf"^{CODE_TOKEN}APPENDICE$")
 
 # "Tabella" with nothing after it on its own line: the rotated margin stamp,
 # which pypdf delivers as two lines -- the keyword on one, the code on the
@@ -518,6 +528,13 @@ def page_code(lines, vocabulary):
     if m:
         return m.group(1).upper()
 
+    # The appendix, first of the code shapes. Step 1's own appendix_code(), not
+    # a second copy of it: the pattern encodes the shredding trap, and a second
+    # implementation would be a second thing to get wrong.
+    appendix = appendix_code(lines)
+    if appendix:
+        return appendix
+
     for line in lines:
         m = VERIFIER_LEADING.match(line)
         if m:
@@ -569,7 +586,8 @@ def volume_vocabulary(hits, index_codes, bookmark_codes, manifest_codes):
     So the vocabulary answers "what codes exist here", and the repetition
     count decides how loudly each one is reported.
     """
-    vocab = {c for c in hits if VERIFIER_CODE.match(c)}
+    vocab = {c for c in hits if VERIFIER_CODE.match(c) or
+             VERIFIER_APPENDIX_CODE.match(c)}
     vocab |= set(index_codes)
     vocab |= set(bookmark_codes)
     vocab |= set(manifest_codes)
@@ -612,15 +630,16 @@ def check_layout(path, code, year, known_years, checks, authority="",
     # 4. Judging a Difesa annesso against the art. 27 shape fails a correct file,
     # which is what happened to all five of them in 2025.
     if not (CODE_RE.match(code) or VERIFIER_CODE.match(code)
-            or ANNEXO_CODE.match(code)):
+            or ANNEXO_CODE.match(code) or VERIFIER_APPENDIX_CODE.match(code)):
         checks.bad("layout.code_shape",
-                   f"codice '{code}' non ha forma art. 27 ne di annesso Difesa")
+                   f"codice '{code}' non ha forma art. 27, ne di annesso Difesa, "
+                   f"ne di appendice Dogane")
     if not any(c["verdict"] == FAIL for c in checks.items):
         where = "/".join(filter(None, [authority, article])) or "flat"
         checks.ok("layout", f"{where}/{stem}{PDF_EXT}")
 
 
-def check_uniqueness(pages, code, checks, attested=False):
+def check_uniqueness(pages, code, checks):
     """One file, one table.
 
     Two independent witnesses, because either alone has a blind spot. The
@@ -642,7 +661,6 @@ def check_uniqueness(pages, code, checks, attested=False):
     readable = [f for f in legible
                 if not f["garbled"] and not f["ciphered"]]
     unreadable = len(pages) - len(readable)
-    facts_ratio = own / max(1, len(legible))
 
     # On a file whose text layer was destroyed at PDF generation time the
     # code cannot be read at all, and saying "the code E is absent" would be
@@ -698,33 +716,21 @@ def check_uniqueness(pages, code, checks, attested=False):
             checks.maybe("uniqueness.own_code_absent",
                          f"il codice '{code}' non compare su nessuna pagina "
                          f"leggibile: {unreadable}/{len(pages)} illeggibili")
-    elif facts_ratio < OWN_CODE_RATIO_FAIL:
-        # A low ratio is only damning when nothing else vouches for the code.
-        #
-        # Measured across 2025, two populations sit far below any threshold:
-        # the MEF art. 27 tables, which print "Tabella EE" on their first
-        # page and a plain running header after that (EE 1/41, GG 1/34,
-        # UE 1/15), and the 2025 phantom P, six pages of Dogane narrative in
-        # which "Tab. P" is mentioned once in prose (1/6). A ratio cannot
-        # separate them -- 1/41 and 1/6 are the same shape.
-        #
-        # What separates them is a second, independent witness. EE is listed
-        # in the MEF ELENCO with its title; P is in no index and no bookmark
-        # tree, because the Dogane annexes are announced in prose and have no
-        # index at all. So an attested code is taken at its word -- the report
-        # says the table exists, and one page saying so is enough -- while an
-        # unattested one has to carry its own evidence on every page.
-        if attested:
-            checks.maybe("uniqueness.own_code_ratio",
-                         f"codice '{code}' su {own}/{len(legible)} pagine "
-                         f"({facts_ratio:.0%}), ma '{code}' e' in indice: "
-                         f"la tabella esiste, le sue pagine non lo ripetono")
-        else:
-            checks.bad("uniqueness.own_code_ratio",
-                       f"codice '{code}' su {own}/{len(legible)} pagine "
-                       f"({facts_ratio:.0%}) e '{code}' non e' in nessun "
-                       f"indice: il file non e' una tabella '{code}'")
     else:
+        # A low ratio is NOT reported, and deliberately so. A table printing its
+        # code on its first page and a plain running header after that is the
+        # ordinary shape of a real table, not a finding: 41 pages of Tabella EE
+        # carry "EE" once, and the nine Dogane appendices carry theirs on the
+        # cover alone. The ratio cannot separate that from a prose mention --
+        # 1/41 and 1/6 are the same shape -- so it was never going to decide
+        # anything, and gating it on an attestation only produced a WARN on 21
+        # correct files in 2025.
+        #
+        # What is left still catches a file holding the wrong table:
+        # foreign_table above, for another code repeated over MIN_RUN pages, and
+        # own_code_absent above, for this file's own code being absent from every
+        # legible page. The count is kept in the detail because it is the
+        # cheapest thing in the report for a reader to judge by eye.
         checks.ok("uniqueness.own_code_run",
                   f"'{code}' su {own}/{len(legible)} pagine")
 
@@ -1021,7 +1027,7 @@ def verify_file(path, code, year, vocab, entry, known_years,
                    f"{len(read_errors)} pagine non leggibili: "
                    f"{brief(read_errors[0])}")
 
-    codes = check_uniqueness(pages, code, checks, attested=attested)
+    codes = check_uniqueness(pages, code, checks)
     stamp = check_stamp(pages, checks)
     classes = check_edges(pages, checks)
     check_folio(pages, checks)
@@ -1615,9 +1621,7 @@ CHECK_LEGEND = [
     ("uniqueness.foreign_table",
      "nessun codice diverso dal proprio ripetuto per >= MIN_RUN pagine"),
     ("uniqueness.own_code_run",
-     "il codice proprio copre >= 50% delle pagine"),
-    ("uniqueness.own_code_ratio",
-     "copre meno del 50%: fallisce solo se il codice non e' in nessun indice"),
+     "il codice proprio compare su almeno una pagina"),
     ("uniqueness.own_code_absent",
      "il codice proprio non compare: fallisce solo se le pagine sono leggibili"),
     ("uniqueness.code_run",
@@ -1939,7 +1943,7 @@ def html_report(payload, path):
             f'{v}<span class="n">{verdicts.get(v, 0)}</span></button>')
     out.append('<input id="q" type="search" '
                'placeholder="filtra per codice, percorso o controllo '
-               '(es. MG, own_code_ratio)">'
+               '(es. MG, foreign_table)">'
                '<span class="meta">&nbsp;<span id="shown">0</span> '
                'righe visibili</span></div>')
 
@@ -2471,7 +2475,15 @@ def main(argv=None):
             # which no index lists, from being invisible.
             hits = Counter()
             for page in sorted(texts):
-                for line in texts[page].split("\n"):
+                lines = [ln.strip() for ln in texts[page].split("\n")
+                         if ln.strip()]
+                # The appendix first, so its code is counted as itself rather
+                # than as the base code every one of its pages also carries.
+                appendix = appendix_code(lines)
+                if appendix:
+                    hits[appendix] += 1
+                    continue
+                for line in lines:
                     for m in VERIFIER_INLINE.finditer(line):
                         cand = m.group(1).upper()
                         if VERIFIER_CODE.match(cand):
