@@ -137,6 +137,54 @@ FOLLOW_WINDOW = 4
 # separates the two populations.
 HEADER_CELL_MAX_CHARS = 60
 
+# How many printed bands a stacked header may occupy. Two is the measured case
+# (DOG N1 wraps every long column name once); three is the ceiling, because a
+# four-band group is a title block rather than a header.
+STACK_MAX_BANDS = 3
+
+# How many cells a band in a stacked header may have. DOG N1's two header bands
+# carry two cells each and the union is four; a data row carries four on its own.
+# So a group whose bands are already this wide is not a header.
+STACK_MAX_CELLS = 3
+
+# How much of the column-gap threshold the widest gap inside a stacked cell
+# must reach before the cell counts as several columns. Below 1.0 a wrapped
+# column name keeps its internal line breaks together; at 1.0 the cell splits
+# exactly at a column gutter. Measured on 2025 DOG N1, where one 321pt cell
+# holds three column names and the gutters inside it are 1.4-1.9 em against a
+# word space of 0.2 em.
+STACK_SPLIT_SHARE = 1.0
+
+# How close two data cells must start, in points, to be the same column when the
+# columns come from the body rather than from the rules. Tight, because the
+# archive right-aligns its numbers and left-aligns its text, so a value's `u0`
+# moves with its length: `6.418.312,50` and `40,00` are the same column and
+# start 30pt apart.
+CONSENSUS_TOL = 12.0
+
+# And how many of the sampled bands must place a cell at that position. A
+# majority, so a value that shifts once does not become a column.
+CONSENSUS_SHARE = 0.6
+
+# How close two identical words must start, in points, to count as one word
+# drawn twice. Tight, because a header cell holding `A | A` is two different
+# things; loose enough for the sub-point drift between two overlays.
+DOUBLE_TOL = 3.0
+
+# How far outside a rescued column a word may start and still belong to the
+# label of that column. A label is set inside its cell but a long one overhangs
+# the rule that bounds it -- DOG N1's `Utilizzo anni precedenti (Euro)` starts
+# 4pt left of its column's left edge -- so the cut has to be forgiving at the
+# edges while still separating the words that lie beyond.
+LABEL_EDGE_SLACK = 8.0
+
+# Three Private Use characters in a row. The archive's garbled pages carry whole
+# words this way (one PUA codepoint per original character), so a run means the
+# letters are gone even where the page-wide ratio stays under the legibility
+# threshold -- which is exactly 2025 MAE `H1`, whose labels are unreadable
+# while its digits still parse.
+PUA_RUN_RE = re.compile("[\ue000-\uf8ff]{3}")
+
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 
@@ -250,6 +298,14 @@ def page_geometry(page, direction):
     """
     if geo.page_legibility(page)[0] != "legible":
         return None
+    # A partly-destroyed page is not usable either. The ratio test passes at 15%
+    # of Private Use, and 2025 MAE `H1` clears it while every *label* on the
+    # page is a run of PUA codepoints -- so the catalog recorded its columns as
+    # ` `, a plausible-looking signature of
+    # nothing. The extra test is on the extracted text rather than on the ratio:
+    # three Private Use characters in a row mean the letters are gone.
+    if PUA_RUN_RE.search(geo.page_text(page)):
+        return None
     frame = geo.Frame(direction["right"])
     foreign = [(1.0, 0.0)] if frame.name != "upright" else []
     words = [w for w in geo.lines_of(page, frame, foreign_dirs=foreign)
@@ -258,6 +314,31 @@ def page_geometry(page, direction):
         return None
     bands = geo.row_bands(words)
     return {"frame": frame, "bands": bands, "words": words}
+
+
+def _band_is_doubled(band):
+    """True when the same words appear twice at the same reading-space position.
+
+    The archive has pages where a table is drawn twice, exactly overlaid, once
+    per text layer. 2025 MAE `O1` is one, and the duplication is invisible in
+    the cell text unless the words are compared by position: every cell reads
+    `X X` rather than `X`.
+
+    A header name never repeats inside itself, so this is a safe rejection. The
+    test is on the *words* rather than on the joined text so that a legitimate
+    header containing a repeated word -- `PARTICIPANTI | DITTE ITALIANE |
+    PARTECIPANTI` in Difesa Annesso 4, which repeats a word but at two
+    different positions -- is not caught by it.
+    """
+    cells = geo.column_bands(band)
+    for cell in cells:
+        words = cell.get("words") or []
+        if len(words) < 2:
+            continue
+        for a, b in zip(words, words[1:]):
+            if a.text == b.text and abs(a.u0 - b.u0) <= DOUBLE_TOL:
+                return True
+    return False
 
 
 def _band_is_headerish(band):
@@ -283,8 +364,18 @@ def _band_is_headerish(band):
     return True
 
 
-def find_header(bands):
+def find_header(bands, rules=None):
     """(index, cells) of the band that is this table's column header.
+
+    `rules` is `geo.rule_boundaries`' `u` list for the page. It is what rescues a
+    header whose labels run into each other: DOG N1 prints
+    `Numero di operazioni | Stato di avanzamento annuale | Utilizzo anni
+    precedenti (Euro)` in a 321pt cell whose internal gaps are 0.78-1.13 em,
+    all below the 1.2 em column gap, so no gap test can find three columns
+    there. The page's rules do -- and when they do, and they fall inside the
+    header's own extent, they are used as the cells and the labels are mapped
+    onto them. That is the same argument as `resolve_columns`, applied one step
+    earlier: the printed *edges* beat the printed *labels*.
 
     "The band with the most cells" is the obvious rule and it is wrong twice
     over on 2025:
@@ -303,11 +394,10 @@ def find_header(bands):
 
       >= 3 cells        a two-cell band is a running header, not a column list
       mostly text       a header is words; a data band carries numbers
-      followed by data  the bands after it have at least as many cells, twice
-                        over -- a header is followed by rows, a running header
-                        is followed by the table's title
-      early             within the first 40 bands, which on a 537-page table is
-                        the whole first page
+      short cells       a header names columns, a data row holds a paragraph
+      no bare numbers   `2`, `EFA`, `VELIVOLO` are a row of Annesso 4, not names
+      followed by data  a band nearly as wide follows within four lines
+      first of its kind on the page, not merely the best-looking one
 
     Ties are broken towards the earliest candidate, because on every page that
     repeats its header the first one is the authoritative printing of it.
@@ -315,6 +405,44 @@ def find_header(bands):
     Returns `(None, [])` when nothing qualifies, which is a real answer for a
     cover page and for a page whose header is not on it.
     """
+    found = _single_band_header(bands)
+    if found is None or found[0] is None:
+        found = _stacked_band_header(bands, rules)
+    if found is None or found[0] is None:
+        return None, []
+    index, cells = found
+    if rules:
+        ruled = _header_by_rules(bands, index, cells, rules)
+        if ruled:
+            return index, ruled
+    return index, cells
+
+
+def _header_by_rules(bands, index, cells, rules):
+    """Re-cut a header band's columns with the page's rules, when they fit.
+
+    Only used when the label-based cut produced fewer columns than the rules do
+    inside the header's own extent -- the signature of labels that have run into
+    each other. Returns `None` when the rules do not describe this band, so a
+    borderless table is never given columns it does not have.
+    """
+    if not cells:
+        return None
+    lo = min(c["u0"] for c in cells)
+    hi = max(c["u1"] for c in cells)
+    ruled = geo.columns_from_boundaries(rules, lo, hi)
+    if len(ruled) <= len(cells):
+        return None
+    for cell in ruled:
+        cell["text"] = _label_at(cells, 0.5 * (cell["u0"] + cell["u1"]),
+                                 cell["u0"], cell["u1"])
+        cell["bold"] = False
+        cell["size"] = 0.0
+    return ruled
+
+
+def _single_band_header(bands):
+    """The usual case: one printed band carries every column name."""
     counts = [len(geo.column_bands(b)) for b in bands]
     best = None
     for i, band in enumerate(bands[:40]):
@@ -323,6 +451,15 @@ def find_header(bands):
         # them all and taking the best assembled a signature out of rows on
         # different pages.
         if i and _band_is_headerish(bands[i - 1]):
+            continue
+        # A band whose words are *each* duplicated down the page is not a
+        # header. 2025 MAE `O1` prints its table twice overlaid -- `GE AVIO
+        # S.R.L. GE AVIO S.R.L. | EX EX | AUSTRIA AUSTRIA | 755.849,61
+        # 755.849,61` -- and the doubled band is wider than the real header two
+        # bands above it, so the widest-band rule picked it and reported the
+        # column names as `GE AVIO S.R.L. GE AVIO S.R.L. | EX EX | ...`.
+        # Repeated identical runs at the same position are the signature.
+        if _band_is_doubled(band):
             continue
         # The band must not be the running furniture or the margin stamp. Both
         # form valid-looking bands -- on a rotated page the stamp is rotated too
@@ -351,16 +488,6 @@ def find_header(bands):
         # of the columns it spans.
         if any(not gra.normalise_text(c["text"]) for c in cells):
             continue
-        # A header is followed by rows at least as wide. Requiring two same-width
-        # bands disqualified A1, whose header is immediately followed by a
-        # group-name band one cell wide; a page whose header is its last band
-        # has nothing after it at all, which is not a disqualification.
-        # A header is followed, within a few lines, by rows nearly as wide. The
-        # window rather than the immediately-next band is what A1 requires: its
-        # header is immediately followed by a one-cell group name
-        # (`A.C.S.A. STEEL FORGINGS S.P.A.`) and only then by data, so testing
-        # the next band alone rejected the header of the table this whole module
-        # was built for.
         if not any(counts[j] >= FOLLOW_SHARE * len(cells)
                    for j in range(i + 1, min(i + 1 + FOLLOW_WINDOW, len(counts)))):
             continue
@@ -370,6 +497,300 @@ def find_header(bands):
     if best is None:
         return None, []
     return best[1], best[2]
+
+
+def _stack_columns(group):
+    """The columns of a header printed over several bands.
+
+    Two steps, and the first one is the one that matters. A cell in a stacked
+    header is *itself* a stack of lines, so `column_bands` returns one cell
+    holding several labels run together:
+
+        Numero di operazioni Stato di avanzamento annuale Utilizzo anni
+        precedenti (Euro)
+
+    which is three column names in one 321pt cell beside a 95pt cell. Measuring
+    only where the lines *end* would see two columns; measuring where they
+    *start* sees five starts for four columns, because `(Euro)` sits under
+    `Stato di avanzamento annuale` and not under `Utilizzo anni precedenti`.
+
+    So the bands are cut at the widest em gap inside each cell -- which is the
+    column gutter, since no intra-column line break is that wide -- and the
+    pieces are then merged across bands by overlap, which is what joins
+    `Numero di operazioni` to `svolte`.
+    """
+    pieces = []
+    for band in group:
+        for cell in geo.column_bands(band):
+            for part in _split_stacked_cell(cell):
+                pieces.append(part)
+    pieces.sort(key=lambda c: c["u0"])
+    merged = []
+    for part in pieces:
+        if merged and min(merged[-1]["u1"], part["u1"]) - max(
+                merged[-1]["u0"], part["u0"]) > 0:
+            last = merged[-1]
+            last["u1"] = max(last["u1"], part["u1"])
+            last["text"] = (last["text"] + " " + part["text"]).strip()
+            last["size"] = max(last["size"], part["size"])
+            last["bold"] = last["bold"] or part["bold"]
+        else:
+            merged.append(dict(part))
+    return merged
+
+
+def _split_stacked_cell(cell):
+    """Split one cell's text at its widest internal em gap.
+
+    `cell["words"]` is the band's words that fell in this cell. The split is at
+    the largest gap *relative to the font size*, not the largest gap in points:
+    a column gutter is at least `CELL_GAP_EM` wide by construction, while the
+    line breaks inside a wrapped name are ordinary word spaces.
+    """
+    words = cell.get("words") or []
+    if len(words) < 2:
+        return [cell]
+    em = max((w.size for w in words), default=0.0) or 1.0
+    gaps = [words[i + 1].u0 - words[i].u1 for i in range(len(words) - 1)]
+    widest = max(gaps)
+    if widest < geo.CELL_GAP_EM * em * STACK_SPLIT_SHARE:
+        return [cell]
+    cut = gaps.index(widest)
+    out = []
+    for group in (words[:cut + 1], words[cut + 1:]):
+        out.append({
+            "u0": min(w.u0 for w in group), "u1": max(w.u1 for w in group),
+            "v0": min(w.v0 for w in group), "v1": max(w.v1 for w in group),
+            "text": " ".join(w.text for w in group),
+            "bold": any(w.bold for w in group),
+            "size": max(w.size for w in group),
+        })
+    return out
+
+
+def _stacked_band_header(bands, rules=None):
+    """A header printed over two or three bands, found as one.
+
+    Needed because a wrapped column name splits the header band in two, and a
+    two-cell band is not a candidate. 2025 DOG `N1` prints
+
+        Denominazione operatore | Numero di operazioni | Stato di avanzamento annuale
+        (Euro) | Utilizzo anni precedenti
+
+    with `Numero di operazioni` / `svolte`, `Stato di avanzamento annuale` /
+    `(Euro)` and `Utilizzo anni precedenti` / `(Euro)` each broken across two
+    lines, so the band is three cells wide and the second band is two. Neither
+    alone has three cells, and every header-only test rejects them.
+
+    Consecutive bands are stacked when they all carry short text, when their
+    cells are *disjoint* in reading space (the whole point -- a data row
+    repeats its leftmost column down the band rather than continuing it), and
+    when a band at least as wide follows. The last condition is what keeps a
+    title block and a data row from being joined: `Tipo di operazione:
+    Temporanea Esportazione (TE) | Riepilogo per operatore` is two cells wide
+    and is followed by a three-cell header.
+    """
+    counts = [len(geo.column_bands(b)) for b in bands]
+    for i in range(min(len(bands) - 1, 40)):
+        if counts[i] > STACK_MAX_CELLS:
+            continue
+        group = [bands[i]]
+        j = i + 1
+        while j < len(bands) and len(group) < STACK_MAX_BANDS:
+            if any(MARGIN_STAMP_RE.search(w.text)
+                   or FURNITURE_RE.search(w.text) for w in bands[j]):
+                break
+            # A band this wide is data, so the group ends *here* -- it is not a
+            # reason to abandon the candidate. DOG N1's two header bands hold two
+            # cells each and the row below them holds four, so growing the group
+            # unconditionally and then rejecting it discarded the only header on
+            # the page.
+            if counts[j] > STACK_MAX_CELLS:
+                break
+            group.append(bands[j])
+            j += 1
+        if len(group) < 2:
+            continue
+        cells = _stack_columns(group)
+        rescued = False
+        if rules:
+            # The rules rescue runs *before* the width test. DOG N1's four
+            # column names come back as two label cells -- one holding three
+            # names run together, 91 characters -- and every width test rejects
+            # that, while the page's own rules say four columns. Tested before
+            # the rescue, the header is lost; tested after, it is recovered.
+            lo = min(c["u0"] for c in cells)
+            hi = max(c["u1"] for c in cells)
+            span = _data_span(bands, j, counts)
+            if span and span[0] < lo - geo.RULE_TOL:
+                lo = min(lo, span[0])
+            ruled = geo.columns_from_boundaries(rules, lo, hi)
+            data_cells = _consensus_columns(bands, j, counts)
+            rescued = False
+            # Whichever of the two witnesses saw more columns wins, and the
+            # body's consensus is allowed to overrule the rules. That ordering
+            # is measured, not preferred: on DOG N1 the rules yield three
+            # columns for a four-column table, because the page's leftmost
+            # column edge is simply not drawn, while all 89 body rows agree on
+            # four positions. A partial drawing is a fact about the drawing; the
+            # body is the table.
+            if len(data_cells) > len(ruled):
+                chosen, rescued = data_cells, True
+            elif len(ruled) > len(cells):
+                chosen, rescued = ruled, True
+            else:
+                chosen = cells
+            if chosen is not cells:
+                for cell in chosen:
+                    cell["text"] = _label_at(cells,
+                                             0.5 * (cell["u0"] + cell["u1"]),
+                                             cell["u0"], cell["u1"])
+                    cell["bold"] = False
+                    cell["size"] = 0.0
+                cells = chosen
+
+        # The width test is on the *labels*, and it runs only when the labels
+        # are still the column definition. After the rescue above they have
+        # been cut to the individual column names, so a group whose labels were
+        # 91 characters because they held three names each is no longer over the
+        # limit -- testing before the rescue was what lost DOG N1's header
+        # twice, once for being too narrow and once for being too long.
+        if len(cells) < 3:
+            continue
+        texts = [gra.normalise_text(c["text"]) for c in cells]
+        if any(not t for t in texts):
+            continue
+        if rescued and not any(len(t) > HEADER_CELL_MAX_CHARS for t in texts):
+            pass                     # already cut to single names by position
+        elif any(len(t) > HEADER_CELL_MAX_CHARS for t in texts):
+            continue
+        if any(gra.value_shape(t) in (gra.SHAPE_NUMBER, gra.SHAPE_CODE,
+                                       gra.SHAPE_CURRENCY) for t in texts):
+            continue
+        if not any(counts[k] >= FOLLOW_SHARE * len(cells)
+                   for k in range(j, min(j + FOLLOW_WINDOW, len(counts)))):
+            continue
+        return i, cells
+    return None, []
+
+
+def _label_at(cells, mid, lo=None, hi=None):
+    """The part of a label cell that belongs to the column centred on `mid`.
+
+    Always cut by position, never returned whole. A rescued column is usually
+    narrower than the label cell it came from: 2025 DOG N1's second header cell
+    is 91 characters and holds three column names
+    (`Numero di operazioni Stato di avanzamento annuale Utilizzo anni
+    precedenti (Euro)`), and four columns are rescued from it. Returning that
+    cell whole for each of them gives four identical 91-character "names", so
+    `lo`/`hi` default to the column's own extent and only the words inside it
+    are taken.
+
+    Falls back to the nearest cell by midpoint when the column falls in a gap
+    between label cells, which happens where a column has no label at all.
+    """
+    if lo is None or hi is None:
+        lo, hi = mid, mid
+    best = None
+    for cell in cells:
+        words = [w for w in (cell.get("words") or [])
+                 if w.u1 >= lo - LABEL_EDGE_SLACK
+                 and w.u0 <= hi + LABEL_EDGE_SLACK]
+        if words:
+            words.sort(key=lambda w: w.u0)
+            best = " ".join(w.text for w in words)
+            break
+    if best:
+        return best
+    for cell in cells:
+        if cell["u0"] <= mid <= cell["u1"]:
+            return cell["text"]
+    return min(cells,
+               key=lambda c: abs(0.5 * (c["u0"] + c["u1"]) - mid))["text"]
+
+
+def _words_within(cell, lo, hi):
+    """The words of `cell` whose extent lies inside `[lo, hi]`.
+
+    Falls back to the whole label when the cell has no words of its own, which
+    is the case for a column that came from the rules in the first place.
+    """
+    words = [w for w in (cell.get("words") or [])
+             if w.u1 >= lo - LABEL_EDGE_SLACK and w.u0 <= hi + LABEL_EDGE_SLACK]
+    if not words:
+        return cell["text"]
+    words.sort(key=lambda w: w.u0)
+    return " ".join(w.text for w in words)
+
+
+def _consensus_columns(bands, start, counts, window=12):
+    """The columns the *data* bands agree on.
+
+    The witness for a table whose vector layer is incomplete. DOG N1 draws
+    column rules at -368.6, -249.8 and -130.9 and then jumps straight to -460,
+    so the four-column body is bounded by three of its own edges: no rule-based
+    cut finds four columns on that page, however the rules are read.
+
+    The body is not missing the information, though -- all 89 of its rows are
+    four cells wide at four consistent reading-space positions, because the
+    columns are where the *values* sit. So the columns are clustered from the
+    data cells themselves: every cell's `u0` is collected, and positions within
+    `CONSENSUS_TOL` of each other are one column. Clusters are then required to
+    be supported by a majority of the sampled bands, which is what separates a
+    real column from a right-aligned value that happens to start elsewhere.
+
+    Returns `[]` rather than a guess when the bands disagree, because a wrong
+    column count is worse than an absent one: the catalog records the miss and
+    the next table gets a full signature.
+    """
+    seen = []
+    for k in range(start, min(start + window, len(bands))):
+        if counts[k] < 3:
+            continue
+        seen.append(geo.column_bands(bands[k]))
+    if len(seen) < 3:
+        return []
+    positions = []
+    for cells in seen:
+        for cell in cells:
+            positions.append((cell["u0"], cell["u1"]))
+    if not positions:
+        return []
+    median_cells = max(len(c) for c in seen)
+    clusters = []
+    for u0, u1 in sorted(positions):
+        if clusters and abs(u0 - clusters[-1]["u0"]) <= CONSENSUS_TOL:
+            cluster = clusters[-1]
+            cluster["u0"] = (cluster["u0"] + u0) / 2
+            cluster["u1"] = max(cluster["u1"], u1)
+            cluster["n"] += 1
+        else:
+            clusters.append({"u0": u0, "u1": u1, "n": 1})
+    need = max(2, int(CONSENSUS_SHARE * len(seen)))
+    kept = [c for c in clusters if c["n"] >= need]
+    if len(kept) != median_cells or len(kept) < 3:
+        return []
+    return [{"u0": c["u0"], "u1": c["u1"], "text": "", "bold": False,
+             "size": 0.0} for c in kept]
+
+
+def _data_span(bands, start, counts):
+    """The reading-space extent of the data bands following a header.
+
+    Used to check whether the header's own labels reach past its first rule. On
+    DOG N1 they do, by 99pt: `Denominazione operatore` is printed left of the
+    rule that would have bounded its column, because the header is not aligned
+    to the grid the body uses.
+    """
+    lo = hi = None
+    for k in range(start, min(start + FOLLOW_WINDOW, len(bands))):
+        if counts[k] < 3:
+            continue
+        band_lo = min(w.u0 for w in bands[k])
+        band_hi = max(w.u1 for w in bands[k])
+        lo = band_lo if lo is None else min(lo, band_lo)
+        hi = band_hi if hi is None else max(hi, band_hi)
+    return (lo, hi) if lo is not None else None
 
 
 def resolve_columns(page, header_cells, frame=None):
@@ -412,32 +833,15 @@ def resolve_columns(page, header_cells, frame=None):
         span_lo, span_hi = u_lo, u_hi
     ruled = geo.columns_from_boundaries(rules["u"], span_lo, span_hi)
     if ruled and len(ruled) == len(header_cells):
-        # The rules give edges, so the labels have to be mapped onto them
-        # rather than kept at their own extents.
-        cells = []
-        for cell in ruled:
-            # The label that belongs to a column is the one *inside* it. A
-            # label is left-aligned in its cell and the cell's rules give the
-            # edges, so this is containment of the label's midpoint, not
-            # overlap: 2025 EE's `Importi Accessori Segnalati` runs from 396.9
-            # to 451.4 and its column is 395.7 to 468.9, and every other label
-            # is outside it.
-            mid = 0.5 * (cell["u0"] + cell["u1"])
-            owner = None
-            for label in header_cells:
-                if label["u0"] <= mid <= label["u1"]:
-                    owner = label
-                    break
-            if owner is None:                      # nearest by midpoint
-                owner = min(
-                    header_cells,
-                    key=lambda l: abs(0.5 * (l["u0"] + l["u1"]) - mid))
-            cell = dict(cell)
-            cell["text"] = owner["text"]
-            cell["bold"] = owner["bold"]
-            cell["size"] = owner["size"]
-            cells.append(cell)
-        return cells, "rules"
+        # The rules give edges, so the labels have to be mapped onto them rather
+        # than kept at their own extents -- and cut by position as they are
+        # mapped, because a label can be wider than the column it names.
+        return ([dict(cell,
+                      text=_label_at(header_cells,
+                                     0.5 * (cell["u0"] + cell["u1"]),
+                                     cell["u0"], cell["u1"]),
+                      bold=False, size=0.0)
+                 for cell in ruled], "rules")
     return header_cells, "header" if rules["u"] else "header(no rules)"
 
 
@@ -515,6 +919,17 @@ def catalogue_file(pdf_path, year, sample=DEFAULT_SAMPLE):
     orientations = Counter(p["orientation"] for p in pages)
     sample_pages = choose_sample_pages(len(pages), sample)
     signature, geometry = read_signature(pdf_path, sample_pages)
+    # Re-open for the chart census. `read_signature` closes its own handle, and
+    # the curve count needs a *drawn* page rather than an extracted one, so it is
+    # taken here over a spread of three pages: a table that is charted on one
+    # page of six is still a table, and one page would misreport it.
+    chart_doc = pymupdf.open(pdf_path)
+    try:
+        charted = any(
+            geo.hairline_census(chart_doc[i])["charted"]
+            for i in choose_sample_pages(total_pages_of(pages), 3))
+    finally:
+        chart_doc.close()
 
     legible = status_counts.get("legible", 0)
     total_pages = len(pages)
@@ -529,6 +944,7 @@ def catalogue_file(pdf_path, year, sample=DEFAULT_SAMPLE):
         "year": int(year),
         "pages": total_pages,
         "bytes": os.path.getsize(pdf_path),
+        "charted": 1 if charted else 0,
         "orientation": orientation,
         "orientation_pages": orientation_n,
         "mixed_dir": 1 if mixed else 0,
@@ -540,10 +956,16 @@ def catalogue_file(pdf_path, year, sample=DEFAULT_SAMPLE):
         "empty_pages": status_counts.get("empty", 0),
         "page_stats": pages,
     }
+    if charted and signature.get("n_columns") == 0:
+        signature["grammar"] = gra.GRAMMAR_CHART
     record.update(signature)
     record["geometry"] = geometry
     record.update(extraction_status(record))
     return record
+
+
+def total_pages_of(pages):
+    return len(pages)
 
 
 def choose_sample_pages(n_pages, sample):
@@ -581,7 +1003,11 @@ def read_signature(pdf_path, page_indices):
             if geom is None:
                 continue
             bands = geom["bands"]
-            index, header_cells = find_header(bands)
+            try:
+                rules = geo.rule_boundaries(page, geom["frame"])["u"]
+            except Exception:
+                rules = []
+            index, header_cells = find_header(bands, rules)
             if not header_cells:
                 per_page.append({
                     "page": i, "columns": [], "cells": [], "stacked": 0,
@@ -749,6 +1175,14 @@ def extraction_status(record):
     pages = record["pages"] or 0
     legible = record["legible_pages"]
     if record["grammar"] == gra.GRAMMAR_UNKNOWN and record["n_columns"] == 0:
+        if record.get("charted"):
+            # A pie chart has no cells to extract, and saying "no header found"
+            # about one is a false alarm: 2025 MEF NN/OO/PP/GF are all
+            # `Grafico Ripartizione percentuale`, ruled 447pt across the page
+            # and carrying over a thousand Bezier segments each.
+            return {"extractable": 0,
+                    "extract_reason": "grafico percentuale: nessuna tabella di "
+                                      "celle da estrarre"}
         if legible == 0:
             reason = (f"testo illeggibile in tutte le {pages} pagine "
                       f"(font senza ToUnicode: serve OCR)")
@@ -767,15 +1201,26 @@ def extraction_status(record):
 def read_identity(pdf_path, year):
     """(authority, article, code, year) read back out of the path step 1 wrote.
 
-    The same rule IndividualTables2SQL.py uses, kept in step with it: the
-    authority is the first directory, the article the second when there is one,
-    and the code is the stem minus a trailing four-digit group -- which is how
-    `MG102025` becomes `MG10` rather than `MG1`.
+    The path is walked upwards from the file rather than indexed by position,
+    because `Out/PDF` may or may not be its root and the article level is
+    optional: `MAE/A12025.PDF` has no article, `DOG/A1C2/N12025.PDF` has one.
+    Reading the last two components as "authority, article" therefore turned
+    every MAE and MEF table into `PDF/MAE` with an article of `MAE`, which is
+    not a key the primary key can hold -- `article IS 'MAE'` matched nothing and
+    the census counted those tables under an authority named `PDF`.
+
+    So: the file's parent is the article when the grandparent is one of the four
+    ministries, otherwise the parent *is* the authority.
     """
     path = Path(pdf_path)
-    parts = list(path.parts[:-1])
-    authority = parts[-2] if len(parts) >= 2 else ontology.UNKNOWN
-    article = parts[-1] if len(parts) >= 3 else None
+    parent = path.parent
+    grandparent = parent.parent
+    if parent.name in ontology.AUTHORITIES:
+        authority, article = parent.name, None
+    elif grandparent.name in ontology.AUTHORITIES:
+        authority, article = grandparent.name, parent.name
+    else:
+        authority, article = parent.name or ontology.UNKNOWN, None
     import re as _re
     m = _re.search(r"\d{4}$", path.stem)
     code = path.stem[:m.start()] if m else path.stem
@@ -927,11 +1372,16 @@ def attach_manifest(records, manifest_path):
         item = tables.get(key)
         if not item:
             continue
-        record["index_title"] = item.get("title") or item.get("index_title")
-        record["src_first"] = item.get("first_page") or item.get("start")
-        record["src_last"] = item.get("last_page") or item.get("end")
+        record["index_title"] = (item.get("title") or item.get("index_title")
+                               or item.get("index_title_it"))
+        record["src_first"] = (item.get("first_page") or item.get("start")
+                               or item.get("src_first"))
+        record["src_last"] = (item.get("last_page") or item.get("end")
+                              or item.get("src_last"))
         record["witness"] = (item.get("witness") or item.get("source")
                              or item.get("detected_by") or "header-run")
+        record["src_pages"] = item.get("pages")
+        record["provisional"] = item.get("provisional")
         seen += 1
     return seen
 
@@ -956,6 +1406,18 @@ def write_census(conn, year, path, elapsed):
         " stacked_header, header_stable, grammar, total_bands, extractable,"
         " extract_reason, index_title FROM table_year WHERE year=?"
         " ORDER BY authority, article, code", (int(year),)).fetchall()
+    # The authority is the first directory below `Out/PDF`. `article IS ?` with
+    # a NULL parameter never matches, so a table filed directly under its
+    # ministry read back as `PDF/...` and the census grouped them under an
+    # authority called `PDF`. Keying the lookup on the same tuple the primary
+    # key uses is what keeps the report's counts equal to the table's.
+    by_key = {(r[0], r[1], r[2]): r for r in rows}
+    extras = {}
+    for r in rows:
+        extras[r[:3]] = conn.execute(
+            "SELECT mixed_dir, grammar, columns FROM table_year WHERE year=?"
+            " AND authority=? AND article IS ? AND code=?",
+            (int(year), r[0], r[1], r[2])).fetchone()
 
     out = []
     out.append(f"# Census of the {year} tables\n")
@@ -991,12 +1453,27 @@ def write_census(conn, year, path, elapsed):
     out.append("## Orientation and rules\n")
     out.append("| | tables |")
     out.append("|---|---|")
-    for label, idx in (("rotated 90°", 4), ("ruled", 5)):
-        out.append(f"| {label} | {sum(1 for r in rows if r[idx])} |")
+    for name in sorted({r[4] for r in rows if r[4]}):
+        out.append(f"| content runs {name} | "
+                   f"{sum(1 for r in rows if r[4] == name)} |")
+    out.append(f"| ruled (a rule of >= 20pt present) | "
+               f"{sum(1 for r in rows if r[5])} |")
+    mixed = sum(1 for r in rows if extras[r[:3]][0])
+    if mixed:
+        out.append(f"| mixed: table rotated, furniture upright | {mixed} |")
     out.append(f"| stacked (two-row) header | "
                f"{sum(1 for r in rows if r[11])} |")
-    out.append(f"| header identical on every sampled page | "
-               f"{sum(1 for r in rows if r[12])} |")
+    stable = sum(1 for r in rows if r[12])
+    out.append(f"| header identical on every sampled page | {stable} |")
+    out.append("")
+    out.append(
+        f"A header is usually printed on the table's *first* page only, so "
+        f"`identical on every sampled page` being {stable} is the expected "
+        f"reading rather than a defect: the catalog records the *modal* "
+        f"signature over the pages that carry a header, and the per-table "
+        f"agreement is in `grammar_detail.pages_agreeing`. Where a table "
+        f"repeats its header the count should be the number of sampled pages, "
+        f"and where it does not, the modal signature is the first page's.\n")
     out.append("")
 
     out.append("## Column signatures\n")
@@ -1090,7 +1567,12 @@ def main(argv=None):
 
     attach_manifest(records, args.manifest)
     if not args.dry_run and args.manifest:
-        for record in records:                # re-upsert with the witness filled
+        # Re-upserted so the witness and the source span are stored on the row
+        # rather than only in memory. The manifest is read *after* the files,
+        # so this is a second write per table; at 110 tables and ~2 minutes for
+        # the whole year the cost is a few seconds and the alternative is a
+        # catalog whose provenance lives nowhere durable.
+        for record in records:
             write_record(conn, record, year)
 
     elapsed = time.time() - started

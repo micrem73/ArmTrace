@@ -391,6 +391,7 @@ def is_header(cells, columns):
 # table grammars
 # --------------------------------------------------------------------------
 
+GRAMMAR_CHART = "chart"
 GRAMMAR_FLAT = "flat"
 GRAMMAR_GROUP_SUBTOTAL = "group+subtotal"
 GRAMMAR_REPEATED_SUBDIM = "repeated-subdimension"
@@ -398,6 +399,7 @@ GRAMMAR_WRAPPED_LIST = "wrapped-list"
 GRAMMAR_UNKNOWN = "unknown"
 
 GRAMMAR_LABELS = {
+    GRAMMAR_CHART: "a percentage chart, not a grid of cells",
     GRAMMAR_FLAT: "one record per band",
     GRAMMAR_GROUP_SUBTOTAL: "group header bands and per-group subtotals",
     GRAMMAR_REPEATED_SUBDIM: "a repeated dimension inside each record",

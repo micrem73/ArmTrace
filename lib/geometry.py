@@ -141,6 +141,11 @@ HEADER_GAP = 2.0
 # similar minority.
 FOREIGN_FRACTION = 0.20
 
+# Bezier segments on one page that mean the page is a chart rather than a grid.
+# Measured on 2025: MEF NN 2140, OO 984, PP 2010, GF 2424 -- and MAE A1, the
+# largest real table in the year at 537 pages, zero.
+CHART_CURVES = 200
+
 # Private Use Area, the residue of a subsetted font whose ToUnicode CMap was
 # destroyed. See Reports2PDFTables.py and AGENTS.md section 3.
 PUA = re.compile(r"[\ue000-\uf8ff]")
@@ -339,7 +344,7 @@ def hairline_census(page, frame=None):
     a short one means an underline.
     """
     frame = frame or Frame.for_page(page)
-    rects = rules = vertical = horizontal = 0
+    rects = rules = vertical = horizontal = curves = 0
     longest = 0.0
     try:
         drawings = page.get_drawings()
@@ -360,6 +365,13 @@ def hairline_census(page, frame=None):
                 rules += 1
                 a, b = item[1], item[2]
                 span = math.hypot(b.x - a.x, b.y - a.y)
+            elif kind in ("c", "qu"):
+                # Bezier curves. Counted and not measured: a chart is drawn with
+                # them (2025 MEF NN has 2140 of them on one page against A1's
+                # six straight lines), and their presence is what tells a chart
+                # from a table when both are ruled and both are rotated.
+                curves += 1
+                continue
             else:
                 continue
             if span < RULE_MIN_LEN:
@@ -374,8 +386,15 @@ def hairline_census(page, frame=None):
         "rules": rules,
         "vertical": vertical,
         "horizontal": horizontal,
+        "curves": curves,
         "longest": round(longest, 1),
         "ruled": longest >= RULE_MIN_LEN,
+        # A chart is ruled too -- 2025 MEF `NN` runs a 447pt rule across the page
+        # -- so "has rules" does not distinguish one from a table. Curves do:
+        # NN carries 2140 Bezier segments where A1 has none, because NN is a
+        # pie chart (`Grafico Ripartizione percentuale per istituti di credito`)
+        # and A1 is a grid.
+        "charted": curves >= CHART_CURVES,
     }
 
 
@@ -517,7 +536,15 @@ def lines_of(page, frame=None, foreign_dirs=()):
     is the difference between A1's data and its `Camera dei Deputati` banner.
     """
     frame = frame or Frame.for_page(page)
-    foreign = {tuple(d) for d in foreign_dirs}
+    # `foreign_dirs` may be given either as (dx, dy) pairs or as integer ticks.
+    # Both are normalised because the frame's own direction comes out as floats
+    # from `dominant_direction` and as integers from a caller's literal, and
+    # `(0.0, -1.0) != (0, -1)` in a set comparison -- so a caller passing
+    # `[(1, 0)]` silently filtered nothing at all and the page furniture was
+    # read as table content. 2025 MEF `NN` came back as 279 "foreign" words and
+    # 7 real ones, i.e. the filter removed the table and kept the banner.
+    foreign = {(round(float(d[0])), round(float(d[1])))
+               for d in foreign_dirs}
 
     # Words are ordered by their position *along the text matrix*, which PyMuPDF
     # reports per span, so a rotated page is emitted in rotated reading order
@@ -658,6 +685,10 @@ def column_bands(band, gap_em=CELL_GAP_EM):
             "v1": max(w.v1 for w in cell),
             "bold": any(w.bold for w in cell),
             "size": max(w.size for w in cell),
+            # The words themselves, so a caller that needs to cut a stacked cell
+            # further -- a wrapped column name that a cell gap did not separate
+            # -- can do so from the geometry rather than re-deriving it.
+            "words": cell,
         })
     return out
 
