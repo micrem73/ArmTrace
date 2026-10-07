@@ -69,7 +69,7 @@ used for the index harvest because it is roughly five times quicker than
 pypdf over a whole volume; when it is missing the harvest falls back to pypdf
 and says so.
 
-Note: this script never writes inside Out/PDF or Out/CSV. Everything it
+Note: this script never writes inside Out/PDF or Out/CATALOG. Everything it
 produces goes to Out/VERIFY/.
 """
 
@@ -119,7 +119,7 @@ REPORTS_DIR = "reports_185_1990"
 OUT_DIR = "Out"
 PDF_EXT = ".PDF"
 
-# Where the report of each verdict goes. Kept out of PDF/ and CSV/ so that
+# Where the report of each verdict goes. Kept out of PDF/ and CATALOG/ so that
 # nothing this script writes can be mistaken for pipeline output.
 VERIFY_SUBDIR = "VERIFY"
 

@@ -1,13 +1,16 @@
 # **ArmTrace — Data Pipeline**
 
-Two Python scripts that extract and structure Italian military export data from
-the government annual reports published under **Law 185/1990** (Article 5, Law
-9 July 1990 n. 185): the source reports → one PDF per table → one CSV per table.
+Python scripts that extract and structure Italian military export data from the
+government annual reports published under **Law 185/1990** (Article 5, Law
+9 July 1990 n. 185): the source reports → one PDF per table → a catalog of what
+each table is.
 
-> Working guidance for coding agents lives in [AGENTS.md](./AGENTS.md):
-> invariants, detection traps, disproven approaches, per-year coverage and the
-> way to work on a year. This file is for a person who wants to *run* the
-> pipeline and use its output; anything about *how detection works* is there.
+> Working guidance for coding agents lives in [AGENTS.md](./AGENTS.md) for
+> *finding* tables — invariants, detection traps, disproven approaches,
+> per-year coverage — and in
+> [AGENTS-TABLE2SQL.md](./AGENTS-TABLE2SQL.md) for *reading* them: rotation,
+> bands, record grammars, and what the tables contain. This file is for a person
+> who wants to *run* the pipeline and use its output.
 
 ---
 
@@ -28,8 +31,8 @@ reports_185_1990/download_185.sh reports_185_1990 reports_185_1990/manifest.tsv
 # 3. step 1 — one PDF per table  ->  Out/PDF/
 ./Reports2PDFTables.py --year 2025 --volume both
 
-# 4. step 2 — one CSV per table   ->  Out/CSV/
-python IndividualTables2SQL.py --year 2025
+# 4. step 2 — what shape is each table?  ->  Out/CATALOG/
+./CatalogueTables.py --year 2025 --manifest Out/manifest-2025.jsonl
 
 # 5. audit what step 1 produced   ->  Out/VERIFY/
 ./VerifyTables.py --year 2025 --manifest <manifest.jsonl>
@@ -66,16 +69,18 @@ reports_185_1990/                 # source reports, one folder per reporting yea
 └── SOURCES.md                   # archive structure, legislature→year mapping, gaps
 
 Out/                             # generated locally, NOT in git
-├── PDF|<authority>/[<article>/]<table><year>.PDF
-├── CSV/<authority>/[<article>/]<table><year>.csv
-└── VERIFY/verify-<year>.{log,json,html}
+├── PDF/    <authority>/[<article>/]<table><year>.PDF
+├── CATALOG/catalog.sqlite       the shape of every table, per year
+│           catalog-<year>.jsonl
+│           census-<year>.md
+└── VERIFY/ verify-<year>.{log,json,html}
 ```
 
 The folder name is the **reporting year** the report covers, not the year it was
 published. Nothing hardcodes a year: step 1 reads it from the
-`reports_185_1990/<anno>/…` path and both steps key their output on it as a
+`reports_185_1990/<anno>/…` path and every step keys its output on it as a
 **filename suffix**, so one table folder holds one file per reporting year
-(`Out/PDF/MEF/AA2023.PDF` → `Out/CSV/MEF/AA2023.csv`). Adding a year means
+(`Out/PDF/MEF/AA2023.PDF` for 2023, `AA2024.PDF` for 2024). Adding a year means
 dropping its PDFs into `reports_185_1990/<anno>/` — no code change.
 
 ### The output tree is the ontology of the reports
@@ -161,10 +166,10 @@ traps behind them are in
 
 ## **The scripts**
 
-Three steps. Step 1 finds the tables and splits the volumes; step 2 reads each
-table into a CSV; step 3 audits step 1's output. They are independent — step 3
-reads the volumes again and reaches its own conclusions rather than trusting
-step 1's manifest.
+Three steps. Step 1 finds the tables and splits the volumes; step 2 records what
+shape each table is; step 3 audits step 1's output. They are independent — step 2
+re-reads the PDFs and step 3 re-reads the volumes, and both reach their own
+conclusions rather than trusting step 1's manifest.
 
 ### 1. `Reports2PDFTables.py` — volumes → `Out/PDF/`
 
@@ -216,42 +221,52 @@ each. **2024 does not work** — it is the one year never measured properly, and
 the next to be brought up. Per-year figures are in
 [AGENTS.md](./AGENTS.md#archive-coverage).
 
-### 2. `IndividualTables2SQL.py` — `Out/PDF/` → `Out/CSV/`
+### 2. `CatalogueTables.py` — `Out/PDF/` → `Out/CATALOG/`
 
-Reads each per-table PDF and converts it to CSV via tabula-py.
+Reads each per-table PDF and records **what shape it is**: its columns and their
+labels, its record grammar, whether it has vector rules, and whether its text is
+readable at all. It deliberately extracts no data — the point is that a table's
+shape is neither stable across years nor uniform within one, so nothing can be
+loaded into SQL until the shapes are known.
 
 ```bash
-python IndividualTables2SQL.py --year 2025
-python IndividualTables2SQL.py --year 2025 --input-dir Out/PDF --output-root Out/CSV
+./CatalogueTables.py --year 2025 --manifest Out/manifest-2025.jsonl
+./CatalogueTables.py --year 2025 --sample 7 --dry-run
+./CatalogueTables.py --all
 ```
 
 | Flag | Meaning |
 |---|---|
-| `--year` | year to process; matches the filename suffix |
+| `--year` | reporting year to catalogue; matches the filename suffix |
 | `--input-dir` | per-table PDFs (default `Out/PDF`), walked recursively |
-| `--output-root` | CSV root (default `Out/CSV`) |
-| `--base` | root for all paths (default `.`) |
-| `--sep` | field separator (default `;`) |
-| `--encoding` | CSV encoding (default `utf-8-sig`) |
+| `--out-root` | output root (default `Out`) |
+| `--catalog` | catalog path (default `Out/CATALOG/catalog.sqlite`) |
+| `--manifest` | step 1's JSON manifest — the table's *witness* and source span |
+| `--sample` | pages per table read for geometry (default 5) |
+| `--dry-run` | report only, write nothing |
 
-**Why CSV and not XLSX.** The archive holds tables Excel cannot represent: its
-limits are 255 sheets, 1048576 rows and 16384 columns, and all three are
-workbook or sheet properties. A CSV has none of them — it is one file of any
-length that pandas, sqlite or MySQL read directly. The two defaults are
-deliberate rather than incidental:
+It writes three things: `catalog.sqlite` (one row per table per year, plus every
+page's legibility and every column definition as rows, so the cross-year diff is
+a SQL question), `catalog-<year>.jsonl` (the same, flat) and `census-<year>.md`
+— the report to open, with coverage, grammars and column signatures.
 
-- **`;` separator.** Italian figures use a comma decimal separator, so
-  `1.234,56` in a comma-separated file reads as two columns. `;` is also what
-  Excel itself uses under Italian regional settings.
-- **`utf-8-sig`.** The BOM is what stops Excel on Windows rendering
-  `Paese` / `Movimentazioni` / `Valore in €` as mojibake. It also prefixes the
-  first header when a reader asks for plain `utf-8`, so pass `--encoding utf-8`
-  for a database destination.
+**Why the catalog exists.** On 2025 the 110 tables do not agree on a shape: 48
+print their content rotated 90° inside a portrait page, 57 carry a rotated
+table under an upright running banner, four are percentage charts rather than
+grids, and the row grain differs by ministry — MAE groups rows under an operator
+and closes each group with a printed subtotal, MEF repeats a `Causale`
+sub-dimension inside one authorisation number, the Dogane print one flat record
+per operator, and the Difesa print cells holding lists wrapped over twenty
+lines. A CSV per table would encode all four grains as indistinguishable
+rectangles, and diffing those CSVs year over year would report a change in
+every column of every table.
 
-**Status:** **cannot be run end to end here — no JRE is installed**, and
-tabula-py shells out to Java. Install a JRE (e.g. Temurin 17) on `PATH` or
-reachable via `JAVA_HOME`. Until then `Out/CSV/` is untrusted output: the split
-is verified, the extraction is not.
+**Status:** works on 2025 — 110 tables in 141s, and it recovers the columns the
+reports actually print (A1's ten, EE's five, MG10's three). It is a
+*measurement* step: where it says `unknown`, that is recorded with a reason
+rather than guessed at. 19 of 2025's tables yield no text at all and no catalog
+can change that — see the coverage ceiling in
+[AGENTS-TABLE2SQL.md](./AGENTS-TABLE2SQL.md#the-ceiling).
 
 ### 3. `VerifyTables.py` — audits `Out/PDF/`
 
@@ -281,7 +296,7 @@ complete, correctly named table.
 | `--no-html` | skip the HTML report |
 | `--dry-run` | print verdicts, write nothing |
 
-It writes **only** to `Out/VERIFY/`, never to `Out/PDF/` or `Out/CSV/` — an
+It writes **only** to `Out/VERIFY/`, never to `Out/PDF/` or `Out/CATALOG/` — an
 audit that can alter what it audits is not one.
 
 #### The three reports
@@ -343,9 +358,9 @@ python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Step 1 and step 3 need only `pypdf`. **Step 2 also needs a JRE** (e.g. Temurin
-17) on `PATH` or reachable via `JAVA_HOME`, because tabula-py shells out to
-Java. Not installed in this environment — see the status note above.
+Steps 1 and 3 need only `pypdf`; step 2 needs `pymupdf`. **No JRE is required by
+any step** — the old step 2 shelled out to Java through tabula-py, which is
+gone.
 
 ---
 
@@ -371,13 +386,13 @@ seven tab-separated fields per row — `year`, `leg`, `num`, `vol`, `file`,
 
 ## **Repository contents**
 
-No PDF, CSV or other binary is tracked by git, and **nothing is in Git LFS** —
+No PDF, sqlite or other binary is tracked by git, and **nothing is in Git LFS** —
 the repository holds only the scripts, `manifest.tsv`, `download_185.sh`, `lib/`,
-`SOURCES.md`, `AGENTS.md` and this file. Both large sets are regenerable: the
-reports from `manifest.tsv` and `SOURCES.md`, and `Out/` by re-running the
-pipeline. LFS was never a solution here — it does not stop the files being
-committed, it only moves the bytes into a metered quota. **Do not re-add LFS
-filter rules.**
+`SOURCES.md`, `AGENTS.md`, `AGENTS-TABLE2SQL.md` and this file. Both large sets
+are regenerable: the reports from `manifest.tsv` and `SOURCES.md`, and `Out/` by
+re-running the pipeline. LFS was never a solution here — it does not stop the
+files being committed, it only moves the bytes into a metered quota. **Do not
+re-add LFS filter rules.**
 
 ---
 

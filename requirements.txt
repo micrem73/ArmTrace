@@ -1,12 +1,20 @@
-# Requirements for the ArmTrace data pipeline (step 1 and step 2).
+# Requirements for the ArmTrace data pipeline.
 #
 #   python -m venv .venv && . .venv/bin/activate
 #   pip install -r requirements.txt
 #
-# NOTE: tabula-py shells out to a Java runtime. Install a JRE (e.g. Temurin 17)
-# or tabula-py will fail with "Unable to find a Java installation".
+# Step 1 (split volumes into per-table PDFs) needs pypdf. Step 2 (read the tables
+# into a catalog of shapes) needs pymupdf. Step 3 (audit step 1) needs pypdf.
+#
+# tabula-py is NOT a dependency. It was the old step 2's extractor, it shelled
+# out to a JRE that is not installed here, and it cannot express what these
+# tables are: 28 of 2025's 110 print their content rotated 90 degrees, which it
+# does not normalise, and their rules are one-point rectangles rather than paths,
+# so its line-detection finds nothing. See AGENTS-TABLE2SQL.md.
+#
+# There is no JRE requirement anywhere in the pipeline now.
 
 fonttools>=4.0
 pypdf>=6.0
-tabula-py>=2.10
+pymupdf>=1.24
 pandas>=2.0

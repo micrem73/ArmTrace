@@ -182,10 +182,26 @@ strong signal the detectors work on it. Caveats:
 - **Do not re-add `filter=lfs` rules to `.gitattributes`.** LFS does not prevent
   committing, it just moves bytes into a metered quota, and this repo's binaries
   total over 1 GB.
-- **`process_tab_n1` … `process_tab_p2` are dead code.** Dispatch is
-  family-based now (`detect_pdf_type()` / `table_semantics()`). They document
-  family-2 column layouts and may be worth keeping as reference, but nothing
-  calls them.
+- **`process_tab_n1` … `process_tab_p2` were dead code and are now deleted.** They
+  belonged to `IndividualTables2SQL.py`, which is gone: dispatch was family-based
+  even while they sat there uncalled, and the script they documented could not
+  read the tables. The column layouts they described are superseded by
+  `lib/grammar.py` and the catalog, which measure the layout from the page.
+- **Step 2 is `CatalogueTables.py`, and reading a table is this file's
+  successor's business, not this file's.** `IndividualTables2SQL.py` (PDF → CSV
+  via tabula-py) is **deleted**. What replaced it measures table *shapes* —
+  rotation, bands, columns, record grammars, legibility — and is documented in
+  **[AGENTS-TABLE2SQL.md](./AGENTS-TABLE2SQL.md)**. Three things are shared
+  between the two documents and are stated **here**, so they must not be restated
+  there: the manifest key is the triple `(authority, article, code)`, the article
+  level in the path is optional, and OCR is out of scope.
+- **The catalog inherits step 1's coverage, and that is a trap.** A table the
+  catalog cannot read is a table whose *text* was destroyed, not one that does not
+  exist: 19 of 2025's 110 tables are unreadable at the font level, 498 pages, the
+  whole of `E` at 221pp among them. Any year-over-year comparison of which tables
+  exist must carry the witness (`index` / `bookmark` / `header-run` / `garbled` /
+  `missing`) beside it, or it will report tables *disappearing* that were never
+  legible in the first place.
 - **Nothing hardcodes a year.** It comes from the `reports_185_1990/<anno>/` path
   and is used as a filename suffix, so adding a year needs no code change.
 - **Step 1 writes `Out/PDF/<authority>/[<article>/]<tabella><anno>`** — the path
@@ -199,9 +215,9 @@ strong signal the detectors work on it. Caveats:
 - **`VerifyTables.py` reads both output layouts** — the ministry tree above, and
   the older `Out/PDF/<tabella>/<tabella><anno>` one folder per table — so it can
   audit output written before the ministry tree landed. It never *writes* inside
-  `Out/PDF/` or `Out/CSV/`: it is an audit, and an audit that can alter what it
-  audits is not one. Everything it produces goes to `Out/VERIFY/`. Do not "fix"
-  a finding by editing the verifier's output paths.
+  `Out/PDF/` or `Out/CATALOG/`: it is an audit, and an audit that can alter what
+  it audits is not one. Everything it produces goes to `Out/VERIFY/`. Do not
+  "fix" a finding by editing the verifier's output paths.
 
 ---
 
@@ -209,12 +225,21 @@ strong signal the detectors work on it. Caveats:
 
 So nobody re-diagnoses:
 
-- **No JRE installed.** tabula-py shells out to Java, so **step 2 output is
-  entirely unverified.** Treat `Out/CSV/` as untrusted until a JRE is on `PATH`
-  or reachable via `JAVA_HOME`.
+- **No JRE, and none needed.** It was only ever required by tabula-py, the old
+  step 2, which is deleted. `requirements.txt` no longer lists it. Anything that
+  shells out to Java is not a dependency of this pipeline.
+- `pymupdf` is now a real dependency (step 2 reads pages through it). `pypdf` is
+  still what steps 1 and 3 use.
 - `Out/` and `reports_185_1990/` are both gitignored and rebuilt from
-  `manifest.tsv` plus the two scripts.
+  `manifest.tsv` plus the scripts.
 - venv: `python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt`
+- `python3 -m venv` **fails on this host** (`ensurepip` is missing; the error
+  names `python3-venv`). Use `pip install --target <dir>` or `--user` instead,
+  or install the package with sudo. Worth knowing before concluding that
+  something else is broken.
+- PyPI is reachable; the Camera archive needs a browser `User-Agent` and
+  supports range requests, so a single volume can be probed with a 200KB `GET`
+  rather than a 15MB download.
 
 ---
 
@@ -826,8 +851,12 @@ nothing in the archive names them and only repetition can find them.
   rather than emitting a misleading 1-table split.
 - The 15 weak files (≤10 tables) need either a family-specific detector or an
   honest partial-coverage marker in the output.
-- Install a JRE and run step 2 for real — nothing about its output is verified.
-- OCR decision, if garbled tables are ever to yield data.
+- ~~Install a JRE and run step 2 for real~~ — **done, differently.** No JRE: the
+  old step 2 was deleted rather than installed, and its replacement measures
+  table shapes with `pymupdf`. See AGENTS-TABLE2SQL.md for what reading a table
+  now involves and what is still outstanding there.
+- OCR decision, if garbled tables are ever to yield data. Currently **out of
+  scope by decision**, and 2025's 498 dead pages are the ceiling it implies.
 - Resolve the 2021 volume-2 filename collision: `2021_LXVII_n5_TOMO_II.pdf` and
   `2021_LXVII_n5_VOLUME_II.pdf` are two different documents (844 and 1070 pages)
   claiming the same volume, so `parse_volume()` refuses to guess.

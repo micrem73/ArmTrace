@@ -5,7 +5,7 @@ table, under which article of the law, and therefore where the table belongs
 in the Out/ tree.
 
     Out/PDF/<authority>/[<article>/]<TableName><Year>.PDF
-    Out/CSV/<authority>/[<article>/]<TableName><Year>.csv
+    Out/CATALOG/catalog.sqlite          the shapes of those tables, per year
 
 This module owns the vocabulary and the path shape. It does *not* decide which
 ministry a given table belongs to: that comes from the volume's own INDICE
