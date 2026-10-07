@@ -14,6 +14,9 @@ Dogane-overwrites-MAE bug comes back:
 - the article level in `Out/PDF/<authority>/[<article>/]<table><year>` is optional;
 - OCR is out of scope.
 
+[ROADMAP.md](./ROADMAP.md) holds the order the remaining work is done in, and
+restates neither the key nor the path shape either.
+
 Everything below was measured on the pages, not inferred. Where a threshold
 appears, the measurement that produced it appears beside it, because an
 arbitrary constant in this domain is indistinguishable from a correct one until

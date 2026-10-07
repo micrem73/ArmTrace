@@ -9,8 +9,9 @@ each table is.
 > *finding* tables — invariants, detection traps, disproven approaches,
 > per-year coverage — and in
 > [AGENTS-TABLE2SQL.md](./AGENTS-TABLE2SQL.md) for *reading* them: rotation,
-> bands, record grammars, and what the tables contain. This file is for a person
-> who wants to *run* the pipeline and use its output.
+> bands, record grammars, and what the tables contain. [ROADMAP.md](./ROADMAP.md)
+> is the order the remaining work is done in. This file is for a person who wants
+> to *run* the pipeline and use its output.
 
 ---
 
@@ -388,11 +389,11 @@ seven tab-separated fields per row — `year`, `leg`, `num`, `vol`, `file`,
 
 No PDF, sqlite or other binary is tracked by git, and **nothing is in Git LFS** —
 the repository holds only the scripts, `manifest.tsv`, `download_185.sh`, `lib/`,
-`SOURCES.md`, `AGENTS.md`, `AGENTS-TABLE2SQL.md` and this file. Both large sets
-are regenerable: the reports from `manifest.tsv` and `SOURCES.md`, and `Out/` by
-re-running the pipeline. LFS was never a solution here — it does not stop the
-files being committed, it only moves the bytes into a metered quota. **Do not
-re-add LFS filter rules.**
+`SOURCES.md`, `AGENTS.md`, `AGENTS-TABLE2SQL.md`, `ROADMAP.md` and this file.
+Both large sets are regenerable: the reports from `manifest.tsv` and
+`SOURCES.md`, and `Out/` by re-running the pipeline. LFS was never a solution here
+— it does not stop the files being committed, it only moves the bytes into a
+metered quota. **Do not re-add LFS filter rules.**
 
 ---
 
