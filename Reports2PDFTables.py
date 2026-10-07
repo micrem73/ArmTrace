@@ -168,14 +168,14 @@ FIRST_YEAR = 2016
 
 # Estensione dei PDF per-table. reports_185_1990/ contiene i PDF di origine in
 # minuscolo, ma i PDF per-tabella vengono scritti in maiuscolo: su Linux i due
-# casi non si equivalgono e IndividualTables2SQL.py cerca questo nome esatto.
+# casi non si equivalgono e CatalogueTables.py cerca questo nome esatto.
 PDF_EXT = ".PDF"
 
 # Per-table PDFs are written as
 # Out/PDF/<authority>/[<articolo>/]<tabella><anno>.PDF, the uppercase extension
-# included. IndividualTables2SQL.py walks the same tree with PDF_EXT there;
-# change both together or step 2 finds nothing, since globbing is case-sensitive
-# on Linux.
+# included. CatalogueTables.py walks the same tree with PDF_EXT there; change
+# both together or step 2 finds nothing, since globbing is case-sensitive on
+# Linux.
 
 
 # ==========================================================================
