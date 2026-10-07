@@ -1278,6 +1278,7 @@ def check_provenance(volumes, files):
     the split is broken.
     """
     claims = defaultdict(list)
+    cont_pages = 0
     for volume in volumes:
         manifest = volume.get("manifest")
         if not manifest:
@@ -1289,6 +1290,20 @@ def check_provenance(volumes, files):
             for p in range(info["start"], info["end"] + 1):
                 claims[(volume["report"], p)].append(
                     (code, info.get("source"), info.get("pages")))
+        # The leading pages of a table cut at the volume join. They ARE in the
+        # exported PDF -- split_pdf appends this segment to the same writer --
+        # so claiming them is not a favour, it is the same fact the tables loop
+        # above already states. Without this the check calls 62 real pages of
+        # 2025 F1 unattributed. `kept` is absent here and that is correct: the
+        # record exists only when the segment was actually written.
+        for cont in manifest_continued(manifest):
+            code = cont.get("code")
+            if not code:
+                continue
+            cont_pages += cont.get("pages") or (cont["end"] - cont["start"] + 1)
+            for p in range(cont["start"], cont["end"] + 1):
+                claims[(volume["report"], p)].append(
+                    (code, "continued", cont.get("total_pages")))
 
     duplicated, unattributed = [], []
     for volume in volumes:
@@ -1298,6 +1313,12 @@ def check_provenance(volumes, files):
         if manifest:
             tables = {i["code"]: i for i in manifest_tables(manifest)
                       if i.get("code") and i.get("kept") is not False}
+            # Same reason as the claims loop: p5 of a continued table is that
+            # table's first page in this volume, which is what these flags mean.
+            # Namespaced so a code in both lists does not overwrite.
+            for cont in manifest_continued(manifest):
+                if cont.get("code"):
+                    tables.setdefault(f"{cont['code']}@continued", cont)
         starts = {i["start"] for i in tables.values()}
         ends = {i["end"] for i in tables.values()}
         for p in range(1, pages + 1):
@@ -1318,6 +1339,7 @@ def check_provenance(volumes, files):
         "volumes": len(volumes),
         "pages": sum(v["pages"] for v in volumes),
         "claimed_pages": sum(len(v) for v in claims.values()),
+        "continued_pages": cont_pages,
         "duplicated_pages": duplicated,
         "unattributed_pages": unattributed,
         "non_table_classes": NON_TABLE_CLASSES,
@@ -2119,7 +2141,7 @@ def locate_span(volumes, code):
                 continue
             return (Path(volume["report"]).stem, info["start"], info["end"],
                     info.get("pages"), info.get("source"))
-        for cont in (manifest.get("continued") or []):
+        for cont in manifest_continued(manifest):
             if cont.get("code") != code:
                 continue
             return (Path(volume["report"]).stem, cont["start"], cont["end"],
@@ -2145,6 +2167,41 @@ def manifest_tables(manifest):
                 for code, info in tables.items()]
     if isinstance(tables, list):
         return [t for t in tables if isinstance(t, dict)]
+    return []
+
+
+def manifest_continued(manifest):
+    """Step 1's continuation records, whichever shape the manifest used.
+
+    The sibling of manifest_tables(), for the same reason. `continued` was a
+    mapping keyed by the (authority, article, code) triple until the ministry
+    tree, and is a LIST of records since -- json has no tuple keys. Iterating a
+    mapping yields its KEYS, so `for cont in manifest["continued"]` silently
+    iterates tuples and `cont.get(...)` raises AttributeError, which is the
+    identical disarm the tables shape change caused.
+
+    One difference from manifest_tables(), and it matters: the old `tables` key
+    was a bare code string, so the key could be copied into "code" as it stands.
+    The old `continued` key is the whole triple, so copying it verbatim would
+    leave every record keyed on a tuple and matching nothing. Split it.
+    """
+    cont = (manifest or {}).get("continued")
+    if isinstance(cont, dict):
+        out = []
+        for key, info in cont.items():
+            if not isinstance(info, dict):
+                out.append(info)
+                continue
+            if isinstance(key, tuple):
+                authority, article, code = (list(key) + [None] * 3)[:3]
+                info = {"authority": authority, "article": article,
+                        "code": code, **info}
+            else:
+                info = {"code": key, **info}
+            out.append(info)
+        return out
+    if isinstance(cont, list):
+        return [c for c in cont if isinstance(c, dict)]
     return []
 
 
@@ -2253,6 +2310,9 @@ def report_year(year, payload):
         print(f"  provenienza: {prov['claimed_pages']}/{prov['pages']} pagine "
               f"attribuite, {len(prov['duplicated_pages'])} duplicate, "
               f"{len(prov['unattributed_pages'])} non attribuite")
+        if prov.get("continued_pages"):
+            print(f"      di cui {prov['continued_pages']} pagine di tabelle "
+                  f"proseguite dal volume precedente (stitch)")
         for dup in prov["duplicated_pages"][:8]:
             print(f"      doppia p{dup['page']} {dup['report']}: "
                   f"{', '.join(dup['claimed_by'])}")

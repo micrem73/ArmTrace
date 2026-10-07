@@ -224,6 +224,11 @@ is greppable rather than inferred. On 2025 that is 72 pages per volume, 7%.
 
 Most of it is not a defect — a cover, the INDICE, relation prose, the 31 Gazzetta
 Ufficiale pages bound into vol. II — so the reason is reported rather than judged.
+`VerifyTables.py` reports the same complement as `provenienza:` and the two are
+expected to list the same pages, volume by volume; the log also names how many of
+the attributed ones arrived through the cross-volume stitch, since those are
+exported but have no `tables` entry of their own in the volume they open in.
+
 Two things TRASH is **not**: it is not the count of pages no detector read a code
 on (most of those sit *inside* a table's span, since ends are derived from the
 next start), and it does not catch a table that wrongly swallowed its neighbour's

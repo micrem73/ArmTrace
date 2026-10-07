@@ -211,6 +211,18 @@ strong signal the detectors work on it. Caveats:
   `Out/PDF/` or `Out/CSV/`: it is an audit, and an audit that can alter what it
   audits is not one. Everything it produces goes to `Out/VERIFY/`. Do not "fix"
   a finding by editing the verifier's output paths.
+- **The audit's notion of "claimed" must cover `continued` as well as `tables`,**
+  for the same reason the generator's must. `check_provenance()` took its page
+  claims from `manifest_tables()` alone and so called 62 real pages of 2025 vol. II
+  unattributed — the leading segment of F1, which `split_pdf()` had appended to the
+  same writer. Reading only one of the two lists is the same blind spot TRASH was
+  added to remove, sitting in the tool that exists to check the generator. Both
+  halves now go through `manifest_continued()`, the sibling of `manifest_tables()`.
+  Note what the agreement between the two numbers does and does not prove: the
+  verifier's set is the complement of `table_plan()`, and both are derived from the
+  same manifest, so agreement shows the verifier *reads* the manifest as the
+  generator *wrote* it — not that the spans in it are right. A wrong span agrees
+  just as quietly. The independent witness for spans is the index page count.
 - **The claimed and the trashed pages are disjoint and together are every page of
   the volume.** `Out/TRASH/<anno>/<volume>_p<a>-<b>.PDF` holds the pages no
   exported PDF contains, computed as the complement of `table_plan()` — the *same*
