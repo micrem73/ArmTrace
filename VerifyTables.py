@@ -116,6 +116,13 @@ from Reports2PDFTables import (
     stamp_tokens,
 )
 
+# The filename parser lives here rather than in Reports2PDFTables because it is
+# the WRITER's rule, not a detector's: relative_path() emits the V/P tail and
+# parse_stem() is the only thing that takes it apart again. CatalogueTables
+# imports the same function for the same reason -- three parsers for one shape
+# is how a rename quietly stops being checked.
+from lib import ontology
+
 REPORTS_DIR = "reports_185_1990"
 OUT_DIR = "Out"
 PDF_EXT = ".PDF"
@@ -229,6 +236,42 @@ BARE_KEYWORD = re.compile(r"(?i)tabella|tab\.|tab")
 ANNEXO = re.compile(
     r"(?i:MINISTERO\s+DELLA\s+DIFESA)\s*[-–—]?\s*(?i:Annesso)\s*([0-9]+[A-Z]?)")
 ANNEXO_CODE = re.compile(r"^[0-9]+[A-Z]?$")
+
+# A fourth code space: the ministry relation's own numbered exhibits, "Tabella 1"
+# .. "Tabella 23" with dotted sub-tables, exported as T1 .. T23, T81 .. T88,
+# T141, T142. The "T" prefix is not decoration -- the printed number has a dot in
+# it (8.1) and ontology.safe_code() strips everything that is not a letter or a
+# digit, so a code of "8.1" would be written "81" and read back "81", and the
+# manifest and the filename would quietly disagree. That is the MAPPENDICE trap.
+#
+# It has to be a space of its own rather than an art. 27 code because it is not
+# one: these tables carry no law reference at all, they are absent from the
+# INDICE, and they are absent from every bookmark tree. Judged against the
+# art. 27 shape, every one of them would FAIL, exactly as the five Difesa
+# annessi did before ANNEXO_CODE existed.
+REL_CODE = re.compile(r"^T\d{1,3}$")
+
+# The same code as it is PRINTED, so the verifier can look for it on the page: a
+# file called T812025.PDF carries a heading reading "Tabella 8.1", and a check
+# that searched for "T81" there would find nothing and call a correct file empty.
+REL_HEADING = re.compile(
+    r"(?i:^|\s)Tabella\s+(\d+(?:\.\d+)?)"
+    r"(?:\s*\(\s*parte\s+\d+\s+di\s+\d+\s*\))?\s*$")
+
+# The same, anchored to the whole line, which is the form the exhibit heading
+# actually takes and the form that rejects the 17 prose cross-references in 2025
+# vol. I -- including "(Tabella 1)." at the end of a sentence and "Tabella 5 e
+# Grafico 6" naming two exhibits at once.
+REL_LINE = re.compile(
+    r"(?i)^Tabella\s+(\d+(?:\.\d+)?)"
+    r"(?:\s*\(\s*parte\s+\d+\s+di\s+\d+\s*\))?$")
+
+# How far down a page the heading may sit. Measured against the volume that
+# prints them: the deepest is line 27 of p40, where the page carries two exhibits
+# side by side, and 46 headings are found in 2025 vol. I pp 15-70 at any depth --
+# exactly the 31 tables and 15 charts it prints, so nothing is invented by
+# scanning deep. Kept in step with REL_HEADING_SCAN in step 1.
+REL_SCAN_LINES = 40
 
 # How far down a page a bare code line may sit and still be read as the page's
 # own stamp. The 2025 charts print theirs in the fourth line; a table cell
@@ -535,6 +578,18 @@ def page_code(lines, vocabulary):
     if appendix:
         return appendix
 
+    # The ministry relation's own numbered exhibits, read as the T-prefixed code
+    # the file is named after. Without this a file called T812025.PDF reads as
+    # carrying no code at all -- "8.1" is not a CODE_TOKEN -- and
+    # uniqueness.own_code_run fails a file that is nothing but table. Returned in
+    # the exported spelling so it matches the filename rather than the page.
+    for line in lines[:REL_SCAN_LINES]:
+        m = REL_LINE.match(line.strip())
+        if m:
+            cand = f"T{m.group(1).replace('.', '')}"
+            if cand in vocabulary:
+                return cand
+
     for line in lines:
         m = VERIFIER_LEADING.match(line)
         if m:
@@ -599,7 +654,7 @@ def volume_vocabulary(hits, index_codes, bookmark_codes, manifest_codes):
 # ==========================================================================
 
 def check_layout(path, code, year, known_years, checks, authority="",
-                 article=""):
+                 article="", volume=None, page=None, origin=None):
     """The naming and layout invariant.
 
     Under the flat shape the folder is named for the code and must be, because
@@ -607,33 +662,52 @@ def check_layout(path, code, year, known_years, checks, authority="",
     carried by the filename alone and the folders above it are the authority
     and, optionally, the article, so the folder-name rule does not apply and
     asserting it would fail every file the moment the writer gained a level.
-    What holds for both is that the filename is <code><anno>.PDF and that the
-    year is a reporting year.
+
+    What holds for both is that the filename is
+    <code><anno>V<volume>P<page>.PDF and the year is a reporting year.
+
+    `origin` is the manifest's own (volume, page) for this table, when the
+    manifest was read. The filename's volume and page are then a SECOND COPY of
+    a fact the manifest already states, and two copies drift: that is how a
+    renamed file, or a writer that computed the page from the wrong segment,
+    would ship a table labelled with where it came from when it did not. So the
+    two are compared, and a disagreement fails rather than passing quietly --
+    the same lesson as manifest_tables() silently breaking once.
     """
     folder = path.parent.name
     stem = path.stem
+    parsed = ontology.parse_stem(stem)
     if not authority and folder != code:
         checks.bad("layout.folder_name",
                    f"cartella '{folder}' != codice '{code}'")
-    if not stem.startswith(code):
+    if parsed is None:
         checks.bad("layout.file_stem",
-                   f"nome file '{stem}' non comincia con il codice '{code}'")
-    suffix = stem[len(code):] if stem.startswith(code) else ""
-    if suffix != year:
+                   f"nome file '{stem}' non è <codice><anno>V<volume>P<page>")
+    elif parsed["code"] != code:
+        checks.bad("layout.file_stem",
+                   f"nome file '{stem}' porta il codice '{parsed['code']}', "
+                   f"non '{code}'")
+    if parsed is not None and parsed["year"] != int(year):
         checks.bad("layout.year_suffix",
-                   f"suffisso '{suffix}' != anno '{year}'")
+                   f"suffisso '{parsed['year']}' != anno '{year}'")
     if known_years and year not in known_years:
         checks.bad("layout.known_year",
                    f"anno '{year}' non presente in manifest.tsv")
-    # Three code spaces, not one. art. 27 families print AA/AA1/MG13/UE, the
-    # family-2 ministry prints A1/P2, and the Difesa annexes are numbered 2, 3A,
-    # 4. Judging a Difesa annesso against the art. 27 shape fails a correct file,
-    # which is what happened to all five of them in 2025.
+    if parsed is not None and origin and (volume, page) != origin:
+        checks.bad("layout.origin_suffix",
+                   f"filename says V{volume}P{page}, manifest says "
+                   f"V{origin[0]}P{origin[1]}")
+    # Four code spaces, not one. art. 27 families print AA/AA1/MG13/UE, the
+    # family-2 ministry prints A1/P2, the Difesa annexes are numbered 2, 3A, 4,
+    # and the ministry relations number their own exhibits 1..23 (T-prefixed).
+    # Judging any of the last two against the art. 27 shape fails a correct file,
+    # which is what happened to all five Difesa annessi in 2025.
     if not (CODE_RE.match(code) or VERIFIER_CODE.match(code)
-            or ANNEXO_CODE.match(code) or VERIFIER_APPENDIX_CODE.match(code)):
+            or ANNEXO_CODE.match(code) or VERIFIER_APPENDIX_CODE.match(code)
+            or REL_CODE.match(code)):
         checks.bad("layout.code_shape",
                    f"codice '{code}' non ha forma art. 27, ne di annesso Difesa, "
-                   f"ne di appendice Dogane")
+                   f"ne di appendice Dogane, ne di tabella di relazione")
     if not any(c["verdict"] == FAIL for c in checks.items):
         where = "/".join(filter(None, [authority, article])) or "flat"
         checks.ok("layout", f"{where}/{stem}{PDF_EXT}")
@@ -984,11 +1058,12 @@ def check_title(pages, entry, checks):
 
 def verify_file(path, code, year, vocab, entry, known_years,
                 fingerprint=True, sample=0, attested=False, authority="",
-                article=""):
+                article="", volume=None, page=None, origin=None):
     """Every per-file check, and the evidence they ran on."""
     checks = Checks()
     check_layout(path, code, year, known_years, checks,
-                 authority=authority, article=article)
+                 authority=authority, article=article,
+                 volume=volume, page=page, origin=origin)
 
     try:
         reader = PdfReader(str(path), strict=False)
@@ -1305,12 +1380,26 @@ def check_provenance(volumes, files):
                 claims[(volume["report"], p)].append(
                     (code, "continued", cont.get("total_pages")))
 
-    duplicated, unattributed = [], []
+    duplicated, unattributed, partitioned = [], [], []
     for volume in volumes:
         pages = volume["pages"]
         manifest = volume.get("manifest")
         tables = {}
+        # Pages the volume prints TWO TABLES on, which step 1 then cuts into one
+        # file each. A page claimed by two tables is normally a failure -- two
+        # files ship the same page -- but here the two files hold different
+        # halves of it, so the claim is the fact and not the defect. They are
+        # counted apart so that "duplicated" keeps meaning one thing: a page
+        # that really was written twice.
+        #
+        # Only pages carrying two Tabelle qualify. A page carrying a table and a
+        # chart is claimed once, because no chart is exported.
+        shared = set()
         if manifest:
+            for entry in manifest.get("shared_pages") or []:
+                kinds = [str(k).lower() for k, _n in entry["exhibits"]]
+                if kinds.count("tabella") > 1:
+                    shared.add(entry["page"])
             tables = {i["code"]: i for i in manifest_tables(manifest)
                       if i.get("code") and i.get("kept") is not False}
             # Same reason as the claims loop: p5 of a continued table is that
@@ -1324,10 +1413,11 @@ def check_provenance(volumes, files):
         for p in range(1, pages + 1):
             holders = claims.get((volume["report"], p), [])
             if len(holders) > 1:
-                duplicated.append({
+                record = {
                     "report": Path(volume["report"]).name, "page": p,
                     "claimed_by": [h[0] for h in holders],
-                })
+                }
+                (partitioned if p in shared else duplicated).append(record)
             elif not holders:
                 unattributed.append({
                     "report": Path(volume["report"]).name, "page": p,
@@ -1341,6 +1431,7 @@ def check_provenance(volumes, files):
         "claimed_pages": sum(len(v) for v in claims.values()),
         "continued_pages": cont_pages,
         "duplicated_pages": duplicated,
+        "partitioned_pages": partitioned,
         "unattributed_pages": unattributed,
         "non_table_classes": NON_TABLE_CLASSES,
     }, ""
@@ -1452,11 +1543,22 @@ def reconcile(files, per_authority, bookmarks):
 # ==========================================================================
 
 def split_stem(stem):
-    """'AA2025' -> ('AA', '2025'). No archive code ends in four digits."""
-    m = re.search(r"\d{4}$", stem)
-    if m is None:
-        return stem, None
-    return stem[:m.start()], m.group(0)
+    """'AA2025V2P273' -> ('AA', '2025', 2, 273). None if the stem is not one.
+
+    A thin wrapper over ontology.parse_stem(), which is the one implementation.
+    It used to be its own: 'the trailing four digits are the year', which is
+    ambiguous for any code ending in digits (MG102025 is MG10 of 2025) and which
+    CatalogueTables had a second, independent copy of. Three parsers, one shape
+    to read; the filename now carries a V/P tail, and all three had to agree.
+
+    Returns None rather than a guess for a stem with no tail, because this is a
+    clean break: a tree written before the tail existed is not audited as though
+    it were current.
+    """
+    parsed = ontology.parse_stem(stem)
+    if parsed is None:
+        return None
+    return parsed["code"], str(parsed["year"]), parsed["volume"], parsed["page"]
 
 
 def find_reports(reports_dir, years):
@@ -1566,7 +1668,10 @@ def split_out_path(root, path):
     checked.
     """
     rel = path.relative_to(root)
-    code, year = split_stem(path.stem)
+    parsed = split_stem(path.stem)
+    if parsed is None:
+        return None
+    code, year, volume, page = parsed
     parts = list(rel.parts[:-1])
 
     # The flat shape's one directory IS the code, which is what tells the two
@@ -1574,18 +1679,20 @@ def split_out_path(root, path):
     # table code "D" would otherwise be indistinguishable, and the filename is
     # the only authority either shape agrees on.
     if len(parts) == 1 and parts[0] == code:
-        return "", "", code, year
+        return "", "", code, year, volume, page
     if not parts:
-        return "", "", code, year
-    return parts[0], "/".join(parts[1:]), code, year
+        return "", "", code, year, volume, page
+    return parts[0], "/".join(parts[1:]), code, year, volume, page
 
 
 def collect_out_files(out_root):
-    """[{code, year, path, authority, article}] for every per-table PDF.
+    """[{code, year, volume, page, path, authority, article}] per-table PDF.
 
     Recursive, because the ministry tree is three levels deep for article-
     filed tables and two for the rest, and a fixed-depth glob would silently
-    skip whichever shape it was not written for.
+    skip whichever shape it was not written for. A file whose stem carries no
+    V/P tail is skipped rather than guessed at -- that is what find_stray() is
+    for, and it reports them.
     """
     root = Path(out_root, OUT_DIR, "PDF")
     if not root.is_dir():
@@ -1594,8 +1701,12 @@ def collect_out_files(out_root):
     for path in sorted(root.rglob(f"*{PDF_EXT}")):
         if not path.is_file():
             continue
-        authority, article, code, year = split_out_path(root, path)
-        found.append({"code": code, "year": year, "path": path,
+        parts = split_out_path(root, path)
+        if parts is None:
+            continue
+        authority, article, code, year, volume, page = parts
+        found.append({"code": code, "year": year, "volume": volume,
+                      "page": page, "path": path,
                       "authority": authority, "article": article})
     return found
 
@@ -1619,8 +1730,8 @@ def find_stray(out_root):
         if path.suffix != PDF_EXT:
             strays.append(str(path.relative_to(root)))
             continue
-        authority, article, code, year = split_out_path(root, path)
-        if not code or not year:
+        parts = split_out_path(root, path)
+        if parts is None or not parts[2] or not parts[3]:
             strays.append(str(path.relative_to(root)))
     return strays
 
@@ -2072,7 +2183,10 @@ def html_report(payload, path):
             f'{prov.get("pages", 0)} pagine, '
             f'{prov.get("claimed_pages", 0)} attribuite a una tabella, '
             f'{len(prov.get("unattributed_pages") or [])} non attribuite, '
-            f'{len(prov.get("duplicated_pages") or [])} duplicate.</p>')
+            f'{len(prov.get("duplicated_pages") or [])} duplicate'
+            + (f', {len(prov.get("partitioned_pages") or [])} tagliate.'
+               if prov.get("partitioned_pages") else '.')
+        )
         note = summary.get("provenance_note")
         if note:
             out.append(f'<div class="note">{_esc(note)}</div>')
@@ -2313,6 +2427,12 @@ def report_year(year, payload):
         if prov.get("continued_pages"):
             print(f"      di cui {prov['continued_pages']} pagine di tabelle "
                   f"proseguite dal volume precedente (stitch)")
+        if prov.get("partitioned_pages"):
+            print(f"      di cui {len(prov['partitioned_pages'])} pagina/e con "
+                  f"due tabelle tagliate (un file per tabella)")
+            for part in prov["partitioned_pages"][:8]:
+                print(f"      tagliata p{part['page']} {part['report']}: "
+                      f"{', '.join(part['claimed_by'])}")
         for dup in prov["duplicated_pages"][:8]:
             print(f"      doppia p{dup['page']} {dup['report']}: "
                   f"{', '.join(dup['claimed_by'])}")
@@ -2423,7 +2543,13 @@ def main(argv=None):
                         help="leggi solo N pagine per file (rapido, meno "
                              "completo)")
     parser.add_argument("--no-cache", action="store_true",
-                        help="ignora i risultati memorizzati")
+                        help="ignora i risultati memorizzati. OBBLIGATORIO "
+                             "dopo aver cambiato un check: la chiave della "
+                             "cache e' il file e il suo contenuto, non la "
+                             "versione del verificatore, quindi una correzione "
+                             "a un check non la invalida e il run successivo "
+                             "restituisce il vecchio verdetto come se la "
+                             "correzione non fosse stata fatta.")
     parser.add_argument("--no-fingerprint", action="store_true",
                         help="non calcolare l'hash del contenuto delle pagine")
     parser.add_argument("--dry-run", action="store_true",
@@ -2503,6 +2629,20 @@ def main(argv=None):
         per_authority = {}
         bookmark_codes = {}
         manifest_codes = set()
+        # Where the manifest says each table starts, as (volume, page). The
+        # filename carries the same pair, and the two are compared per file: a
+        # second copy of a fact is only useful if something checks it.
+        #
+        # Keyed on the FULL (authority, article, code) triple, not the code.
+        # Keying on the code is the Dogane-overwrites-MAE bug wearing a new hat:
+        # the Dogane print TAB. M1 twice in one volume, once under art. 1 comma 2
+        # at p858 and once under art. 1 commi 8/9 at p169, so a code-keyed map
+        # holds one of them and every file for the other is checked against the
+        # wrong table -- 15 FAILs saying "filename says V2P858, manifest says
+        # V2P169". First occurrence wins, so a table that straddles the volume
+        # join is held to the volume it starts in, which is what the writer names.
+        origin = {}
+        volume_no = 0
 
         for pdf, label in reports.get(year, []):
             texts, engine = page_texts(pdf)
@@ -2558,6 +2698,11 @@ def main(argv=None):
             # the vocabulary, and every attested table from being attested.
             m_tables = manifest_tables(manifest)
             manifest_codes |= {t["code"] for t in m_tables if t.get("code")}
+            volume_no += 1
+            for t in m_tables:
+                if t.get("code") and t.get("kept") is not False and t.get("start"):
+                    key = (t.get("authority"), t.get("article") or "", t["code"])
+                    origin.setdefault(key, (volume_no, t["start"]))
             vocab = volume_vocabulary(hits, set(elenco), set(marks),
                                       manifest_codes)
 
@@ -2611,7 +2756,11 @@ def main(argv=None):
                 vocab_of(volumes, item["code"]), entry, known_years,
                 fingerprint=not args.no_fingerprint, sample=args.sample,
                 attested=attested, authority=item.get("authority", ""),
-                article=item.get("article", ""))
+                article=item.get("article", ""),
+                volume=item.get("volume"), page=item.get("page"),
+                origin=origin.get((item.get("authority"),
+                                    item.get("article") or "",
+                                    item["code"])))
             cache.store(key, result)
             results.append(result)
 

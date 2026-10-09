@@ -1221,10 +1221,13 @@ def read_identity(pdf_path, year):
         authority, article = grandparent.name, parent.name
     else:
         authority, article = parent.name or ontology.UNKNOWN, None
-    import re as _re
-    m = _re.search(r"\d{4}$", path.stem)
-    code = path.stem[:m.start()] if m else path.stem
-    file_year = m.group(0) if m else str(year)
+    parsed = ontology.parse_stem(path.stem)
+    if parsed is None:
+        code = path.stem
+        file_year = str(year)
+    else:
+        code = parsed["code"]
+        file_year = parsed["year"]
     return {
         "authority": authority,
         "article": article,
@@ -1534,9 +1537,17 @@ def main(argv=None):
     catalog_path = Path(args.catalog) if args.catalog \
         else catalog_dir / "catalog.sqlite"
 
-    files = sorted(input_dir.rglob(f"*{year}{PDF_EXT}"))
+    # Every .PDF, then filtered on the PARSED stem rather than on a glob. The
+    # glob used to be `*{year}.PDF`, which stopped matching the moment the
+    # filename grew its V<volume>P<page> tail -- the year is in the middle of the
+    # stem now, not at the end of it -- and step 2 found 0 files and said so, but
+    # a reader who had not just changed the filename would have read "no tables"
+    # as a fact about the archive rather than as the break it was.
+    files = [p for p in sorted(input_dir.rglob(f"*{PDF_EXT}"))
+             if p.is_file() and ontology.parse_stem(p.stem)]
     print(f"CatalogueTables -- {year}")
-    print(f"  input:   {input_dir}/<authority>/[<article>/]<table>{year}{PDF_EXT}")
+    print(f"  input:   {input_dir}/<authority>/[<article>/]<table>"
+          f"{year}V<volume>P<page>{PDF_EXT}")
     print(f"  catalog: {catalog_path}")
     print(f"  {len(files)} file(s) found, geometry sampled on {args.sample} "
           f"page(s) per table\n")

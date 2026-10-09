@@ -68,7 +68,9 @@ import glob
 import json
 import os
 import re
+import shutil
 import sys
+import tempfile
 from collections import Counter
 from pathlib import Path
 
@@ -106,24 +108,46 @@ def block_at(edges, page):
 SECTION_OPEN_MAX_LINE = 3
 
 
-def is_section_open(lines, promised):
+def is_section_open(lines, promised, banner=False):
     """True for a page that opens a new body's section rather than a table.
 
-    Three conditions, and all three are needed:
+    Four conditions, and all four are needed:
 
       * a body named in the first few lines, where a running header sits. The
-        window is small because the archive puts the volume furniture above it;
+        window is small because the archive puts the volume furniture above it.
+        The head is matched with its whitespace SQUEEZED, because pypdf shreds
+        these names wherever the font was subsetted: 2025 vol. II p457 arrives as
+        'DIR' / 'EZIONE DOG' / 'ANE', and a line-by-line test never sees
+        "direzione" in it. Same lesson as ontology.is_mef_section, and the same
+        reason the word cannot simply be matched per line;
       * NO code on the page -- not one the volume's ELENCO promised, and not one
         of any other shape. A table page always names its table, even when the
         name is the bare "AA" of the MEF annex;
-      * a second body-ish line, which is what an opening page has and a title
-        banner does not. "DIREZIONE DOGANE" is followed by "Ufficio controlli
-        dogane"; "Ministero dell'Economia e delle Finanze" is followed by a table
-        title.
+      * no table title either. "Tabella <code> - <title>" is the annex's own
+        opening and must not be read as a new section;
+      * and NOT the MEF art. 27 banner. Squeezing the head is what makes the name
+        test fire, and it fires on the MEF's own inline relation pages too
+        (2025 vol. II pp 264, 266, 267 -- 'Mi' / "nistero dell'Economia e delle
+        Finanze"), which are tables. The banner is the discriminator, and it is
+        already computed for these pages by the caller. It is a coarse test,
+        though: the MEF prints that banner on its section cover as well as on its
+        table pages, so this witness no longer reports 2025 vol. II p260. Nothing
+        is lost by it -- p260 is exactly the MEF block edge in the INDICE
+        (edges 194/259/260/457), so the boundary clamp already treats that page as
+        a ministry change and the two witnesses agree. What is bought is that
+        three table pages are no longer mistaken for section openings, which is
+        what would have handed a table a page of somebody else's section.
+
+    Measured over all 1048 pages of 2025 vol. II: fires on 17 pages, the same 17
+    the previous version did bar p260, plus p457. p457 is the Dogane relation
+    cover -- 'DIR' / 'EZIONE DOG' / 'ANE' / 'Ufficio co' / 'ntrolli dogane' --
+    which the previous version could not see at all, and which is the page UE was
+    shipping.
     """
     head = lines[:SECTION_OPEN_MAX_LINE]
-    if not any("ministero" in ln.lower() or "direzione" in ln.lower()
-               or "agenzia" in ln.lower() for ln in head):
+    squeezed = _WS.sub("", "\n".join(head)).lower()
+    if not any(word in squeezed
+               for word in ("ministero", "direzione", "agenzia")):
         return None
     for line in lines:
         bare = line.strip().rstrip(".")
@@ -134,9 +158,39 @@ def is_section_open(lines, promised):
     for line in lines[:SECTION_OPEN_MAX_LINE + 2]:
         if ELENCO_TITLE.match(line) or LEADING_CODE.match(line.strip()):
             return None
-    return next((ln.strip() for ln in head
-                 if "direzione" in ln.lower() or "agenzia" in ln.lower()
-                 or "ministero" in ln.lower()), None)
+    if banner:
+        return None
+    return _body_label(lines, promised)
+
+
+def _body_label(lines, promised):
+    """The body's name on a section-opening page, for the report to print.
+
+    Read from the raw line when one of them carries the whole word, and from the
+    whitespace-squeezed head otherwise -- because on a shredded page NO line
+    carries it, and returning None there would discard a page this function has
+    already decided is a section opening. That is not hypothetical: it is how
+    p457 was lost while the name test above was being loosened to catch it.
+
+    The label is the leading run of capitals in the squeezed head, which is what
+    the typesetting puts there: "DIREZIONEDOGANE" from 'DIR' / 'EZIONE DOG' /
+    'ANE', "MINISTERODELLADIFESA" from the page that prints it whole. Readable
+    rather than faithful, which is all a note in the trash TSV has to be.
+    """
+    head = lines[:SECTION_OPEN_MAX_LINE]
+    for line in head:
+        low = line.lower()
+        if any(word in low for word in ("direzione", "agenzia", "ministero")):
+            return line.strip()
+    squeezed = _WS.sub("", "\n".join(head)).lstrip("0123456789 .-")
+    run = ""
+    for ch in squeezed:
+        if not ch.isalpha():
+            break
+        if ch.islower():
+            break
+        run += ch
+    return run or None
 
 
 def record_boundary(outside, where, page, authority, count):
@@ -509,6 +563,134 @@ def printed_numbers(lines):
         match = PAGE_NUMBER_RE.match(line)
         if match and any(c in "-–—" for c in line):
             found.add(int(match.group(1)))
+    return found
+
+
+# ==========================================================================
+# the ministry relation's OWN numbered tables
+# ==========================================================================
+#
+# A fifth code space, and the only one that is neither a law article nor an
+# allegato. Every ministry writes a narrative RELAZIONE before its table annex,
+# and that narrative numbers its own exhibits: "Tabella 1", "Tabella 23", with
+# dotted sub-tables "Tabella 8.1" .. "8.8" and "14.1"/"14.2". They are real
+# tables of real figures -- five years of export values by country, by operator,
+# by Military List category -- and until now nothing detected them, so all of
+# them sat in Out/TRASH under the "front-matter" label that any run starting at
+# page 1 earns. On 2025 vol. I that is 31 tables over pp 25-66.
+#
+# Nothing else in the pipeline can see them, and the reason is worth stating:
+#
+#   * they print no law reference. Art. 27 (MEF), art. 1 comma 2 (Dogane) and
+#     art. 2 comma 6 (Difesa) are all absent, so there is no article to key on;
+#   * they are absent from the INDICE, which gives MAE "Relazione » 11" and
+#     "Tabelle » 65" and nothing between -- the relation's exhibits are not
+#     indexed, in any year;
+#   * they are absent from the bookmark tree, which jumps from
+#     "Relazione al Parlamento 2025 intro def" (p15) straight to "LEGENDA-2025"
+#     (p69);
+#   * their titles are prose cross-reference bait. The narrative names them
+#     constantly -- "Nella Tabella 6 è riportato l'elenco dei primi 25 Paesi" --
+#     so MIN_RUN and frequency, which is what the annex tables rely on, would
+#     fire on the mention rather than the table.
+#
+# What identifies them is the opposite: the heading is the WHOLE LINE, with
+# nothing before or after it. Every one of the 17 prose cross-references in
+# 2025 vol. I is rejected by that test, including the two that are hardest --
+# "(Tabella 1)." ending a sentence and "Tabella 5 e Grafico 6" naming two
+# exhibits at once. Measured: 32 heading lines, 31 distinct numbers, 17 prose
+# mentions rejected.
+#
+# The codes are plain integers, which collide with nothing: family 2 is A1..P2
+# and art. 27 is letters and digits. They do collide with the Difesa annesso
+# numbers (2, 3A, 4) in shape, but the key is (authority, article, code) and the
+# annessi are filed under DIFESA/A2C6, so MAE "2" and DIFESA/A2C6 "2" are two
+# different tables in two different directories.
+#
+# The output code is "T" + the printed number with the dot removed, so 8.1
+# becomes T81 and 14.1 becomes T141. It has to be letters-and-digits only:
+# ontology.safe_code() strips everything else, so a manifest code of "8.1"
+# would be written as "81" and VerifyTables.split_stem() would read "812025"
+# back as "81" -- the manifest and the filename would disagree, which is the
+# MAPPENDICE trap and the reason that suffix is glued rather than spaced. The
+# printed form is kept beside the code in the manifest so the two can be
+# cross-checked by eye.
+
+REL_PREFIX = "T"
+
+# "Tabella 8.8 (parte 1 di 2)" and "Grafico 9". The whole line, nothing either
+# side. Both kinds because both are band boundaries; see rel_heading.
+REL_HEADING = re.compile(
+    r"^(Tabella|Grafico)\s+(\d+(?:\.\d+)?)"
+    r"(?:\s*\(\s*parte\s+\d+\s+di\s+\d+\s*\))?\s*$", re.IGNORECASE)
+
+REL_TABELLA = "Tabella"
+REL_GRAFICO = "Grafico"
+
+# What the output code must look like, for VerifyTables to agree with.
+REL_CODE = re.compile(rf"^{REL_PREFIX}\d{{1,3}}$")
+
+# How far down a page the heading may sit and still be the page's own exhibit.
+#
+# Measured, not guessed, and the measurement is what settled the value. Scanning
+# 2025 vol. I pp 15-70 for whole-line headings finds 46 of them, at line indices
+# 0 to 27, and 46 is exactly the 31 tables plus the 15 charts the volume prints:
+# so the anchored test invents nothing at ANY depth, and the bound below is a
+# guard rather than the thing doing the work.
+#
+# It was 12, and that was wrong by four tables. A page carrying two exhibits puts
+# the second one well down the page -- "Tabella 8.4" is line 27 of p40 -- and
+# "Tabella 19" is line 12 of p60, one line past a 12-line window. Those four
+# (T84, T87, T21, T19) were silently not found, which is the failure mode this
+# file is full of: a threshold that is wrong somewhere and says nothing.
+REL_HEADING_SCAN = 40
+
+# The style page_code returns for this space. Its own number rather than one of
+# the six, because every one of those is a shape that could be a law table, and
+# this is not.
+REL_STYLE = 7
+
+
+def rel_code(number):
+    """'8.1' -> 'T81', '23' -> 'T23'. See the note above on why not '8.1'."""
+    return REL_PREFIX + number.replace(".", "")
+
+
+def rel_heading(line):
+    """(kind, number) for a relation exhibit a line opens, or None.
+
+    The whole line has to be the heading. That is the whole discriminator, and
+    it is what keeps "Nella Tabella 6 è riportato..." out.
+
+    Both kinds, and the distinction is load-bearing: a Grafico is a CHART, not a
+    table, and none is exported. But it still has to be read here, because it is
+    also a band boundary -- on 12 pages of 2025 vol. I a chart shares the page
+    with a table (p29 Tabella 3 + Grafico 2, p45 Tabella 9 + Grafico 9, and ten
+    more), and a cut drawn only between Tabelle would leave the chart sitting in
+    the table's file.
+    """
+    m = REL_HEADING.match(line.strip())
+    return (m.group(1), m.group(2)) if m else None
+
+
+def rel_headings(lines):
+    """Every relation exhibit a page opens, in printed order, as (kind, number).
+
+    A LIST, and deliberately so: three pages of 2025 vol. I open two exhibits
+    between them -- p40 prints 8.3 and 8.4 side by side, p42 prints 8.6 and 8.7,
+    p60 stacks 18 above 19 -- and a detector that returned one code per page
+    would silently drop three tables while looking like it had found them. That
+    is the same shape as the Dogane appendix defect in AGENTS.md section 4, where
+    losing one unclassifiable opening page was enough to invent a table of one.
+
+    Duplicates collapse, so an exhibit whose heading repeats on a continuation
+    page ("Tabella 8.8 (parte 1 di 2)" then "(parte 2 di 2)") is yielded once.
+    """
+    found = []
+    for line in lines[:REL_HEADING_SCAN]:
+        item = rel_heading(line)
+        if item and item not in found:
+            found.append(item)
     return found
 
 
@@ -932,6 +1114,11 @@ def page_code(lines, text, vocabulary, family):
 
     Plus one shape that is deliberately not a style of its own: the Dogane
     appendix "TAB. M - APPENDICE" returns style 3 with a suffixed code.
+
+    Returns a single code because a law table occupies a whole page to itself.
+    The one space where that is false -- the ministry relation's own numbered
+    exhibits, several of which share a page -- is handled by scan_headers, which
+    is the only place that can yield more than one code per page.
     """
     # Style 5: checked first and without a vocabulary, because these tables sit
     # outside all three code families and print no table code at all -- the
@@ -1118,8 +1305,11 @@ def listed_pages(candidates, listings):
             found[page] = code
             continue
         # Not a table, and not the header of one. If it opens another body's
-        # section, that is the end of the annex this listing introduced.
-        opening = is_section_open(lines, promised)
+        # section, that is the end of the annex this listing introduced. The
+        # banner rides along because is_section_open needs it: the MEF's own
+        # pages open with a ministry name too, and only the art. 27 banner
+        # separates them from a real section opening.
+        opening = is_section_open(lines, promised, banner)
         if opening:
             sections[page] = opening
     return found, sections
@@ -1163,8 +1353,8 @@ def scan_bookmarks(reader):
 
 
 def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
-                 pasted=None, facts=None):
-    """{page: (code, style)}, the provisional pages, and corruption tallies.
+                 pasted=None, facts=None, shared=None, rel_pages=None):
+    """{page: [(code, style)]}, the provisional pages, and corruption tallies.
 
     Detections come back per page rather than already grouped by code, because
     the grouping key is (authority, article, code) and the authority is not known
@@ -1191,6 +1381,11 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
     page_codes, weak_pages = {}, set()
     unassigned, garbled, ciphered, foreign = [], [], [], []
     listings = {}
+    # Pages carrying more than one relation exhibit, and every relation exhibit
+    # page at all, so the writer can cut them. Filled only when the caller wants
+    # them; both are read by split_pdf, which is the only place that writes.
+    shared_pages = [] if shared is not None else None
+    rel_pages = [] if rel_pages is not None else None
     # The opening lines of every page no other detector claimed, kept so the
     # ELENCO can be consulted against them afterwards. Necessary because a
     # listing names the tables that FOLLOW it, yet a ministry may also print one
@@ -1253,6 +1448,30 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
             continue
 
         code, style = page_code(lines, text, vocabulary, family)
+        # Style 7, the ministry relation's own numbered exhibits, and only where
+        # no law table claimed the page. Tried second on purpose: a page carrying
+        # both an art. 27 code and a relation exhibit would be ambiguous, and the
+        # law table is the one the rest of the pipeline, the ministry tree and the
+        # index all agree about, so it wins by default rather than by argument.
+        rel = [] if code else rel_headings(lines)
+        if rel:
+            tables_here = [n for kind, n in rel if kind.lower() == REL_TABELLA.lower()]
+            for number in tables_here:
+                page_codes.setdefault(page_no, []).append(
+                    (rel_code(number), REL_STYLE))
+            # Every exhibit on the page, chart included, is a band boundary, so
+            # the page is recorded as shared even when only one of them is a
+            # table. The writer needs the chart's position to cut it away.
+            if len(rel) > 1 and shared_pages is not None:
+                shared_pages.append((page_no, rel))
+            # ...and the page is recorded for cutting in any case, because the
+            # prose the ministry prints around an exhibit is on the same page
+            # and a whole-page copy ships it too.
+            if tables_here and rel_pages is not None:
+                rel_pages.append((page_no, rel))
+            if tables_here:
+                code, style = rel_code(tables_here[0]), REL_STYLE
+
         # Held for a second look: either the page claims nothing, or what it
         # claims came from style 3, which is the weakest witness there is -- an
         # unbounded scan of the body that cannot tell a running header from a
@@ -1267,7 +1486,8 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
             unassigned.append(page_no)
             continue
 
-        page_codes[page_no] = (code, style)
+        if not rel:
+            page_codes.setdefault(page_no, []).append((code, style))
         # Style 1 also matches summary pages: 2023 vol. II p8 carries a bare
         # "UE" under the same header and would steal the start of the real
         # Tabella UE at p543. A banner-backed page clears the flag, so the
@@ -1275,7 +1495,7 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
         if style == 1 and "ELENCO TABELLE" not in text:
             weak_pages.add(page_no)
     return (page_codes, weak_pages, unassigned, garbled, ciphered, foreign,
-            listings, candidates)
+            listings, candidates, shared_pages or [], rel_pages or [])
 
 
 def body_starts(reader, vocabulary):
@@ -1477,15 +1697,18 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
     pasted = []
     facts = {"blank": {}, "numbers": {}, "fingerprints": {}}
     page_codes, weak_pages, unassigned, garbled, ciphered, foreign, listings, \
-        candidates = scan_headers(reader, vocabulary, family, stamps, raw_prov,
-                                  pasted, facts)
+        candidates, shared_pages, rel_pages = scan_headers(
+            reader, vocabulary, family, stamps, raw_prov, pasted, facts,
+            shared=[], rel_pages=[])
 
     # The ELENCO consulted over the held pages. Style 6: the volume lists the table
     # and the page opens it, which no header shape can do. Where style 3 had also
     # claimed the page, the listing wins -- see listed_pages().
     listed_codes_found, foreign_sections = listed_pages(candidates, listings)
     for page, code in listed_codes_found.items():
-        page_codes[page] = (code, 6)
+        # Replace, not append: the listing is the stronger witness and the page
+        # is holding one table, whatever a weaker test may have also read there.
+        page_codes[page] = [(code, 6)]
         unassigned = [p for p in unassigned if p != page]
     listed_found = len(listed_codes_found)
 
@@ -1521,18 +1744,22 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
     # the earlier. The prints given up are reported, never dropped silently.
     groups = {}
     for page in sorted(page_codes):
-        code, style = page_codes[page]
-        authority = provenance.get(page, ontology.UNKNOWN)
-        article = articles.get(page)
-        tkey = (authority, article, code)
-        entry = groups.setdefault(tkey, {"pages": [], "style": style, "runs": []})
-        entry["pages"].append(page)
-        if entry["runs"] and page == entry["runs"][-1][-1] + 1:
-            entry["runs"][-1].append(page)
-        else:
-            entry["runs"].append([page])
-        if style == 1 and page not in weak_pages:
-            weak_pages.add(page)
+        # Usually one code per page. Two is possible and real: the relation
+        # prints 8.3 beside 8.4 on p40, so a page can open more than one table
+        # and each gets its own group, its own span and its own output file.
+        for code, style in page_codes[page]:
+            authority = provenance.get(page, ontology.UNKNOWN)
+            article = articles.get(page)
+            tkey = (authority, article, code)
+            entry = groups.setdefault(tkey, {"pages": [], "style": style,
+                                             "runs": []})
+            entry["pages"].append(page)
+            if entry["runs"] and page == entry["runs"][-1][-1] + 1:
+                entry["runs"][-1].append(page)
+            else:
+                entry["runs"].append([page])
+            if style == 1 and page not in weak_pages:
+                weak_pages.add(page)
 
     repeated_prints = []
     split_groups = {}
@@ -1691,6 +1918,27 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
         # number however many witnesses fired.
         derived = info["end"]
 
+        # The relation's own exhibits are the one case where "the end is where
+        # the next table starts" is not merely approximate but simply wrong, and
+        # the difference is not one page. These tables sit inside the narrative
+        # that cites them, so prose sits between them: Tabella 1 is on p25,
+        # Tabella 2 on p27, and p26 is the section 8.1 running text. Next-start
+        # minus one would hand Tabella 1 that page and ship a file whose second
+        # page is an essay.
+        #
+        # So the end is the last page on which the exhibit's own heading was read
+        # -- which is what `floor` already is -- extended by nothing else. The
+        # archive prints exactly one exhibit that runs on, and it declares it:
+        # "Tabella 8.8 (parte 1 di 2)" and "(parte 2 di 2)" on pp 43-44, and
+        # those two pages both carry the heading, so they group and the floor
+        # covers them. Every other exhibit in 2025 vol. I is one page.
+        #
+        # The derived end is still recorded above, because the clamps below
+        # report against it and a table whose floor is past it would otherwise
+        # look like it gained pages.
+        if info.get("style") == REL_STYLE:
+            info["end"] = max(info["start"], floor)
+
         # Deriving the end from the next start assumes the next table starts
         # where the next table starts. When it does not -- when the page after
         # this table belongs to another ministry's section, which the document's
@@ -1712,9 +1960,19 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
             boundary = next((p for p in range(floor + 1, info["end"] + 1)
                              if block_at(edges, p) != block), None)
             if boundary is not None:
+                # The boundary page belongs to the NEXT ministry -- that is what
+                # makes it the boundary -- so it is given up with the pages the
+                # clamp is discarding, exactly as the two clamps below do
+                # (ministry_break - 1, listing_page - 1). Keeping it shipped one
+                # page of somebody else's section on the end of this file:
+                # 2025 vol. II UE ran to p457, which the index gives to DOG and
+                # which prints "DIREZIONE DOGANE / Ufficio controlli dogane",
+                # and DIFESA annesso 4 ran to p259, the INTERNO leaf. The count
+                # moves with it, so the report says how many pages were dropped.
                 record_boundary(outside, where, boundary,
-                                block_at(edges, boundary), derived - boundary)
-                info["end"] = boundary
+                                block_at(edges, boundary),
+                                derived - boundary + 1)
+                info["end"] = boundary - 1
 
         # Third boundary, and the one that catches a volume with no INDICE at all: the
         # ELENCO is only ever printed at the HEAD of an annex, so the section it
@@ -1822,8 +2080,14 @@ def build_manifest(reader, vocabulary, counts, sibling=None):
         "listings": {p: c for p, c in sorted(listings.items())},
         "listed_missing": listed_missing,
         "listed_found": listed_found,
-        "listed_tables": len({code for _c, s in page_codes.values()
-                              if s == 6}),
+        "listed_tables": len({code for hits in page_codes.values()
+                              for code, s in hits if s == 6}),
+        "shared_pages": [{"page": p,
+                          "exhibits": [[k, n] for k, n in rel]}
+                         for p, rel in sorted(shared_pages)],
+        "rel_pages": [{"page": p,
+                       "exhibits": [[k, n] for k, n in rel]}
+                      for p, rel in sorted(rel_pages)],
         "repeated_prints": repeated_prints,
         "pasted_pages": sorted(foreign),
         "pasted_ranges": [list(r) for r in indice.page_ranges(foreign)],
@@ -2107,6 +2371,248 @@ def resolve_repeats(volumes):
 # output
 # ==========================================================================
 
+# The rotation that brings a page's writing direction upright, as the argument
+# show_pdf_page() takes it. Not the frame's own name: that is a description of
+# where the text points, this is how far to turn the page to fix it.
+_FRAME_ROTATE = {"upright": 0, "rot90": 270, "rot180": 180, "rot270": 90}
+
+# Blank border left around a cut exhibit, in points. Generous because the rule
+# layer is measured exactly and the text is not: a hairline sits on the table
+# edge and the last column of digits butts against it, so a tight crop clips
+# the figure.
+CUT_MARGIN = 20.0
+
+
+def _pymupdf():
+    """The geometry library, imported lazily.
+
+    Only the pages that carry more than one relation exhibit need it, and only
+    when a run actually writes. pypdf does the rest of step 1, so an import at
+    module scope would make pymupdf a hard dependency of a detection-only run
+    such as --dry-run.
+    """
+    try:
+        import pymupdf
+    except ImportError:
+        return None
+    from lib import geometry
+    return pymupdf, geometry
+
+
+def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
+                     volume_index):
+    """Write one relation exhibit off a page that carries more than one.
+
+    2025 vol. I prints two exhibits on a page three times over: 8.3 beside 8.4
+    on p40, 8.6 beside 8.7 on p42, and 18 stacked above 19 on p60. At page
+    grain they cannot be separated -- one physical page, two tables -- so the
+    page is cut along the bands the exhibits themselves print.
+
+    Four things this has to get right, each of which was wrong in a first
+    attempt and is recorded because none of them fails loudly:
+
+      * the CUT has to be real, not just a clip. `show_pdf_page(clip=...)` leaves
+        the text layer whole, so pypdf still read "Tabella 8.3" out of the 8.4
+        file -- both files contained both tables. Only apply_redactions()
+        rewrites the content stream and deletes what is outside;
+      * the tables are printed ROTATED 90 degrees inside a portrait page, so the
+        page is turned upright first. 48 of 2025's tables are like this;
+      * the turn has to come from lib/geometry.Frame, which reads the direction
+        off the content stream's text matrix, rather than from a guess at the
+        page. p40 and p42 come out rot90 and p60 upright, and the band is taken
+        along "down the page in reading space", which is the same axis for both;
+      * the crop must not be measured from get_text("words"), which splits words
+        on the PAGE axes and so under-reports rotated text: it found
+        "D'AMERICA" but not the "STATI UNITI" before it, and a crop computed
+        from it silently cut the label to "MITI D'AMERICA". The crop is taken
+        in the upright frame, where the axes agree with the text.
+
+    `keep_code` is the exported code ("T83"); the exhibit it names is found by
+    its printed number ("8.3"), read from the manifest rather than guessed back
+    out of the code. A page whose band cannot be isolated returns False rather
+    than writing a file that would hold two tables.
+    """
+    libs = _pymupdf()
+    if libs is None:
+        return False
+    pymupdf, geometry = libs
+
+    document = pymupdf.open(volume_path)
+    try:
+        source = document[page_no - 1]
+        frame = geometry.Frame.for_page(source)
+        turn = _FRAME_ROTATE.get(frame.name)
+        if turn is None:
+            return False
+        # Page size after the turn: a quarter turn swaps the two.
+        if turn in (90, 270):
+            width, height = source.rect.height, source.rect.width
+        else:
+            width, height = source.rect.width, source.rect.height
+
+        # Draw the page upright. Everything after this is axis-aligned, which is
+        # what makes both the band arithmetic and the text extraction reliable.
+        work = pymupdf.open()
+        canvas = work.new_page(width=width, height=height)
+        canvas.show_pdf_page(pymupdf.Rect(0, 0, width, height), document,
+                             page_no - 1, rotate=turn)
+
+        wanted = printed_number(keep_code, manifest, volume_index)
+        headings = exhibit_headings(canvas)
+        numbers = [h[1] for h in headings]
+        if wanted is None or wanted not in numbers:
+            return False
+        index = numbers.index(wanted)
+
+        # A band runs from its OWN heading down to the next heading, and the last
+        # band runs to the foot of the page. Starting at the previous heading
+        # instead -- which is the obvious thing to write, and what a first
+        # attempt did -- keeps the *previous* exhibit's body, because a body sits
+        # between its heading and the next one.
+        #
+        # Starting at ZERO, which is what this did next, is wrong for the same
+        # reason one step further out: the ministry prints the narrative that
+        # introduces an exhibit onto the same page, above it. p63 carried 17 lines
+        # of section 8.3.2 ahead of Tabella 21, and p45 six ahead of Tabella 9.
+        # The table is what is wanted, so the band starts at the heading.
+        #
+        # Charts are boundaries exactly as tables are, so a chart sharing the page
+        # is cut away rather than left in the file: 12 pages of 2025 vol. I carry
+        # both a table and a chart, and none of the charts is exported.
+        lo = headings[index][2] - CUT_MARGIN
+        hi = (headings[index + 1][2] - 2.0
+              if index + 1 < len(headings) else float(height))
+        for band in (pymupdf.Rect(0, 0, width, lo),
+                     pymupdf.Rect(0, hi, width, height)):
+            if band.is_empty or band.is_infinite:
+                continue
+            canvas.add_redact_annot(band, fill=False)
+
+        # The volume furniture goes with the prose. On a rotated page it runs
+        # vertically while the table runs horizontally, so it sits INSIDE the
+        # band's y-range and no horizontal cut can reach it. What separates them
+        # is the writing direction, and it separates them cleanly: measured on
+        # 2025 vol. I p40, the table is 1689 characters one way and the furniture
+        # 262 the other, with nothing in between. The tally survives the rotation
+        # -- (0,-1) and (1,0) become (1,0) and (0,1) -- so it can be read on the
+        # canvas the band was cut on.
+        drop_minority_direction(canvas)
+
+        canvas.apply_redactions(
+            images=pymupdf.PDF_REDACT_IMAGE_NONE,
+            # The archive draws its grids as one-point rectangles, so a rule is
+            # removed when the band TOUCHES it, not only when it covers it: the
+            # stricter test leaves 616 orphaned rules and the page reads as an
+            # empty grid beside the table.
+            graphics=pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
+            text=pymupdf.PDF_REDACT_TEXT_REMOVE)
+
+        # Crop to what survived, and write it at that size rather than leaving a
+        # page of A4 with a table in one corner of it.
+        box = None
+        for word in canvas.get_text("words"):
+            rect = pymupdf.Rect(word[:4])
+            box = rect if box is None else box | rect
+        for drawing in canvas.get_drawings():
+            box = box | drawing["rect"]
+        if box is None or box.is_empty:
+            return False
+        crop = pymupdf.Rect(box.x0 - CUT_MARGIN, box.y0 - CUT_MARGIN,
+                            box.x1 + CUT_MARGIN, box.y1 + CUT_MARGIN) & canvas.rect
+        out = pymupdf.open()
+        page = out.new_page(width=crop.width, height=crop.height)
+        page.show_pdf_page(pymupdf.Rect(0, 0, crop.width, crop.height),
+                           work, 0, clip=crop)
+        out.save(out_path)
+        out.close()
+        work.close()
+        return True
+    finally:
+        document.close()
+
+
+def drop_minority_direction(page):
+    """Redact everything not written along the page's dominant direction.
+
+    Used to take the volume furniture off a rotated table page. It annotates;
+    the caller applies, because a redaction pass rewrites the content stream and
+    is worth doing once per page rather than once per span.
+
+    pymupdf is imported here rather than at module scope on purpose: it is only
+    needed to CUT a page, and a --dry-run detection pass must not require it.
+    """
+    libs = _pymupdf()
+    if libs is None:
+        return
+    pymupdf, _geometry = libs
+    import math
+
+    tally = Counter()
+    spans = []
+    for span in page.get_texttrace():
+        chars = span.get("chars") or []
+        if not chars:
+            continue
+        dx, dy = span.get("dir", (1.0, 0.0))
+        length = math.hypot(dx, dy)
+        if length < 1e-9:
+            continue
+        key = (round(dx / length, 3), round(dy / length, 3))
+        tally[key] += len(chars)
+        spans.append((key, span.get("bbox")))
+    if len(tally) < 2:
+        return
+    (keep, _total), = tally.most_common(1)
+    for key, bbox in spans:
+        if key == keep or not bbox:
+            continue
+        page.add_redact_annot(pymupdf.Rect(bbox), fill=False)
+
+
+def exhibit_headings(page):
+    """[(kind, number, y0, y1)] for each exhibit heading on an UPRIGHT page.
+
+    Read as LINES with the same anchored pattern rel_headings() uses on pypdf
+    text, not by looking for a number near the word "Tabella". The adjacency
+    guess is wrong on an unrotated page: there the number sits to the RIGHT of
+    the keyword on the same baseline, not below it, so a test that looks
+    downwards picks up whatever digit happens to be underneath -- on 2025 vol. I
+    p45 it read "Grafico 2022" and "Tabella 2025" (the year column headings),
+    cut the wrong bands, and shipped a file with no table in it. Matching the
+    line is the same discriminator that makes detection safe, applied twice.
+
+    Only valid once the page has been turned, which is why cut_exhibit_page()
+    does the turning itself rather than handing a raw volume page here.
+    """
+    found = []
+    for block in page.get_text("dict").get("blocks", []):
+        for line in block.get("lines", []):
+            text = "".join(span.get("text", "")
+                           for span in line.get("spans", [])).strip()
+            m = REL_HEADING.match(text)
+            if m:
+                x0, y0, _x1, y1 = line["bbox"]
+                found.append((m.group(1).capitalize(), m.group(2), y0, y1))
+    found.sort(key=lambda heading: heading[2])
+    return found
+
+
+def printed_number(code, manifest, volume_index):
+    """The printed number behind an exported code: 'T83' -> '8.3'.
+
+    Not derivable from the code -- 'T83' could be Tabella 83 or Tabella 8.3 and
+    nothing in the string says which -- so it is read from the manifest, where
+    scan_headers recorded the exhibits as printed. Read from rel_pages, which
+    lists every relation exhibit page and not only the shared ones, because
+    every one of them is cut now.
+    """
+    for entry in manifest.get("rel_pages") or []:
+        for kind, number in entry["exhibits"]:
+            if rel_code(number) == code:
+                return number
+    return None
+
+
 def table_plan(readers, manifests):
     """{(authority, article, code): [(volume_index, start, end)]}, the pages
     each exported PDF will contain.
@@ -2137,7 +2643,7 @@ def table_plan(readers, manifests):
     return plan
 
 
-def split_pdf(readers, manifests, out_root, year):
+def split_pdf(readers, manifests, out_root, year, paths=None):
     """Write one PDF per table under the ministry/article tree.
 
         <out_root>/PDF/MAE/A12023.PDF
@@ -2166,19 +2672,91 @@ def split_pdf(readers, manifests, out_root, year):
     """
     plan = table_plan(readers, manifests)
 
-    written = []
+    # Every relation exhibit is cut, not only the ones sharing a page. An exhibit
+    # that has a page to itself is no cleaner for it: the ministry writes the
+    # narrative that introduces the exhibit onto the same page, so copying the
+    # page whole shipped the prose too -- 17 lines of it ahead of Tabella 21 on
+    # p63. Cutting every one of them is the same code and 31 pages instead of 10.
+    rel_pages = {}
+    for idx, manifest in enumerate(manifests):
+        for entry in manifest.get("rel_pages") or []:
+            rel_pages.setdefault(idx, set()).add(entry["page"])
+
+    written, cut_pages, cut_failed = [], [], []
     for (authority, article, code), segments in plan.items():
+        # Where the table came from, in the filename. The FIRST segment, so a
+        # table crossing the volume join names the volume it starts in -- 2025
+        # F1 is V1 p1039, not the vol. II half it continues into.
+        first_idx, first_start, _first_end = segments[0]
+        rel = ontology.relative_path(authority, article, code, year,
+                                     first_idx + 1, first_start, PDF_EXT)
+        path = Path(out_root, OUT_DIR, "PDF", rel)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # A table whose every page needs cutting is written entirely by the cut,
+        # because a pypdf writer and a pymupdf page cannot be mixed in one file
+        # without going through bytes. That is the common case here: the six
+        # exhibits that share a page are the only ones cut, and each is one page.
+        cut_pages_here = []
+        for idx, start, end in segments:
+            if paths is None:
+                continue
+            for p in range(start, end + 1):
+                if p in rel_pages.get(idx, ()):
+                    cut_pages_here.append((idx, p))
+
+        if cut_pages_here and paths is not None and len(cut_pages_here) == sum(
+                end - start + 1 for _idx, start, end in segments):
+            # Every page of this file is a cut page, which is the case for every
+            # relation exhibit: they are one page long, and their page is cut so
+            # that the prose the ministry prints around them stays out. The cut
+            # is written by pymupdf and read back by pypdf, so it goes via a
+            # temporary file rather than being merged in memory -- the two
+            # libraries do not share a page object.
+            merged = PdfWriter()
+            ok = True
+            scratch = tempfile.mkdtemp(prefix="relazione-cut-")
+            try:
+                for n, (idx, p) in enumerate(cut_pages_here):
+                    tmp = Path(scratch, f"{n}.PDF")
+                    if not cut_exhibit_page(paths[idx], p, code, str(tmp),
+                                            manifests[idx], idx):
+                        ok = False
+                        cut_failed.append((code, p))
+                        break
+                    merged.add_page(PdfReader(str(tmp)).pages[0])
+                    cut_pages.append((code, p))
+            finally:
+                shutil.rmtree(scratch, ignore_errors=True)
+            if ok:
+                with open(path, "wb") as fh:
+                    merged.write(fh)
+                written.append(str(path))
+                continue
+
         writer = PdfWriter()
         for idx, start, end in segments:
             reader = readers[idx]
             for p in range(start, end + 1):
+                if paths is not None and p in rel_pages.get(idx, ()):
+                    # A cut page inside a file that also holds whole pages: the
+                    # whole pages go in as they are, and the cut page is left out
+                    # rather than silently carrying prose. Reported. Reached only
+                    # by a multi-page exhibit, since a single-page one takes the
+                    # branch above.
+                    cut_failed.append((code, p))
+                    continue
                 writer.add_page(reader.pages[p - 1])
-        rel = ontology.relative_path(authority, article, code, year, PDF_EXT)
-        path = Path(out_root, OUT_DIR, "PDF", rel)
-        path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as fh:
             writer.write(fh)
         written.append(str(path))
+
+    if cut_pages:
+        print(f"    cut          : {len(cut_pages)} relation exhibit page(s) cut "
+              f"off a shared page")
+    if cut_failed:
+        print(f"    cut WARNING  : {len(cut_failed)} shared page(s) not exported "
+              f"whole: {', '.join(f'{c}@p{p}' for c, p in cut_failed[:6])}")
     return written
 
 
@@ -2331,10 +2909,18 @@ def trash_reason(manifest, start, end, tables):
     # manifest records a COUNT here and no page numbers, so the match is made on
     # position and bounded by the count -- an adjacency match larger than the
     # count recorded is somebody else's pages and is not claimed.
+    #
+    # The adjacency is tested against the table NAMED BY THE KEY, not against
+    # every table in the volume. Testing against all of them made any page that
+    # happened to follow any table look like a trimmed tail, and labelled it with
+    # whichever key came first in dict order: 2025 vol. I reported eleven pages of
+    # relation prose as "MAE/E, -1p finale/i", which is a sentence about a table
+    # 800 pages away. It stayed hidden while those pages sat inside derived spans,
+    # and surfaced the moment the relation's exhibits stopped claiming them.
     for key, count in (manifest.get("trimmed") or {}).items():
-        for info in tables.values():
-            if info["end"] + 1 == start and end - start + 1 <= count:
-                return "trimmed-tail", note(f"{key}, -{count}p finale/i")
+        info = by_path.get(key)
+        if info and info["end"] + 1 == start and end - start + 1 <= count:
+            return "trimmed-tail", note(f"{key}, -{count}p finale/i")
 
     if start == 1:
         return "front-matter", note()
@@ -2863,10 +3449,11 @@ def main(argv=None):
 
         out_root = args.out or args.base or "."
         readers = [v["reader"] for v in volumes]
+        paths = [v["path"] for v in volumes]
         manifests = [v["manifest"] for v in volumes]
         plan = table_plan(readers, manifests)
         if not args.dry_run and plan:
-            written = split_pdf(readers, manifests, out_root, year)
+            written = split_pdf(readers, manifests, out_root, year, paths)
             print(f"    wrote      : {len(written)} PDF in "
                   f"{Path(out_root, OUT_DIR, 'PDF')}/<authority>/"
                   f"[<articolo>/]<tabella>{year}.PDF")

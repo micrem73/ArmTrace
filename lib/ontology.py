@@ -281,23 +281,70 @@ def safe_code(code):
     return cleaned or "TAB"
 
 
-def relative_path(authority, article, code, year, extension):
+def relative_path(authority, article, code, year, volume, page, extension):
     """Out-relative path for one table.
 
-        MAE/A1<year>.PDF
-        MEF/AA<year>.PDF
-        DOG/A1C2/N<year>.PDF
-        DIFESA/A2C6/3A<year>.PDF
+        MAE/A1<year>V1P70.PDF
+        MEF/AA<year>V2P273.PDF
+        DOG/A1C2/N<year>V2P470.PDF
+        DIFESA/A2C6/3A<year>V2P236.PDF
 
     MAE and MEF carry no article directory because the reports do not subdivide
     them by article; for DIFESA the annesso is the table name, so it lands in
     the code position rather than adding a level of its own.
+
+    The trailing V<volume>P<page> is where the table came from, so that a person
+    browsing Out/PDF/ can open a file and know which volume and which printed
+    page it was cut from without consulting anything. It is not decoration: it is
+    also what makes the filename parseable. The stem used to be split on "the
+    last four digits are the year", which is ambiguous -- MG102025 is MG10 of
+    2025, and nothing in the string says so. Anchoring on an explicit V/P tail
+    removes the ambiguity, because the tail is unmistakable and what precedes it
+    is fixed-length.
+
+    `volume` is 1-based in document order within the reporting year, and `page`
+    is the first page of the table's FIRST segment. A table that straddles the
+    volume join (2025 Tabella F1 runs p1039-1046 of vol. I and p5-66 of vol. II)
+    therefore names vol. I, which is where the table starts and where its
+    bookmark, index row and first data page all point.
     """
     parts = [authority]
     if article:
         parts.append(article)
-    parts.append(f"{safe_code(code)}{year}{extension}")
+    parts.append(f"{safe_code(code)}{year}V{int(volume)}P{int(page)}{extension}")
     return "/".join(parts)
+
+
+# The stem, anchored. See relative_path() for why the tail is there.
+STEM_RE = re.compile(
+    r"^(?P<code>.+?)(?P<year>\d{4})V(?P<volume>\d+)P(?P<page>\d+)$")
+
+
+def parse_stem(stem):
+    """{code, year, volume, page} from a filename stem, or None.
+
+    THE place a stem is taken apart. There used to be three: this one,
+    VerifyTables.check_layout's "does it start with the code and is the rest the
+    year", and CatalogueTables' own copy of the trailing-four-digits regex. They
+    disagreed by construction, and adding a V/P tail to the filename would have
+    made all three fail at once -- the verifier would read the code as
+    "A12025V1P70" and step 2 would fall back to the --year argument without
+    saying so. One implementation, called from all of them.
+
+    A stem without the tail is None, not a guess. This is a clean break: the
+    verifier can no longer audit output written before the tail existed, and
+    pretending otherwise by parsing both shapes would let a stale tree look
+    valid.
+    """
+    m = STEM_RE.match(stem)
+    if not m:
+        return None
+    return {
+        "code": m.group("code"),
+        "year": int(m.group("year")),
+        "volume": int(m.group("volume")),
+        "page": int(m.group("page")),
+    }
 
 
 def article_label(authority, article):
