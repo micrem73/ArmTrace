@@ -1347,7 +1347,7 @@ def attach_manifest(records, manifest_path):
     A table the catalog lists is a table somebody can point at: the volume's own
     index names it, the PDF outline lists it, or the header scan saw it repeat.
     Step 1 knows which, and the witness is what separates "the table changed"
-    from "we stopped being able to see the table". See Reports2PDFTables.py for
+    from "we stopped being able to see the table". See the per-year step 1 script for
     how the manifest shape changed once and silently disarmed the verifier.
     """
     if not manifest_path or not Path(manifest_path).exists():
@@ -1554,7 +1554,7 @@ def main(argv=None):
 
     if not files:
         print(f"No per-table PDFs for {year} under {input_dir}. "
-              f"Run Reports2PDFTables.py --year {year} --volume both first.")
+              f"Run Reports2PDFTables_{year}.py first.")
         return 1
 
     started = time.time()

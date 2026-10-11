@@ -8,7 +8,7 @@ each table is.
 > Working guidance for coding agents lives in [AGENTS.md](./AGENTS.md) for
 > *finding* tables — invariants, detection traps, disproven approaches,
 > per-year coverage — and in
-> [AGENTS-TABLE2SQL.md](./AGENTS-TABLE2SQL.md) for *reading* them: rotation,
+> [READING-TABLES.md](./READING-TABLES.md) for *reading* them: rotation,
 > bands, record grammars, and what the tables contain. [ROADMAP.md](./ROADMAP.md)
 > is the order the remaining work is done in. This file is for a person who wants
 > to *run* the pipeline and use its output.
@@ -30,7 +30,7 @@ pip install -r requirements.txt
 reports_185_1990/download_185.sh reports_185_1990 reports_185_1990/manifest.tsv
 
 # 3. step 1 — one PDF per table  ->  Out/PDF/  (+ Out/TRASH/ for the rest)
-./Reports2PDFTables.py --year 2025 --volume both
+./Reports2PDFTables_2025.py
 
 # 4. step 2 — what shape is each table?  ->  Out/CATALOG/
 ./CatalogueTables.py --year 2025 --manifest Out/manifest-2025.jsonl
@@ -162,7 +162,7 @@ vol. II, well inside the Dogane block.
 A volume is not always one family: 2024 vol. II is family 1 for its first 600
 pages and then carries the Dogane annex. Per-family detection rules and the
 traps behind them are in
-[AGENTS.md](./AGENTS.md#4-regex-and-detection-traps).
+[AGENTS.md](./AGENTS.md#5-traps).
 
 ---
 
@@ -173,16 +173,16 @@ shape each table is; step 3 audits step 1's output. They are independent — ste
 re-reads the PDFs and step 3 re-reads the volumes, and both reach their own
 conclusions rather than trusting step 1's manifest.
 
-### 1. `Reports2PDFTables.py` — volumes → `Out/PDF/`
+### 1. `Reports2PDFTables_<anno>.py` — volumes → `Out/PDF/`
 
 Splits a report volume into one PDF per table, written to
 `Out/PDF/<authority>/[<article>/]<table><year>.PDF`.
 
 ```bash
-./Reports2PDFTables.py --year 2025 --volume both
-./Reports2PDFTables.py --all                  # every in-scope volume
-./Reports2PDFTables.py --year 2023 --dry-run  # report only, write nothing
-./Reports2PDFTables.py --report reports_185_1990/2023/2023_LXVII_n2_VOLUME_II.pdf
+./Reports2PDFTables_2025.py
+./Reports2PDFTables_2025.py --all              # every in-scope volume
+./Reports2PDFTables_2025.py --dry-run          # report only, write nothing
+./Reports2PDFTables_2025.py --report reports_185_1990/2023/2023_LXVII_n2_VOLUME_II.pdf
 ```
 
 | Flag | Meaning |
@@ -252,7 +252,7 @@ length, and pages pasted from a different document disagree with it.
 **Status:** works on the 22 in-scope volumes (2016+), producing a manifest for
 each. **2024 does not work** — it is the one year never measured properly, and
 the next to be brought up. Per-year figures are in
-[AGENTS.md](./AGENTS.md#archive-coverage).
+[ROADMAP.md](./ROADMAP.md#7-archive-coverage).
 
 ### 2. `CatalogueTables.py` — `Out/PDF/` → `Out/CATALOG/`
 
@@ -299,7 +299,7 @@ reports actually print (A1's ten, EE's five, MG10's three). It is a
 *measurement* step: where it says `unknown`, that is recorded with a reason
 rather than guessed at. 19 of 2025's tables yield no text at all and no catalog
 can change that — see the coverage ceiling in
-[AGENTS-TABLE2SQL.md](./AGENTS-TABLE2SQL.md#6-legibility-is-a-whole-file-property-and-a-partly-destroyed-page-is-unusable).
+[READING-TABLES.md](./READING-TABLES.md#6-legibility).
 
 ### 3. `VerifyTables.py` — audits `Out/PDF/`
 
@@ -421,7 +421,7 @@ seven tab-separated fields per row — `year`, `leg`, `num`, `vol`, `file`,
 
 No PDF, sqlite or other binary is tracked by git, and **nothing is in Git LFS** —
 the repository holds only the scripts, `manifest.tsv`, `download_185.sh`, `lib/`,
-`SOURCES.md`, `AGENTS.md`, `AGENTS-TABLE2SQL.md`, `ROADMAP.md` and this file.
+`SOURCES.md`, `AGENTS.md`, [READING-TABLES.md](./READING-TABLES.md), `ROADMAP.md` and this file.
 Both large sets are regenerable: the reports from `manifest.tsv` and
 `SOURCES.md`, and `Out/` by re-running the pipeline. LFS was never a solution here
 — it does not stop the files being committed, it only moves the bytes into a
@@ -431,11 +431,11 @@ metered quota. **Do not re-add LFS filter rules.**
 
 ## **ToDo**
 
-Engineering work is tracked in [AGENTS.md](./AGENTS.md#outstanding), which is
+Engineering work is tracked in [ROADMAP.md](./ROADMAP.md#9-operational-backlog), which is
 authoritative for it — 2024 is at the head of that list. After it, the product
 roadmap:
 
-- Process the remaining years — see [Archive coverage](./AGENTS.md#archive-coverage) for what is deferred and why
+- Process the remaining years — see [Archive coverage](./ROADMAP.md#7-archive-coverage) for what is deferred and why
 - Populate a MySQL db
 - Create an LLM tool that converts natural language requests into SQL queries
 - Create a chatbot enhanced with that tool, allowing the DB to be interrogated in natural language

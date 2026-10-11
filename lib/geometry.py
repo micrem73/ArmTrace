@@ -147,7 +147,7 @@ FOREIGN_FRACTION = 0.20
 CHART_CURVES = 200
 
 # Private Use Area, the residue of a subsetted font whose ToUnicode CMap was
-# destroyed. See Reports2PDFTables.py and AGENTS.md section 3.
+# destroyed. See lib/patterns.py (PUA_RE) and AGENTS.md section 4.
 PUA = re.compile(r"[\ue000-\uf8ff]")
 
 LIGATURES = str.maketrans({
