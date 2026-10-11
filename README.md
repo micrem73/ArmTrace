@@ -30,7 +30,7 @@ pip install -r requirements.txt
 reports_185_1990/download_185.sh reports_185_1990 reports_185_1990/manifest.tsv
 
 # 3. step 1 — one PDF per table  ->  Out/PDF/  (+ Out/TRASH/ for the rest)
-./Reports2PDFTables.py --year 2025 --volume both
+./Reports2PDFTables_2025.py
 
 # 4. step 2 — what shape is each table?  ->  Out/CATALOG/
 ./CatalogueTables.py --year 2025 --manifest Out/manifest-2025.jsonl
@@ -173,16 +173,16 @@ shape each table is; step 3 audits step 1's output. They are independent — ste
 re-reads the PDFs and step 3 re-reads the volumes, and both reach their own
 conclusions rather than trusting step 1's manifest.
 
-### 1. `Reports2PDFTables.py` — volumes → `Out/PDF/`
+### 1. `Reports2PDFTables_<anno>.py` — volumes → `Out/PDF/`
 
 Splits a report volume into one PDF per table, written to
 `Out/PDF/<authority>/[<article>/]<table><year>.PDF`.
 
 ```bash
-./Reports2PDFTables.py --year 2025 --volume both
-./Reports2PDFTables.py --all                  # every in-scope volume
-./Reports2PDFTables.py --year 2023 --dry-run  # report only, write nothing
-./Reports2PDFTables.py --report reports_185_1990/2023/2023_LXVII_n2_VOLUME_II.pdf
+./Reports2PDFTables_2025.py
+./Reports2PDFTables_2025.py --all              # every in-scope volume
+./Reports2PDFTables_2025.py --dry-run          # report only, write nothing
+./Reports2PDFTables_2025.py --report reports_185_1990/2023/2023_LXVII_n2_VOLUME_II.pdf
 ```
 
 | Flag | Meaning |

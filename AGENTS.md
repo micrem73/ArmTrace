@@ -9,7 +9,7 @@ Commands, conventions, decisions and rules — not a description of the code, wh
 ```bash
 python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
 bash reports_185_1990/download_185.sh reports_185_1990 reports_185_1990/manifest.tsv  # 0. sources
-python Reports2PDFTables.py --year 2025 --volume both    # 1. -> Out/PDF/ + Out/TRASH/
+python Reports2PDFTables_2025.py          # 1. -> Out/PDF/ + Out/TRASH/
 python CatalogueTables.py --year 2025                    # 2. -> Out/CATALOG/
 python VerifyTables.py --year 2025                       # 3. -> Out/VERIFY/
 ```
@@ -22,10 +22,14 @@ Debug against **one** year, measure against the others after. **The user judges 
 
 **Order 2025 → 2024 → … → 2016**, descending by coverage per effort. A clean year is a git tag (`2025-clean`), never a copied file that drifts.
 
+**To start a year:** `cp Reports2PDFTables_TEMPLATE.py Reports2PDFTables_<anno>.py`, set `YEAR` and `VOLUME` in the copy, run it, edit only the copy. A year is done when its own script runs and `VerifyTables.py --year <anno> --manifest <path>` reports **0 FAIL** — without the manifest the relation exhibits FAIL spuriously, since nothing else witnesses them.
+
 ## 2. Architecture
 
-- **One engine, thin per-year scripts.** Every detector lives in `Reports2PDFTables.py`; a per-year script imports it and pins year and volumes. Deliberately not forked — ten copies drift invisibly. It is tested for 2025 and confirmed working.
-- **A per-year script may pin data, never detection logic** — year, volumes, expected counts, known traps. A year that needs a new *detector* changes the engine, once and visibly, and is re-tested against every year in scope. **Never monkey-patch the engine from a per-year script**: `VerifyTables.py` imports `detect_family`, `CODE_RE` and the rest by name, so a patched run would be audited by an unpatched audit — two components guaranteed to disagree, with the difference invisible at the definition site.
+- **Each year owns its detectors; the printed vocabulary is shared.** There is no generic engine. `Reports2PDFTables_<anno>.py` holds the DETECTORS — `page_code`, `scan_headers`, `detect_family`, `build_manifest`, `resolve_repeats`, `stitch` — and the driver, and is **never edited once its year verifies clean**. The year-independent half lives in `lib/` and is shared: `patterns.py` (every regex and constant), `pageio.py` (reading a page, the outline), `emit.py` (manifest → `Out/PDF/` + `Out/TRASH/`), `volumes.py`, `ontology.py`, `indice.py`.
+- **The objective is tables produced, not one elegant program.** A detector right for 2025 is wrong for 2024, and merging them means re-testing every year on every change. So years fork deliberately and a new year starts from `Reports2PDFTables_TEMPLATE.py` — a copy of a *verified* year, not of whichever one was being worked on. Never edit the template.
+- **`VerifyTables.py` imports from `lib/` and from no year script.** That is the rule the whole scheme rests on: the audit must be one set of checks that can see every year. The moment it imports a detector from a year, it audits that year by its own rules and can no longer report a bug it shares an opinion with. `detect_family` is the case in point — it gates nothing in the verifier, so it was replaced by `seen_family()`, which reports what the verifier can see.
+- **A primitive in `lib/` is wrong for every year at once**, where before it was wrong for one. To change one, import it in the year script and shadow it locally. Nobody edits `lib/patterns.py` to suit one year.
 - **The output tree is the ontology:** `Out/PDF/<authority>/[<article>/]<code><anno>.PDF`, from `ontology.relative_path()`. Both steps must agree on layout and suffix; step 2 walks with `rglob` because the article level is optional.
 - **The manifest key is the triple `(authority, article, code)`** — never the bare code, which is what let the Dogane overwrite MAE. The Dogane print `TAB. N` twice in one volume, and MAE's `TAB M1` is not the Dogane's. A code is unique only within (authority, article).
 - **Claimed and trashed pages are disjoint and together are every page.** `Out/TRASH/` is the complement of `table_plan()`, the same function `split_pdf()` writes from, so they cannot drift. Never re-derive the claimed set to compute the trash — two notions of "owned" is how a coverage number starts lying. TRASH is not `unassigned_pages` (pages *inside* a span) and misses over-extension, which is `check_page_overlap()`.

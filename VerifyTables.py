@@ -91,23 +91,33 @@ try:
 except ImportError:
     sys.exit("Errore: pypdf non installato. Esegui: pip install -r requirements.txt")
 
-# The detectors, the stamp reader and the corruption classifiers are imported
-# rather than reimplemented: every one of them encodes a trap that shipped
-# (see AGENTS.md section 4) and a second copy would be a second thing to get
+# The printed patterns, the page reader and the stamp reader are imported from
+# lib/ rather than reimplemented: every one of them encodes a trap that shipped
+# (see AGENTS.md section 5) and a second copy would be a second thing to get
 # wrong.
-from Reports2PDFTables import (
+#
+# They are imported from lib/ and NOT from a per-year script, and that is the
+# rule this file exists to keep. Since 2026-10-11 each year owns its own
+# detectors, so there is no single engine to import from and nothing to be
+# consistent with except lib/. The verifier must be able to audit every year
+# with one set of checks; the moment it imports a detector from a year, it is
+# auditing that year by its own rules, and a bug it cannot see is a bug it
+# cannot report.
+from lib.patterns import (
     APPENDIX_SUFFIX,
     CODE_RE,
     CODE_TAIL,
+    FAMILY2_CODES,
     INDEX_ROW,
     INLINE_CODE,
     LEADING_CODE,
     MIN_RUN,
-    appendix_code,
     STAMP_BAND,
     STAMP_NUM,
     STAMP_SIZE,
-    detect_family,
+)
+from lib.pageio import (
+    appendix_code,
     is_blank,
     is_ciphered,
     is_garbled,
@@ -118,8 +128,8 @@ from Reports2PDFTables import (
     stamp_tokens,
 )
 
-# The filename parser lives here rather than in Reports2PDFTables because it is
-# the WRITER's rule, not a detector's: relative_path() emits the V/P tail and
+# The filename parser lives here rather than in lib.ontology because it is the
+# WRITER's rule, not a detector's: relative_path() emits the V/P tail and
 # parse_stem() is the only thing that takes it apart again. CatalogueTables
 # imports the same function for the same reason -- three parsers for one shape
 # is how a rename quietly stops being checked.
@@ -602,6 +612,31 @@ def page_code(lines, vocabulary):
         if CODE_RE.match(line) and cand in vocabulary:
             return cand
     return None
+
+
+def seen_family(codes):
+    """What the codes on a volume LOOK like: 1 art.27, 2 A1..P2, 3 single letters.
+
+    Deliberately NOT step 1's detect_family(). That is a per-year detector since
+    2026-10-11, and this file must not import any year's detectors -- it has to
+    audit all of them with one set of checks, or it can only report the bugs it
+    happens to share an opinion with.
+
+    Nothing here gates a verdict. The value is stored on the volume and printed
+    in one report line, so it says what the verifier can see in the codes, not
+    what step 1 concluded about them. Where the two disagree, that is worth
+    seeing rather than worth resolving here.
+    """
+    codes = set(codes)
+    # D, E, I, L and M are excluded from the family-2 test because they are also
+    # art. 27 single-letter codes, which a family-1 index can legitimately hold.
+    f2 = (codes & FAMILY2_CODES) - {"D", "E", "I", "L", "M"}
+    if len(f2) >= 4:
+        return 2
+    singles = [c for c in codes if re.fullmatch(r"[A-Z]", c)]
+    if len(codes) >= 8 and len(singles) >= 4:
+        return 3
+    return 1
 
 
 def volume_vocabulary(hits, index_codes, bookmark_codes, manifest_codes):
@@ -1552,7 +1587,7 @@ def split_stem(stem):
 
 def find_reports(reports_dir, years):
     """{year: [(path, label), ...]} for the requested years, in volume order."""
-    from Reports2PDFTables import parse_volume
+    from lib.volumes import parse_volume
 
     root = Path(reports_dir)
     found = {}
@@ -2655,7 +2690,7 @@ def main(argv=None):
                 if not entry.get("title"):
                     entry["title"] = info["title"]
             marks = scan_bookmarks(reader)
-            family = detect_family(reader, set(elenco) | set(marks)) \
+            family = seen_family(set(elenco) | set(marks)) \
                 if (elenco or marks) else None
 
             # A volume's own code census, from the whole volume. Frequency
