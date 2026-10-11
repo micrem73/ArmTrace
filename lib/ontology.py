@@ -127,6 +127,12 @@ DIFESA_RE = re.compile(
     r"(?i:MINISTERO\s+DELLA\s+DIFESA)\s*[-–—]?\s*(?i:Annesso)\s*([0-9]+[A-Z]?)"
 )
 
+# The same code space, judged on its own: what an annesso number looks like when
+# it is not attached to its "MINISTERO DELLA DIFESA - Annesso" prefix. This is the
+# fourth code space and it is not an art. 27 one, so any check that asks "is this
+# a plausible table code?" has to admit it or it condemns a correct file.
+DIFESA_CODE = re.compile(r"^[0-9]+[A-Z]?$")
+
 # Dogane. The period in "TAB." is the discriminator against MAE's "TAB"; the
 # code may sit a little way along the line from the keyword, because the export
 # band is rotated and lands between them.

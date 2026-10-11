@@ -96,7 +96,9 @@ except ImportError:
 # (see AGENTS.md section 4) and a second copy would be a second thing to get
 # wrong.
 from Reports2PDFTables import (
+    APPENDIX_SUFFIX,
     CODE_RE,
+    CODE_TAIL,
     INDEX_ROW,
     INLINE_CODE,
     LEADING_CODE,
@@ -177,41 +179,17 @@ UNREADABLE = "unreadable"
 # its Private Use Area handling is the delicate part.
 STAMP_WORD = re.compile(r"(?i)(?:pagina|pag|page)[\s.]*")
 
-# Step 1's INLINE_CODE ends in ([A-Z]{1,3}\d?), which allows at most ONE digit
-# after the letters, and its trailing \b then does the rest of the work. That
-# combination silently fails on every two-digit code: for "TAB. MT13" the
-# greedy [A-Z]{1,3} takes "MT", \d? takes "1", and \b cannot hold between "1"
-# and "3"; every shorter reading fails it too, so the whole match is abandoned.
-#
-#   'TAB. MT7'  -> ['MT7']
-#   'TAB. MT13' -> []
-#
-# The archive really does contain such codes. Tabella MT7 holds a second table
-# on its third page whose header reads "TAB. MT13", and the Dogane annexes of
-# 2025 name MG13 through MG18 in prose -- all invisible to the shared pattern.
-#
-# These are the verifier's own patterns rather than edits to the generator's,
-# which is left alone here on purpose. A negative lookahead replaces the \b so
-# that the digit count cannot decide whether the code is readable.
-CODE_TOKEN = r"[A-Z]{1,3}\d{0,2}"
+# No local code-shape patterns: CODE_RE, CODE_TAIL, INLINE_CODE and LEADING_CODE
+# are imported from step 1 and used as they are. This block used to redeclare all
+# four, and one copy outlived the reason it was made. Do not add one back -- use
+# the imported name. Why that matters: AGENTS.md section 4, "A private copy of a
+# trap", and section 2.
 
-VERIFIER_INLINE = re.compile(
-    rf"\b(?i:TAB|TABELLA)\b\.?[^\S\n]+({CODE_TOKEN})(?![A-Za-z0-9])")
-VERIFIER_LEADING = re.compile(rf"^(?i:Tabella)\.?\s+({CODE_TOKEN})$")
-VERIFIER_CODE = re.compile(rf"^{CODE_TOKEN}$")
-
-# The Dogane appendix: "TAB. M - APPENDICE" is its own table, not more of M.
-# Step 1 splits on it and writes MAPPENDICE2025.PDF (see APPENDIX_CODE there),
-# so the verifier has to read the same shape -- and read it BEFORE
-# VERIFIER_INLINE, which matches the bare "TAB. M" on the very same line and
-# would report every appendix file as holding a foreign table.
-#
-# The suffix is glued to the code, so the code-shape check has to accept it too:
-# layout.code_shape compares against this, and volume_vocabulary() admits a code
-# only if it matches. Both were written before the split existed.
-VERIFIER_APPENDIX = re.compile(
-    rf"(?i:T\s*A\s*B\s*\.\s*)({CODE_TOKEN})\s*[-–—]\s*APPENDICE\s*$")
-VERIFIER_APPENDIX_CODE = re.compile(rf"^{CODE_TOKEN}APPENDICE$")
+# The Dogane appendix code, as the filename spells it: the suffix is glued, so
+# that layout.code_shape and volume_vocabulary() admit the code. Built from the
+# shared token and the shared suffix rather than restated, because "MAPPENDICE"
+# has to be one string in three places.
+APPENDIX_CODE_SHAPE = re.compile(rf"^{CODE_TAIL}{APPENDIX_SUFFIX}$")
 
 # "Tabella" with nothing after it on its own line: the rotated margin stamp,
 # which pypdf delivers as two lines -- the keyword on one, the code on the
@@ -233,9 +211,10 @@ BARE_KEYWORD = re.compile(r"(?i)tabella|tab\.|tab")
 # The ministry tree is what made them visible to the verifier at all: under the
 # older flat layout these tables collided with the art. 27 codes on the bare
 # code, so none of them had ever been written out.
-ANNEXO = re.compile(
-    r"(?i:MINISTERO\s+DELLA\s+DIFESA)\s*[-–—]?\s*(?i:Annesso)\s*([0-9]+[A-Z]?)")
-ANNEXO_CODE = re.compile(r"^[0-9]+[A-Z]?$")
+#
+# Both patterns are ontology.DIFESA_RE / ontology.DIFESA_CODE, called directly
+# where they are used. They were a second copy here and a third in the
+# generator, three byte-identical spellings of one printed string.
 
 # A fourth code space: the ministry relation's own numbered exhibits, "Tabella 1"
 # .. "Tabella 23" with dotted sub-tables, exported as T1 .. T23, T81 .. T88,
@@ -567,7 +546,7 @@ def page_code(lines, vocabulary):
     # read first and from its own marker: "MINISTERO DELLA DIFESA - Annesso 3A".
     # Without this the page reads as having no code at all, and
     # uniqueness.own_code_absent then fails a file that is nothing but table.
-    m = ANNEXO.search("\n".join(lines))
+    m = ontology.DIFESA_RE.search("\n".join(lines))
     if m:
         return m.group(1).upper()
 
@@ -580,7 +559,7 @@ def page_code(lines, vocabulary):
 
     # The ministry relation's own numbered exhibits, read as the T-prefixed code
     # the file is named after. Without this a file called T812025.PDF reads as
-    # carrying no code at all -- "8.1" is not a CODE_TOKEN -- and
+    # carrying no code at all -- "8.1" is not a table code shape -- and
     # uniqueness.own_code_run fails a file that is nothing but table. Returned in
     # the exported spelling so it matches the filename rather than the page.
     for line in lines[:REL_SCAN_LINES]:
@@ -591,7 +570,7 @@ def page_code(lines, vocabulary):
                 return cand
 
     for line in lines:
-        m = VERIFIER_LEADING.match(line)
+        m = LEADING_CODE.match(line)
         if m:
             cand = fold(m.group(1), vocabulary)
             if cand in vocabulary:
@@ -602,11 +581,11 @@ def page_code(lines, vocabulary):
             continue
         nxt = lines[i + 1] if i + 1 < len(lines) else ""
         cand = fold(nxt, vocabulary)
-        if VERIFIER_CODE.match(nxt) and cand in vocabulary:
+        if CODE_RE.match(nxt) and cand in vocabulary:
             return cand
 
     for line in lines:
-        for m in VERIFIER_INLINE.finditer(line):
+        for m in INLINE_CODE.finditer(line):
             cand = fold(m.group(1), vocabulary)
             if cand in vocabulary:
                 return cand
@@ -620,7 +599,7 @@ def page_code(lines, vocabulary):
     # known code is being *confirmed* as this page's own.
     for line in lines[:BARE_CODE_MAX_LINE]:
         cand = fold(line.upper(), vocabulary)
-        if VERIFIER_CODE.match(line) and cand in vocabulary:
+        if CODE_RE.match(line) and cand in vocabulary:
             return cand
     return None
 
@@ -641,8 +620,8 @@ def volume_vocabulary(hits, index_codes, bookmark_codes, manifest_codes):
     So the vocabulary answers "what codes exist here", and the repetition
     count decides how loudly each one is reported.
     """
-    vocab = {c for c in hits if VERIFIER_CODE.match(c) or
-             VERIFIER_APPENDIX_CODE.match(c)}
+    vocab = {c for c in hits if CODE_RE.match(c) or
+             APPENDIX_CODE_SHAPE.match(c)}
     vocab |= set(index_codes)
     vocab |= set(bookmark_codes)
     vocab |= set(manifest_codes)
@@ -702,8 +681,9 @@ def check_layout(path, code, year, known_years, checks, authority="",
     # and the ministry relations number their own exhibits 1..23 (T-prefixed).
     # Judging any of the last two against the art. 27 shape fails a correct file,
     # which is what happened to all five Difesa annessi in 2025.
-    if not (CODE_RE.match(code) or VERIFIER_CODE.match(code)
-            or ANNEXO_CODE.match(code) or VERIFIER_APPENDIX_CODE.match(code)
+    if not (CODE_RE.match(code)
+            or ontology.DIFESA_CODE.match(code)
+            or APPENDIX_CODE_SHAPE.match(code)
             or REL_CODE.match(code)):
         checks.bad("layout.code_shape",
                    f"codice '{code}' non ha forma art. 27, ne di annesso Difesa, "
@@ -1153,8 +1133,17 @@ INDICE_ROW = re.compile(
 VOLUME_SPLIT = re.compile(r"^\s*Volume\s+(I{1,3}V?|IV)\s*$", re.IGNORECASE)
 
 # "Tabella AA" on a line of its own, or "Tab. AA - Appendice - Riesportazioni"
+#
+# CODE_TAIL, not a local [A-Z]{1,3}\d?. This was the one place the one-digit
+# defect was still alive: the generator's ELENCO_ROW and ELENCO_TITLE had been
+# widened to \d{0,2} and this had not, so harvest_elenco returned nothing for
+# "Tabella MT13" or "Tabella MG10" -- the codes AGENTS.md section 4 records as
+# named by no index and no bookmark tree, where the listing is the only other
+# witness. A cross-check that quietly stops seeing half the family is worse than
+# one that is visibly absent, because it still reports agreement.
 ELENCO_CODE = re.compile(
-    r"^(?:Tabella|Tab\.?)\s+(?P<code>[A-Z]{1,3}\d?)\b\s*(?P<rest>.*)$"
+    rf"^(?:Tabella|Tab\.?)\s+(?P<code>{CODE_TAIL})(?![A-Za-z0-9])"
+    rf"\s*(?P<rest>.*)$"
 )
 
 # The markers that open an index of tables. SEGNALAZIONI is honoured only in
@@ -2684,11 +2673,11 @@ def main(argv=None):
                     hits[appendix] += 1
                     continue
                 for line in lines:
-                    for m in VERIFIER_INLINE.finditer(line):
+                    for m in INLINE_CODE.finditer(line):
                         cand = m.group(1).upper()
-                        if VERIFIER_CODE.match(cand):
+                        if CODE_RE.match(cand):
                             hits[cand] += 1
-                    m = VERIFIER_LEADING.match(line.strip())
+                    m = LEADING_CODE.match(line.strip())
                     if m:
                         hits[m.group(1).upper()] += 1
 

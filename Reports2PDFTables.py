@@ -729,9 +729,13 @@ def trim_trailing_blanks(info, facts):
 # the annesso is both the code and the last path segment. The letter must stay
 # adjacent and uppercase, otherwise "Annesso 4 TABELLA RIASSUNTIVA" is read as
 # annesso "4 T" and splits one table into two.
-ANNEXO_RE = re.compile(
-    r"(?i:MINISTERO\s+DELLA\s+DIFESA)\s*[-–—]?\s*(?i:Annesso)\s*([0-9]+[A-Z]?)"
-)
+#
+# The pattern itself is ontology.DIFESA_RE. It used to be a second copy here,
+# byte for byte, and a third in VerifyTables.py -- three spellings of one
+# printed string, which is the shape of bug that only shows up as a count that
+# disagrees somewhere else. Ontology owns the code space; the matcher and the
+# bare shape (DIFESA_CODE) sit beside each other there.
+ANNEXO_RE = ontology.DIFESA_RE
 
 # Private Use Area: what pypdf emits for a font with no ToUnicode CMap.
 PUA_RE = re.compile(r"[-]")
@@ -2917,6 +2921,16 @@ def trash_reason(manifest, start, end, tables):
     # relation prose as "MAE/E, -1p finale/i", which is a sentence about a table
     # 800 pages away. It stayed hidden while those pages sat inside derived spans,
     # and surfaced the moment the relation's exhibits stopped claiming them.
+    #
+    # `trimmed` is keyed by the DISPLAY string "MAE/E" while `tables` is keyed by
+    # the (authority, article, code) triple, so the lookup has to rebuild that
+    # string. It is built the same way build_manifest built the key -- filter out
+    # the None article -- or the two will not match. That is what happened: the
+    # lookup referred to a `by_path` that no longer existed once `tables` stopped
+    # being keyed by path, and every volume whose trash reached this witness
+    # raised NameError and wrote no trash at all. 2025 vol. I was the only one to
+    # reach it, because vol. II's runs are all claimed earlier in this chain.
+    by_path = {"/".join(filter(None, k)): info for k, info in tables.items()}
     for key, count in (manifest.get("trimmed") or {}).items():
         info = by_path.get(key)
         if info and info["end"] + 1 == start and end - start + 1 <= count:
