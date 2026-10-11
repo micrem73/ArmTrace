@@ -74,11 +74,11 @@ usually structural and is accounted for, not chased; `SKIP` means no witness.
 
 | year | files | pages | status |
 |---|---|---|---|
-| **2025** | **150** | **1982** | tagged `2025-verified` — 142 ok, **0 FAIL**, 8 warn |
+| **2025** | **150** | **1982** | tagged **`2025-clean`** — judged clean; 142 ok, 0 FAIL, 8 warn |
 | 2016–2023 | | | not started |
 | 2024 | | | **measured, failing** — §6 |
 
-**Two tags, and the difference matters.** `2025-clean` (2026-10-06) marks the baseline to iterate from — its own message says *"not yet judged clean by the user"*, and it has not moved. `2025-verified` (2026-10-11) marks what is measured: 0 FAIL, a manifest byte-identical across the `lib/` split, and `Reports2PDFTables_2025.py` frozen as the reference every other year forks from. **A year counts as clean when a person says so**, which is why neither tag claims it.
+**Three tags, three claims.** `2025-baseline` (`b0bbbf2`, 2026-10-06) marks the FAIL-free baseline to iterate from — 110 files, *not yet judged clean*, which is what it always said. `2025-verified` (`5d91d35`) marks what the machine measured. `2025-clean` (`31be7d7`, 2026-10-11) marks the user's judgement, and it is the only one that claims the year is clean. Between the first and last the manifest grew from 110 files to 150 and the FAILs went 31 → 0; §9 and the tag body carry the detail.
 
 **The 2025 row was 119 files / 1952 pages until 2026-10-11**, moving when the relation
 exhibits (`T1`…`T23`, `T81`…`T88`, `T141`, `T142`) were added as a fourth code space. A
