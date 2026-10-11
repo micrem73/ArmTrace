@@ -19,5 +19,5 @@ Python puts the *script's* directory on sys.path, not the working directory.
 Division of authority: `geometry.py` and `grammar.py` know about glyphs and
 about printed values, and neither knows what a ministry is. What a table *means*
 -- which is what `grammar.py` labels -- is a per-ministry question and belongs
-above this package. See AGENTS-TABLE2SQL.md.
+above this package. See READING-TABLES.md.
 """
