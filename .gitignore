@@ -31,8 +31,13 @@ Out/
 # are often symlinked in from another checkout rather than re-downloaded. Git
 # sees a directory entry named "2024", not a *.pdf, so it offers to commit the
 # symlink -- and the symlink points at an absolute path outside the repo, so it
-# is dead for everyone else. Cheap to ignore, and a 59 MB trap avoided.
-reports_185_1990/*/
+# is dead for everyone else.
+#
+# No trailing slash, and that is the whole point. A trailing slash restricts the
+# pattern to directories, and git treats a symlink as a file, so "*/" ignores a
+# real year directory and still offers the symlink -- the one commit the comment
+# above exists to prevent. "20*" matches both, and still tracks manifest.tsv.
+reports_185_1990/20*
 *.XLS
 *.xlsx
 *.XLSX
