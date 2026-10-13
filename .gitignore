@@ -25,6 +25,14 @@ Out/
 *.PDF
 *.csv
 *.xls
+# Per-year directories under reports_185_1990/, added for the PDFs above.
+#
+# *.pdf does NOT cover these: when a worktree has no PDFs of its own, the years
+# are often symlinked in from another checkout rather than re-downloaded. Git
+# sees a directory entry named "2024", not a *.pdf, so it offers to commit the
+# symlink -- and the symlink points at an absolute path outside the repo, so it
+# is dead for everyone else. Cheap to ignore, and a 59 MB trap avoided.
+reports_185_1990/*/
 *.XLS
 *.xlsx
 *.XLSX
