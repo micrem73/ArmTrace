@@ -76,7 +76,15 @@ usually structural and is accounted for, not chased; `SKIP` means no witness.
 |---|---|---|---|
 | **2025** | **150** | **1982** | tagged **`2025-clean`** — judged clean; 142 ok, 0 FAIL, 8 warn |
 | 2016–2023 | | | not started |
-| 2024 | | | **measured, failing** — §6 |
+| 2024 | | | **baseline re-measured 2026-10-11, failing** — §6 |
+
+**The 2024 baseline, re-measured 2026-10-11** before the first fix, from
+`Reports2PDFTables_2024.py` (a fresh copy of the template) on `--dry-run`: **98 tables,
+41 + 57** — the 31 + 35 of the 2026-10-05 measurement in §6, plus the 31 relation
+exhibits vol. I carries. The two are not comparable and must not be added together; §6
+has both. Already right at this baseline: `stitch()` does **not** fire (`continued`
+empty in both volumes, as §6 requires), vol. I's family is 2, and vol. II's 35 MEF tables
+are exactly the 35 codes its bookmark tree names.
 
 **Three tags, three claims.** `2025-baseline` (`b0bbbf2`, 2026-10-06) marks the FAIL-free baseline to iterate from — 110 files, *not yet judged clean*, which is what it always said. `2025-verified` (`5d91d35`) marks what the machine measured. `2025-clean` (`31be7d7`, 2026-10-11) marks the user's judgement, and it is the only one that claims the year is clean. Between the first and last the manifest grew from 110 files to 150 and the FAILs went 31 → 0; §9 and the tag body carry the detail.
 
