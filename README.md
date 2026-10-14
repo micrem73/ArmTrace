@@ -35,13 +35,31 @@ reports_185_1990/download_185.sh reports_185_1990 reports_185_1990/manifest.tsv
 # 4. step 2 — what shape is each table?  ->  Out/CATALOG/
 ./CatalogueTables.py --year 2025 --manifest Out/manifest-2025.jsonl
 
-# 5. audit what step 1 produced   ->  Out/VERIFY/
+# 5. step 3 — audit what step 1 produced   ->  Out/VERIFY/
 ./VerifyTables.py --year 2025 --manifest <manifest.jsonl>
+
+# 6. step 4 — assemble the records          ->  stg_cell in catalog.sqlite
+./ExtractTables.py --year 2025
+
+# 7. step 5 — audit the extraction against the tables' own totals
+./VerifyExtraction.py --year 2025
+
+# 8. and only once a year is judged clean, write the dump
+./ExtractTables.py --year 2025 --dump        #  ->  Out/SQL/armtrace-2025.sql[.gz]
 ```
 
 Step 3 prints a report per volume — tables found per ministry, page counts,
 what was skipped and why — before it writes anything. Add `--dry-run` to see it
 without writing.
+
+Step 5 uses the same four verdicts as step 3, plus a fifth: **`ROUNDED`** is a
+total that is out by less than the report's own per-row rounding to the cent can
+account for, which happens only in a **converted-currency** column — each row's
+`EURO` figure is a foreign amount rounded for print, and the report's subtotal
+does not come from summing those. Raw columns stay exact, so a cent in an
+`Ammontare` is still a `FAIL`. A `ROUNDED` finding prints the delta *and* the
+bound that admitted it, and the bound is `n × 0,005` over the `n` figures summed:
+a guarantee rather than a tolerance. See AGENTS-TABLE2SQL.md §9.15.
 
 **Always pass `--volume both`, never a single volume.** 2025 Tabella F1 is one
 table of 70 pages split across the two volumes (printed 1035–1042, then
@@ -71,11 +89,14 @@ reports_185_1990/                 # source reports, one folder per reporting yea
 
 Out/                             # generated locally, NOT in git
 ├── PDF/    <authority>/[<article>/]<table><year>.PDF
-├── CATALOG/catalog.sqlite       the shape of every table, per year
-│           catalog-<year>.jsonl
+├── CATALOG/catalog.sqlite       the shape of every table, per year, and the
+│           catalog-<year>.jsonl   extracted cells (stg_cell)
 │           census-<year>.md
+├── SQL/    armtrace-<year>.sql  deterministic dump, opt-in via --dump
+│           armtrace-<year>.sql.gz
 ├── TRASH/  <year>/<volume>_p<a>-<b>.PDF + <volume>.tsv
 └── VERIFY/ verify-<year>.{log,json,html}
+            exverify-<year>.{log,json,html,md}
 ```
 
 The folder name is the **reporting year** the report covers, not the year it was

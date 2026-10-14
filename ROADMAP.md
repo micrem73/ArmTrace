@@ -126,22 +126,61 @@ Italian but stable identifiers matter more; **null and zero are different facts*
 and the archive prints both, so the policy is recorded per column, never inferred
 per cell; `016` is the Military List category, not the number 16.
 
-### Phase 4 — the extractor · **not started**
+### Phase 4 — the extractor · **built, two grammars, baseline written**
 
-Per-grammar record assembly rather than per-code rules: rotate → column geometry →
-row bands → record assembly (continuation merge, group rows, subtotal rows) →
-typed values → `stg_cell` → projections → `.sql`.
+`ExtractTables.py --year 2025` → `stg_cell` in `catalog.sqlite`, and with
+`--dump` → `Out/SQL/armtrace-<year>.sql[.gz]`. Record assembly per grammar
+rather than per code: a `group` opens a scope, a repeated name continues it
+across pages, a `continuation` folds into the record above, a `subtotal` closes
+the scope and is flagged `is_total` so it is never double-counted.
 
-### Phase 4b — verification · **not started**
+2025: **93 of 150 tables, 94,358 cells, 162 s**, parallel over tables with the
+parent sorting by natural key so output is identical whatever order workers
+finish in. Four structural bugs found and fixed — the margin stamp becoming a
+record, a total band's label landing in a measure column, material rows read as
+group headers, and a page-spanning group split into one group per page. All four
+are measured in AGENTS-TABLE2SQL.md §9.
 
-**The tables print their own totals** — `Totale complessivo 262.920.093,96`
-(MG10), `3.700.813,79 0,00` closing each operator's group (A1). That is the
-strongest available check and the old CSV step never used it. Per additive
-column, `SUM` of projected rows against the printed total; row-count
-reconciliation against the index's page counts; a text-coverage check (share of
-extracted characters present in the source page text) to catch silently dropped
-rows. PASS/FAIL/WARN/SKIP with FAIL at zero, log written before the JSON — the
-discipline `VerifyTables.py` already follows for the split.
+### Phase 4b — verification · **built, baseline written, FAIL not yet zero**
+
+`VerifyExtraction.py --year 2025` → `Out/VERIFY/exverify-2025.{log,json,html,md}`.
+The oracle is the printed total, per group where the table prints one and per
+file where it prints one, compared **exactly** with no tolerance. Every sum is
+done in Python on `Decimal`, never in SQL: sqlite has no exact decimal and a
+`DECIMAL` column has NUMERIC affinity.
+
+**Baseline: 879 PASS, 166 FAIL, 53 WARN, 573 SKIP.**
+
+**After the FAIL round: 1068 PASS, 11 ROUNDED, 32 FAIL, 51 WARN, 1171 SKIP** — and
+**76 of the 93 tables verify with zero FAIL**, up from 48. The count did not fall
+monotonically: it reached 62 as defects were fixed, rose to 92 when a new check
+was added that found 30 findings nothing had been looking for, and settled at 43
+once those turned out to include a real extraction defect rather than a bad check.
+Three more real defects took it to 32: the standalone `complessivo` in `TOTAL_RE`
+firing on A1's *part name* and a DIFESA footnote, a group's several subtotals each
+certifying only its own segment, and a FAIL reporting the worse of two candidate
+readings. The last 11 were cents in a **converted-currency** column, which the
+report rounds per row -- reported as a new `ROUNDED` verdict carrying the delta and
+the `n × 0,005` bound that admitted it, with raw columns still exact.
+
+**Ten root causes, four in the extractor and six in the verifier** — the oracle was
+wrong more often than the extraction was. The two worst are both silent:
+
+- `parse_number('192 615.457.414,48') -> 192615457414.48`, two numbers in one
+  cell concatenated into one plausible `Decimal`, in 137 cells;
+- `-€ 4.875.000,00` was not recognised as a number at all, so `band_kind()` read
+  the **row** as a group header and its amount was never parsed. Found by reading
+  a rendered page, not by any automated check.
+
+Full list and measurements in AGENTS-TABLE2SQL.md §9.
+
+**Still not FAIL at zero.** All 32 remaining are plain arithmetic mismatches across
+15 tables; **78 of the 93 extracted tables verify with zero FAIL.** MAE `A1` is down
+to **one**, and the "hundreds of millions" failures that dominated it turned out to
+be an artefact of the verifier comparing the wrong candidate reading rather than bad
+rows. The rest are **undiagnosed**, and two leads are cheap: `P1` and `P2` fail with
+the identical delta, and `T20`'s `N. Aut.` is out by 10 and 12 — a *count*, which
+localises to a handful of rows where a money delta does not.
 
 ### Phase 5 — the tool bake-off · **not started**
 
@@ -182,6 +221,8 @@ the only route, and that is a separate decision with its own scope.
 ```
 Phase 1  catalog 2025            done
     ↓
+Phase 4  extractor + 4b verify   built, 2 of 6 grammars, baseline written
+    ↓
 step 1 for 2024                  the second year must be real, or the diff lies
     ↓
 catalog 2024
@@ -190,13 +231,23 @@ Phase 2  the diff                 what changed, what appeared, what vanished
     ↓
 Phase 3  canonical schema         designed *by* the diff, not before it
     ↓
-Phase 4  extractor + 4b verify
-    ↓
 Phase 5  bake-off                 would have informed Phase 1; runs late because
-                                  the ground truth is the expensive part
-```
+                                   the ground truth is the expensive part
 
-Two of these are counter-intuitive and worth stating:
+Three of these are counter-intuitive and worth stating:
+
+- **Phase 4 moved ahead of Phase 2, which reverses the order this document
+  originally gave.** The reason is that the extractor is what *proves* the
+  catalog's column geometry, and the catalog was written believing a header's
+  label extents were its column edges. They are not, and nothing short of a
+  printed total to compare against would have said so: A1's money columns are
+  right-aligned and sit outside their labels, so every narrow value overlapped
+  the wrong one and `EURO`'s subtotal read as `assembled 0 vs printed 5.360.673,71`
+  on a table that is correct. The diff would have been computed over a frame that
+  was already wrong. So the oracle came first, and it found the frame wrong. This
+  is the plan's own rule — the canonical schema is designed *by* the diff — read
+  one step earlier: **the column geometry is designed by the extraction, not
+  before it.**
 
 - **The canonical schema is designed after the diff, not before.** Phase 3's tables
   above are *shapes inferred from reading 2025's pages*. If the diff shows a table
