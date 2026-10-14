@@ -66,6 +66,7 @@ Requires: pymupdf (pip install pymupdf). No JRE, no tabula, no OCR.
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import sqlite3
@@ -111,6 +112,21 @@ HEADER_OVERLAP = 0.6
 # MG10's stray rules come from a running-head underline well away from the
 # table (u -105 against labels ending at -143.9).
 RULE_EDGE_SLACK = 20.0
+
+# --- the gutter projection -------------------------------------------------
+#
+# A third witness for column geometry, and the only one that survives
+# right-alignment. See AGENTS-TABLE2SQL.md §3, "A1 defeats both witnesses".
+#
+# The other two fail on A1 together: its three vector rules are the margin
+# stamp's box and sit outside the table, and `_consensus_columns` clusters on
+# cell `u0`, which right-aligned money columns do not share. A gutter is a
+# *shared absence* -- a `u` position no word occupies on nearly every data band
+# -- so it does not care where inside a column a value starts.
+GUTTER_BUCKET = 0.5          # pt; finer than any printed inter-column gap
+GUTTER_SHARE = 0.9           # a gutter must be empty in this share of bands
+GUTTER_MIN_PT = 3.0          # narrower than this is a word's own letter gap
+GUTTER_MAX_COLUMNS = 64      # refuse to believe an absurd frame
 
 # The running furniture and the margin stamp are not table columns, and on a
 # rotated page they sit *outside* the table's reading-space extent, so they
@@ -185,9 +201,7 @@ LABEL_EDGE_SLACK = 8.0
 # while its digits still parse.
 PUA_RUN_RE = re.compile("[\ue000-\uf8ff]{3}")
 
-SCHEMA = """
-PRAGMA journal_mode=WAL;
-
+CATALOG_DDL = """
 -- One row per table per year. The primary key is the manifest key, the triple
 -- (authority, article, code): a code is unique only inside that scope, so
 -- keying on the code alone is what used to make the Dogane overwrite the MAE.
@@ -225,6 +239,10 @@ CREATE TABLE IF NOT EXISTS table_year (
     columns        TEXT,             -- json: the column signature
     extractable    INTEGER,          -- 1 when data can actually be read
     extract_reason TEXT,
+    extract_detail TEXT,             -- json: what step 4 found when it ran.
+                                     -- Written by ExtractTables.py, never here;
+                                     -- absent means "never extracted", which is a
+                                     -- different fact from "extracted, 0 rows"
     fingerprint    TEXT,
     PRIMARY KEY (authority, article, code, year)
 );
@@ -257,7 +275,70 @@ CREATE TABLE IF NOT EXISTS column_def (
     PRIMARY KEY (authority, article, code, year, ordinal)
 );
 CREATE INDEX IF NOT EXISTS ix_cd_key ON column_def(label_key);
+
+-- ---------------------------------------------------------------------------
+-- stg_cell -- the lossless cell store. Written by step 4 (ExtractTables.py),
+-- read by step 5 (VerifyExtraction.py), and dumped to Out/SQL/ by the same.
+--
+-- The catalog creates the table and never writes a row to it. That is deliberate:
+-- the DDL has exactly one copy in this repository, because a duplicated schema is
+-- how a shape change silently disarms the verifier -- the writer and the checker
+-- disagree, both parse, and the output is plausible. `ExtractTables.py` and the
+-- dump writer import this string rather than retyping it.
+--
+-- Three decisions here are amendments to the shape ROADMAP.md recorded, each
+-- forced by measured behaviour rather than chosen for tidiness.
+--
+-- 1. `row_ord` counts records over the WHOLE TABLE, not per page. A1 is 537 pages
+--    and an operator's group regularly opens on one page and closes on the next.
+--    A per-page ordinal therefore cannot reference its own group header without
+--    carrying a second coordinate, and `group_ord` is worth having only because
+--    a record's identity is stable across the page break. `page` stays, as an
+--    attribute of the cell rather than part of the key: it is provenance, and
+--    keeping it in the key is what made the reference inexpressible.
+--
+-- 2. `group_ord` is the `row_ord` of the governing group header, NULL otherwise.
+--    It is a *reference*, not a copy of the group's text: the header row still
+--    exists in full, in its own row_kind, so nothing is lost and every grouped
+--    query is an equality join instead of a correlated "most recent header above
+--    me" over page and ordinal.
+--
+-- 3. A cell that spans the table has `col_ord = NULL`. A1 prints its group header
+--    `A.C.S.A. STEEL FORGINGS S.P.A.` across the full width; `cell_matrix()`
+--    files it under column 0 because that is where its left edge falls, which
+--    would give the description column a spurious value on every record in the
+--    group. It belongs to no column, and NULL says so. SQLite permits NULL in a
+--    PRIMARY KEY of a rowid table; uniqueness still holds here because `row_ord`
+--    identifies the record and a record carries at most one spanning cell.
+--
+-- `num_value` is DECIMAL and never FLOAT: `1.234,56` parsed as a float is
+-- 1.234, wrong by a factor of a thousand while still looking like a number.
+-- `unit` is denormalised from `column_def` and must never disagree with it --
+-- it is carried so a cell can be read without a join, and it is never taken from
+-- a printed cell (AGENTS-TABLE2SQL.md §4: units live in column_def).
+CREATE TABLE IF NOT EXISTS stg_cell (
+    authority TEXT, article TEXT, code TEXT, year INTEGER,
+    page       INTEGER,             -- provenance, not part of the key
+    row_ord    INTEGER,             -- record number within the table, page-spanning
+    col_ord    INTEGER,             -- NULL for a cell that spans the table
+    group_ord  INTEGER,             -- row_ord of the governing group header
+    row_kind   TEXT,                -- the band kind as classified:
+                                     -- data | group_header | subtotal | total
+    col_key    TEXT,                -- column_def.header_path, joined by ordinal
+    raw_text   TEXT,                -- exactly as printed
+    text_value TEXT,                -- NFKC, collapsed whitespace: comparable
+    num_value  DECIMAL(20,4),       -- NULL unless the cell is one number
+    unit       TEXT,
+    is_total   INTEGER,
+    PRIMARY KEY (authority, article, code, year, row_ord, col_ord)
+);
+CREATE INDEX IF NOT EXISTS ix_stg_table ON stg_cell(authority, article, code, year);
+CREATE INDEX IF NOT EXISTS ix_stg_kind  ON stg_cell(row_kind);
 """
+
+# The dev-loop database runs in WAL; a .sql dump must not, since it is a sequence
+# of statements read by `sqlite3`, not a database being opened.
+SCHEMA = "PRAGMA journal_mode=WAL;\n" + CATALOG_DDL
 
 
 # --------------------------------------------------------------------------
@@ -774,6 +855,86 @@ def _consensus_columns(bands, start, counts, window=12):
              "size": 0.0} for c in kept]
 
 
+def gutter_columns(bands, start, want=None, window=12):
+    """The column edges the *body* agrees on, as a projection of empty space.
+
+    Returns a list of `{"u0", "u1", "text", "bold", "size"}` cells whose extents
+    are the gutters, so it drops straight into `geo.cell_matrix` and into
+    `resolve_columns`'s contract.
+
+    Why this and not more clustering. Both existing witnesses key on **positions**
+    — the rules give column edges, and `_consensus_columns` clusters cell `u0` —
+    and A1's three numeric columns are right-aligned, so their `u0` values
+    differ per row and no cluster forms. Measured on A1 p1, 13 data bands: the
+    clusters come back at `n = 1,2,2,2,1,2,4,4,10,4,4`, kept = 1 against a modal
+    width of 9, and the function correctly returns `[]` rather than a guess.
+
+    A gutter is a shared **absence**, which right-alignment cannot destroy. The
+    same 13 bands give nine gutters, hence ten columns, matching the printed
+    header's ten labels:
+
+        -782.5..-759.5  -745.5..-721.5  -690.5..-550.0  -511.5..-488.5
+        -471.0..-445.0  -415.5..-397.0  -210.0..-181.0  -173.5..-154.5
+        -143.5..-137.5
+
+    The third is 140pt wide and that is **correct**: `Ammontare`, `EURO` and
+    `Val. Fini Dog.` have no gap between them on most rows, because a wide
+    amount in one column sits flush against a narrow amount in the next. One
+    gutter spanning three columns loses no value — the cells that result are
+    wider, not misaligned — and it is the price of asking for agreement rather
+    than for the drawing.
+
+    `want` is the header's column count. When given, a frame of a different size
+    is refused and `[]` returned, so the caller can fall back rather than
+    silently realign a ten-column header onto nine columns: a wrong column count
+    is worse than an absent one, because every value in it is then wrong.
+    """
+    data = [b for b in bands[start:start + window]
+            if len(geo.column_bands(b)) >= 3]
+    if len(data) < 3:
+        return []
+    lo = min(min(w.u0 for w in b) for b in data)
+    hi = max(max(w.u1 for w in b) for b in data)
+    if not (hi > lo):
+        return []
+    buckets = int((hi - lo) / GUTTER_BUCKET) + 2
+    empty = [0] * buckets
+    for band in data:
+        occupied = set()
+        for w in band:
+            first = max(0, int((w.u0 - lo) / GUTTER_BUCKET))
+            last = min(buckets - 1, int((w.u1 - lo) / GUTTER_BUCKET))
+            for k in range(first, last + 1):
+                occupied.add(k)
+        for k in range(buckets):
+            if k not in occupied:
+                empty[k] += 1
+    need = int(math.ceil(GUTTER_SHARE * len(data)))
+    spans = []
+    for k in range(buckets):
+        if empty[k] < need:
+            continue
+        pos = lo + k * GUTTER_BUCKET
+        if spans and pos - spans[-1][1] <= GUTTER_MIN_PT:
+            spans[-1][1] = pos + GUTTER_BUCKET
+        else:
+            spans.append([pos, pos + GUTTER_BUCKET])
+    spans = [s for s in spans if s[1] - s[0] >= GUTTER_MIN_PT]
+    columns = []
+    edge = lo
+    for span in spans:
+        columns.append({"u0": edge, "u1": span[0], "text": "", "bold": False,
+                        "size": 0.0})
+        edge = span[1]
+    columns.append({"u0": edge, "u1": hi, "text": "", "bold": False,
+                    "size": 0.0})
+    if want is not None and len(columns) != want:
+        return []
+    if len(columns) < 2 or len(columns) > GUTTER_MAX_COLUMNS:
+        return []
+    return columns
+
+
 def _data_span(bands, start, counts):
     """The reading-space extent of the data bands following a header.
 
@@ -793,8 +954,9 @@ def _data_span(bands, start, counts):
     return (lo, hi) if lo is not None else None
 
 
-def resolve_columns(page, header_cells, frame=None):
-    """The column geometry to trust: the rules if they agree, else the labels.
+def resolve_columns(page, header_cells, frame=None, bands=None, index=None):
+    """The column geometry to trust: the rules, else the body's gutters, else
+    the labels.
 
     A ruled table's cell edges are the ground truth and its header labels are
     not: labels are left-aligned inside the cell while values are usually
@@ -809,9 +971,21 @@ def resolve_columns(page, header_cells, frame=None):
     margin stamp box come back as ten separators, and taking those at face
     value turned a three-column table into eleven.
 
-    Returns `(cells, source)` with `source` one of `rules`, `header` or
-    `header(no rules)`, recorded in the catalog so a reader can see which
-    geometry a column list rests on.
+    **Falling back to the labels is what A1 does, and the labels are wrong
+    there.** A1's three rules sit outside the table and its body is
+    right-aligned, so neither the rules nor `_consensus_columns` can be
+    believed. `gutter_columns()` is tried next, and `bands` must be passed for
+    it to run; it is the third witness and it is measured in
+    AGENTS-TABLE2SQL.md §3.
+
+    Order matters and is not arbitrary: rules are the printed grid, gutters are
+    the printed values agreeing, and the labels are a naming convenience. Each
+    is tried only when the previous one has failed to produce the header's own
+    column count.
+
+    Returns `(cells, source)`, with `source` one of `rules`, `gutters`,
+    `header` or `header(no rules)`, recorded in the catalog so a reader can see
+    which geometry a column list rests on.
     """
     if not header_cells:
         return [], "none"
@@ -842,7 +1016,49 @@ def resolve_columns(page, header_cells, frame=None):
                                      cell["u0"], cell["u1"]),
                       bold=False, size=0.0)
                  for cell in ruled], "rules")
-    return header_cells, "header" if rules["u"] else "header(no rules)"
+    return label_gap_columns(header_cells), (
+        "header" if rules["u"] else "header(no rules)")
+
+
+def label_gap_columns(header_cells):
+    """Header labels turned into *separated* cells, from the gaps between them.
+
+    The fallback when nothing else is available, and it is better than the raw
+    label extents for one measured reason: `cell_matrix()` files a word in the
+    column it **overlaps most**, so a cell whose extent is only the label's own
+    text competes with its neighbours on a sliver of space. A1's money columns are
+    right-aligned and sit *outside* their labels' extents, so a narrow value
+    overlaps the wrong label and lands in the wrong column — the failure the
+    verifier reports as `group.subtotal p2: group 15 · EURO: assembled 0 vs
+    printed 100938`.
+
+    Each label's neighbours define a separator at the midpoint of the gap between
+    them, so column *i* spans from the previous separator to the next. Measured on
+    A1 p1, the separators are −735.95, −677.45, −626.09, −553.29, −507.86,
+    −465.38, −403.08, −244.34, −164.85 — and `887.145,00` (−720.7…−690.7) then
+    falls inside `Ammontare` (−735.95…−677.45) rather than straddling the gap.
+
+    **This is a fallback and it is recorded as one.** `source` is still `header`,
+    so nothing downstream can mistake it for a ruled frame, and the printed
+    totals remain the test of whether it is good enough. It is better than
+    nothing and worse than the rules; the reason to prefer it over the raw labels
+    is that it cannot be *worse* than them, since every separator lies in a gap
+    that the header itself prints as empty.
+    """
+    if not header_cells:
+        return []
+    ordered = sorted(header_cells, key=lambda c: c["u0"])
+    if len(ordered) < 2:
+        return ordered
+    cells = []
+    for i, cell in enumerate(ordered):
+        left = (0.5 * (ordered[i - 1]["u1"] + cell["u0"])
+                if i > 0 else cell["u0"])
+        right = (0.5 * (cell["u1"] + ordered[i + 1]["u0"])
+                 if i + 1 < len(ordered) else cell["u1"])
+        cells.append(dict(cell, u0=min(left, cell["u0"]),
+                          u1=max(right, cell["u1"])))
+    return cells
 
 
 def merge_stacked_header(bands, index, cells, header_cells):
@@ -1016,7 +1232,8 @@ def read_signature(pdf_path, page_indices):
                 })
                 continue
             cells, source = resolve_columns(page, header_cells,
-                                           frame=geom["frame"])
+                                           frame=geom["frame"],
+                                           bands=bands, index=index)
             cells, stacked = merge_stacked_header(bands, index, cells,
                                                    header_cells)
             matrix = geo.cell_matrix(bands, cells)
@@ -1247,6 +1464,11 @@ def read_identity(pdf_path, year):
 
 
 def open_catalog(path, create=True):
+    # Coerced, because callers legitimately pass either a `Path` from
+    # `--catalog` or a plain string they built themselves, and `str.exists` is an
+    # AttributeError raised from three frames away with nothing to say what went
+    # wrong.
+    path = Path(path)
     fresh = create and not path.exists()
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
