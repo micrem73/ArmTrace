@@ -72,7 +72,19 @@ NUMBER_RE = re.compile(r"""
     \s*$
 """, re.VERBOSE)
 
-CURRENCY_RE = re.compile(r"^\s*(?:€|EUR|euro)\s*", re.IGNORECASE)
+#: A leading currency symbol, **optionally behind a sign**. `€ 1.234,56` is the
+#: usual form and was already handled; `-€ 1.234,56` is the one the archive also
+#: prints, and the plain `^\s*€` pattern missed it because the string starts with
+#: the sign rather than the symbol. `value_shape()` then answered `text` for a
+#: signed amount, `band_kind()` found no arithmetic in the row, and a **data row
+#: was classified as a group header** -- collapsing its authorisation, its company
+#: and its `-€ 4.875.000,00` into one spanning cell. Measured on MEF `GG` p27,
+#: where one row of 42 vanished from SLOVACCHIA's subtotal by exactly that amount.
+#:
+#: The sign is captured rather than swallowed, so the negative survives: stripping
+#: `-€ ` and returning `4.875.000,00` would turn a refund into a payment.
+CURRENCY_RE = re.compile(
+    r"^\s*(?P<sign>[-+‐‑−–—]\s*)?(?:€|EUR|euro)\s*", re.IGNORECASE)
 # The currency is printed on *either* side depending on the ministry: MEF
 # art. 27 writes `€ 12.877,00` with the sign first, MAE writes `887.145,00`
 # with no sign at all and names the unit in the column heading. Both forms are
@@ -85,9 +97,25 @@ YEAR_RE = re.compile(r"^\s*(19|20)\d{2}\s*$")
 DASHES = {"", "-", "–", "—", "‐", "‑", "−", "_", ".", "n.d.", "N.D.",
           "nd", "ND", "n/a", "N/A", "/", "null", "NULL"}
 CODE_RE = re.compile(r"^\s*\d{1,6}\s*$")          # 016, 01, 001 -- leading zeros matter
+# **`complessivo` is not a total word on its own.** It was listed as a standalone
+# alternative, which is what let it fire on ordinary prose -- and in 2025 it did,
+# three times, each on a row that carries money:
+#
+#   MAE A1 row 9549   USD 26/09/2025 NUMERO COMPLESSIVO STAFFA SUPPORTO TUBO …
+#   MAE A4 row 1421  USD JSF 26/09/2025 NUMERO COMPLESSIVO STAFFA SUPPORTO TUBO
+#   DIFESA 3C row 52 * Valore riferito al volume complessivo delle n. 107 nuove …
+#
+# "NUMERO COMPLESSIVO STAFFA" is a **part name** -- a complete-number bracket, the
+# one A1's USD contracts are for -- and the DIFESA line is a **footnote**. All
+# three were read as totals, so a data row's money became a printed total to
+# reconcile against and a footnote became one too.
+#
+# The word is kept only where `totale` heads it, which `totale` already matches:
+# every legitimate use measured -- 64 rows, `Totale complessivo` across DOG, MAE
+# and MEF -- reads `totale` first. Requiring a numeric cell (see `band_kind`) was
+# not enough, because a misread data row *has* numbers.
 TOTAL_RE = re.compile(
-    r"\b(totale|totali|totale\s+complessivo|totale\s+generale|"
-    r"totale\s+autorizzazioni|complessivo|grand\s*total)\b", re.IGNORECASE)
+    r"\b(totale|totali|complessivo\s+totale|grand\s*total)\b", re.IGNORECASE)
 
 # A column counts as prose-carrying at this multiple of the lower-quartile
 # column width. Measured on 2025: A1's description column is 6.3x its quartile
@@ -107,6 +135,22 @@ SHAPE_TOTAL_LABEL = "total_label"
 SHAPE_TEXT = "text"
 
 
+def strip_currency(text):
+    """`text` with its currency symbol removed and any sign moved in front.
+
+    Shared by `value_shape()` and `parse_number()` because they must agree: when
+    they disagreed, a signed amount was a `text` cell to one and a number to the
+    other, and the band it sat in was classified on the wrong answer.
+    """
+    raw = str(text).strip()
+    match = CURRENCY_RE.match(raw)
+    sign = (match.group("sign") or "").strip() if match else ""
+    bare = CURRENCY_RE.sub("", TRAILING_CURRENCY_RE.sub("", raw)).strip()
+    if sign and bare and bare[0] not in "-+" and not bare.startswith("("):
+        bare = "-" + bare if sign[0] in "-‐‑−–—" else bare
+    return bare, bool(match)
+
+
 def value_shape(text):
     """Classify one printed cell. Never raises, never guesses.
 
@@ -122,7 +166,7 @@ def value_shape(text):
     if raw in DASHES:
         return SHAPE_DASH
     leading = bool(CURRENCY_RE.match(raw))
-    bare = CURRENCY_RE.sub("", TRAILING_CURRENCY_RE.sub("", raw)).strip()
+    bare, _ = strip_currency(raw)
     if TOTAL_RE.search(raw) and not NUMBER_RE.match(bare):
         return SHAPE_TOTAL_LABEL
     if leading and NUMBER_RE.match(bare):
@@ -150,12 +194,29 @@ def parse_number(text):
     None means "not a number I can account for", and the caller must keep the
     printed text. It is returned for `1,234.56` (the other convention, not
     observed in this archive but reachable from a future year), for a code like
-    `016` -- leading zeros are an identity, not a quantity -- and for a dash.
+    `016` -- leading zeros are an identity, not a quantity -- for a dash, and for
+    a cell holding **two** numbers (`192 615.457.414,48`), which is a column
+    geometry fault and must be visible rather than folded into one wrong figure.
     """
     raw = str(text).strip()
     if raw == "" or raw in DASHES:
         return None
-    bare = CURRENCY_RE.sub("", TRAILING_CURRENCY_RE.sub("", raw)).strip()
+    bare, _leading = strip_currency(raw)
+    # **Two numbers in one cell are refused, not concatenated.** The space is
+    # stripped below and nothing else looked at it, so `192 615.457.414,48` -- a
+    # count and a value that landed in the same cell because the header over them
+    # is stacked -- came back as `192615457414.48`: plausible, a `Decimal`, and
+    # wrong by nine orders of magnitude. 137 cells of 2025 were affected.
+    #
+    # The test is that a space between digits whose *tail* is itself a formatted
+    # number means two numbers. `1 234` is a thousands separator and stays a
+    # number, because the tail `234` carries no separator of its own. `0,00 €` and
+    # `10.000.000,00 €` are untouched: their space precedes the currency symbol,
+    # not a digit.
+    tail = re.split(r"[  ]", bare, 1)
+    if (len(tail) == 2 and tail[0].isdigit() and tail[1][:1].isdigit()
+            and re.search(r"[.,]", tail[1])):
+        return None
     m = NUMBER_RE.match(bare)
     if not m:
         return None
@@ -308,7 +369,26 @@ def band_kind(profile, columns=None, previous=None):
     if profile["filled"] == 0:
         return KIND_BLANK
     if profile["total_labels"]:
-        return KIND_TOTAL
+        # **A total band has arithmetic in it.** `TOTAL_RE` fires on the *word*
+        # "totale", and a caption containing that word is not a total. Measured on
+        # T141/T142, whose bottom summary line is
+        #
+        #     Numero totale operatori per anno    138   Numero totale …   146
+        #
+        # shapes `total_label, code, total_label, code` -- and `138`/`146` are
+        # `SHAPE_CODE`, because a bare three-digit integer reads as an identity
+        # (the same rule that keeps `016` out of `16`). So the band carried **no
+        # arithmetic at all**, and calling it a total put two operator counts into
+        # the `Valore in €` columns, where they were then compared against 7.4
+        # billion of euro: `assembled 7377491806.61 vs printed 138`.
+        #
+        # Requiring a number is the discriminator, and it is the conservative
+        # direction: a genuine total row prints its figures on the same line in
+        # every table measured. A label printed *alone* on its own line is a
+        # heading, and calling it a heading is more accurate than calling it a
+        # total it has no figures for.
+        if profile["numeric"]:
+            return KIND_TOTAL
     if profile["dates"]:
         return KIND_DATA
     # A band made only of prose, sitting in the wide columns, is a wrapped row
