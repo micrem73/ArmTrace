@@ -11,7 +11,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 ## Commands
 
 - Install: `pip install --user -r requirements.txt` (`python3 -m venv` fails on this host: no `ensurepip`)
-- Download sources: `bash In/download_185.sh In In/manifest.tsv`
+- Download sources: `bash In/download_185.sh In In/manifest.tsv` (checks page counts against the manifest; exits 1 on any problem). Skill: `download-sources`
 - Test: `python3 -m pytest tests/`
 - Lint: TBD
 - Extract one edition: `python3 Reports2PDFTables_2025.py` (both volumes; writes `Out/PDF/`, `Out/TRASH/`, `Out/manifest-2025.json`)
