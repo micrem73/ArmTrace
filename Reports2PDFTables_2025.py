@@ -46,9 +46,10 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-from lib import indice, ontology
+from lib import indice, ontology, pagecache
 from lib.emit import TRASH_DIR, dump_trash, report as render_report, split_pdf, table_plan
 from lib.pageio import (
+    page_text,
     appendix_code,
     scan_bookmarks,
     header_fingerprint,
@@ -220,7 +221,7 @@ def read_index(reader):
     """
     for page in reader.pages:
         try:
-            text = page.extract_text() or ""
+            text = page_text(page)
         except Exception:
             continue
         counts, codes = {}, set()
@@ -267,7 +268,7 @@ def detect_family(reader, vocabulary):
     step = max(1, len(reader.pages) // 25)
     for i in range(0, len(reader.pages), step):
         try:
-            text = reader.pages[i].extract_text() or ""
+            text = page_text(reader.pages[i])
         except Exception:
             continue
         for m in INLINE_CODE.finditer(text):
@@ -666,7 +667,7 @@ def body_starts(reader, vocabulary):
     norm = {normalise_digit_one(c) for c in vocabulary}
     for i, page in enumerate(reader.pages):
         try:
-            text = page.extract_text() or ""
+            text = page_text(page)
         except Exception:
             continue
         if is_garbled(text) or is_ciphered(text):
@@ -1570,6 +1571,7 @@ def main(argv=None):
             label = Path(report).stem
             try:
                 reader = PdfReader(report, strict=False)
+                pagecache.attach(reader, report)
             except Exception as exc:
                 print(f"{label}: apertura fallita: {exc}\n")
                 continue

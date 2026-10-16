@@ -5,5 +5,5 @@
 # for them: LFS would not stop them from being committed, it would only charge
 # them against GitHub's LFS storage/bandwidth quota.
 #
-# To obtain the files locally, follow reports_185_1990/SOURCES.md for the source
+# To obtain the files locally, follow In/SOURCES.md for the source
 # reports and re-run the pipeline scripts to regenerate Out/.

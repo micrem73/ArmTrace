@@ -287,12 +287,35 @@ def stamp_tokens(chunk):
 
 
 
+def _cached(page):
+    """The lib.pagecache entry for `page`, or None when its reader has none."""
+    ref = getattr(page, "indirect_reference", None)
+    cache = getattr(getattr(ref, "pdf", None), "_page_cache", None)
+    if not cache:
+        return None
+    entry = cache.get((ref.idnum, ref.generation))
+    if entry is not None and entry["error"]:
+        raise RuntimeError(entry["error"])
+    return entry
+
+
+def page_text(page):
+    """page.extract_text(), from the page cache when one is attached."""
+    entry = _cached(page)
+    if entry is not None:
+        return entry["text"]
+    return page.extract_text() or ""
+
+
 def read_page(page):
     """(text, stamp) for one page, from a single extraction pass.
 
     scan_headers needs the page text anyway and the visitor costs nothing
     measurable against it (90.6s against 91.8s for 2025 vol. I, 1048 pages).
     """
+    entry = _cached(page)
+    if entry is not None:
+        return entry["text"], (tuple(entry["stamp"]) if entry["stamp"] else None)
     found = []
     try:
         height = float(page.mediabox.height)
