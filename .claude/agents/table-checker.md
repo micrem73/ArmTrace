@@ -43,10 +43,12 @@ A check is `pass`, `fail`, `absent` or `unreadable`:
   the content instead (numbering, totals row, `Totale Complessivo`) and say so in `seen`.
 - `unreadable`: it IS printed but you cannot read it.
 
-A Dogane summary table ("Riepilogo per operatore / per paese") keeps its cover sheet as
-page 1, because its data pages print no code: there the file has one page more than the
-`Pag. N di X` stamp, and that is a pass when page 1 is the table's own cover (title + `TAB.`
-caption, no data). Any other table must not start with a cover.
+A table keeps its own cover sheet as page 1 only when its data pages print no `TAB.` code
+(some Dogane summaries, "Riepilogo per operatore / per paese"): then the file has one page
+more than the `Pag. N di X` stamp, and that is a pass. When the data pages print the code
+themselves, the cover is dropped and the file must equal the stamp. Judge by whether the
+first data page prints the code, not by the word "Riepilogo". Any other table must not
+start with a cover.
 
 Never guess a value you cannot see; never "correct" a value. The cut may be cropped to
 the table (relation exhibits): read the folio from `source-first`, the whole page.
