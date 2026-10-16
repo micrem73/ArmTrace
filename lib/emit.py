@@ -341,8 +341,13 @@ def table_list(readers, manifests, year, labels):
         for m_idx, manifest in enumerate(manifests):
             b = manifest.get("boundary", {}).get(table_key(tkey))
             if b:
-                notes.append(f"boundary V{m_idx + 1}:{b.get('pages')} "
-                             f"{b.get('authority')} total={b.get('total')}")
+                # `total` is how many pages the span was trimmed by at that
+                # boundary, not a page count the table declares.
+                notes.append(f"stopped before V{m_idx + 1}:{b.get('pages')} "
+                             f"({b.get('authority')}), trimmed {b.get('total')}")
+            for cover in manifest.get("covers") or []:
+                if (cover["authority"], cover["article"], cover["code"]) == tkey:
+                    notes.append(f"cover V{m_idx + 1}:{cover['page']} dropped")
             if tkey[2] in (manifest.get("singletons") or []):
                 notes.append(f"singleton V{m_idx + 1}")
         if any(manifests[i].get("folio_offset") is None for i, _s, _e in segments):

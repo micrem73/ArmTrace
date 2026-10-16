@@ -35,3 +35,16 @@ One line of decision, one line of reason. Newest last.
   `folio_offset` in the manifest. A volume with no legible folio falls back to the PDF index, and
   the table list notes it.
 - **The filename carries the table code, never its title.** Titles are not needed in the name or the list.
+
+## 2026-10-16 — pilot of the check loop
+
+- **A table's own cover sheet is not part of its file.** The Dogane open each table with a page
+  naming it ("Riesportazione (RE) / TAB. M - APPENDICE") and no data; the file holds only the pages
+  the table numbers, so its page count equals its `Pag. N di X` stamp. The cover goes to TRASH.
+  Detected by `pageio.is_table_cover()` after detection (`drop_covers`), so `appendix_code()` still
+  reads it. **Exception: the cover stays when it is the only page naming the table** — the Dogane
+  summaries ("Riepilogo per operatore/paese", e.g. `M1`, `O2APPENDICE`) print no caption on their
+  data pages, and a file must be identifiable from its own pages. 2025: 48 covers, 30 dropped, 18 kept.
+- **Checker results distinguish `absent` from `unreadable`.** MEF, Difesa annexes and relation
+  exhibits print no page stamp, and Dogane pages no ministry heading; a value the document does not
+  print is not doubt about the cut. Only `unreadable` (printed but illegible) makes a verdict UNSURE.

@@ -18,6 +18,56 @@ from lib.patterns import (
 )
 
 
+# The running header every page of the printed act carries, which is not part
+# of any table: the two chambers, the legislature line and the folio.
+RUNNING_HEADER = re.compile(r"Senato della Repubblica|Camera dei Deputati|LEGISLATURA")
+COVER_MAX_LINES = 8
+COVER_MAX_CHARS = 160
+
+
+def is_table_cover(text, code):
+    """True when the page is `code`'s own cover sheet, not a page of data.
+
+    The Dogane open every table with a page that names it and holds nothing
+    else -- "Riesportazione (RE) / TAB. M - APPENDICE", then the data stamped
+    "Pag. 1 di 17". Once the header is stripped such a page is a few short
+    lines ending in the table's own TAB. caption. pypdf shreds the caption
+    ("T" / "AB. M - APPENDICE"), so the test squeezes whitespace out first.
+    """
+    body = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    body = [ln for ln in body
+            if not RUNNING_HEADER.search(ln) and not PAGE_NUMBER_RE.match(ln)]
+    if not body or len(body) > COVER_MAX_LINES:
+        return False
+    if sum(len(ln) for ln in body) > COVER_MAX_CHARS:
+        return False
+    squeezed = _WS.sub("", "".join(body)).upper()
+    return squeezed.endswith(_tab_caption(code))
+
+
+def _tab_caption(code):
+    """'M' -> 'TAB.M', 'MAPPENDICE' -> 'TAB.M-APPENDICE', whitespace squeezed."""
+    if code.endswith(APPENDIX_SUFFIX) and code != APPENDIX_SUFFIX:
+        return f"TAB.{code[:-len(APPENDIX_SUFFIX)]}-{APPENDIX_SUFFIX}".upper()
+    return f"TAB.{code}".upper()
+
+
+def page_names_table(text, code):
+    """True when the page prints `code`'s own TAB. caption on a data page.
+
+    Not a prefix match: TAB.M must not be read off TAB.M1 or TAB.M-APPENDICE.
+    The Dogane summary tables ("Riepilogo per operatore") print no caption on
+    their data pages at all -- only the cover names them.
+    """
+    # Whitespace allowed between any two characters (pypdf shreds the caption),
+    # but not squeezed away: the caption must end where a word ends.
+    spaced = r"\s*".join(re.escape(ch) for ch in _tab_caption(code))
+    tail = r"(?![A-Z0-9])"
+    if not code.endswith(APPENDIX_SUFFIX):
+        tail += r"(?!\s*-\s*" + r"\s*".join(APPENDIX_SUFFIX) + ")"
+    return re.search(spaced + tail, text.upper()) is not None
+
+
 def is_allegato_page(text):
     """True for a Dogane allegato cover or summary page."""
     return bool(ALLEGATO_HEAD.search(_WS.sub("", text)))

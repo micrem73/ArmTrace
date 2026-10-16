@@ -50,6 +50,8 @@ from lib import indice, ontology, pagecache
 from lib.emit import (TRASH_DIR, dump_trash, report as render_report, split_pdf,
                       table_key, table_list, table_plan, write_table_list)
 from lib.pageio import (
+    is_table_cover,
+    page_names_table,
     page_text,
     appendix_code,
     scan_bookmarks,
@@ -1464,6 +1466,38 @@ def halves_join(volumes, earlier, later):
 
 
 
+def drop_covers(volumes):
+    """Start each table after its own cover sheet, so the file holds only the
+    pages the table numbers (decided 2026-10-16, DECISIONS.md) -- but only
+    when the first data page prints the table's caption itself. The Dogane
+    summaries ("Riepilogo per ...") print it on the cover alone; dropping
+    their cover would leave a file that names no table, so they keep it.
+
+    Runs after detection: the cover is still what names an appendix
+    (appendix_code reads it), it just is not exported. The page falls to
+    TRASH, the complement of the plan. Recorded in manifest["covers"].
+    """
+    for volume in volumes:
+        manifest, reader = volume["manifest"], volume["reader"]
+        covers = manifest.setdefault("covers", [])
+        for (authority, article, code), info in manifest["tables"].items():
+            if info.get("kept") is False or info["end"] <= info["start"]:
+                continue
+            try:
+                text = page_text(reader.pages[info["start"] - 1])
+            except Exception:
+                continue
+            try:
+                after = page_text(reader.pages[info["start"]])
+            except Exception:
+                continue
+            if is_table_cover(text, code) and page_names_table(after, code):
+                covers.append({"authority": authority, "article": article,
+                               "code": code, "page": info["start"]})
+                info["start"] += 1
+                info["pages"] = info["end"] - info["start"] + 1
+
+
 def resolve_repeats(volumes):
     """Settle a table code that was detected in more than one volume.
 
@@ -1616,6 +1650,7 @@ def main(argv=None):
                        volumes[idx]["label"], volumes[idx + 1]["label"])
 
         resolve_repeats(volumes)
+        drop_covers(volumes)
 
         for volume in volumes:
             manifest = volume["manifest"]
