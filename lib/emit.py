@@ -295,12 +295,29 @@ def table_key(tkey):
     return "/".join(x for x in (authority, article, code) if x)
 
 
+def printed_page(manifest, page):
+    """The page number printed on the paper for PDF page `page` (1-based).
+
+    The volume's folio offset (indice.folio_map, the mode of folio - page) is
+    stored on the manifest by step 1. A volume with no legible folio has None,
+    and the PDF index stands in; table_list() notes it.
+    """
+    offset = manifest.get("folio_offset")
+    return page + offset if offset is not None else page
+
+
 def _segments_text(segments):
     return "+".join(f"V{idx + 1}:{start}-{end}" for idx, start, end in segments)
 
 
 TABLE_LIST_FIELDS = ("key", "authority", "article", "code", "status", "source",
-                     "segments", "pages", "file", "notes")
+                     "segments", "printed", "pages", "file", "notes")
+
+
+def _printed_text(manifests, segments):
+    return "+".join(f"{printed_page(manifests[idx], start)}-"
+                    f"{printed_page(manifests[idx], end)}"
+                    for idx, start, end in segments)
 
 
 def table_list(readers, manifests, year, labels):
@@ -310,7 +327,9 @@ def table_list(readers, manifests, year, labels):
     writes from, so the list cannot name a page range the PDF does not have.
     Around them: copies resolve_repeats settled away (status `reprint`, no
     file) and codes a listing promised but no page carries (`listed-missing`).
-    Pages are PDF page indices, 1-based, per volume.
+    `segments` are PDF page indices (1-based, per volume), what a cut reads;
+    `printed` are the page numbers printed on the paper, what the filename
+    carries.
     """
     plan = table_plan(readers, manifests)
     rows = []
@@ -326,15 +345,19 @@ def table_list(readers, manifests, year, labels):
                              f"{b.get('authority')} total={b.get('total')}")
             if tkey[2] in (manifest.get("singletons") or []):
                 notes.append(f"singleton V{m_idx + 1}")
+        if any(manifests[i].get("folio_offset") is None for i, _s, _e in segments):
+            notes.append("no folio: printed = PDF index")
         rows.append({
             "key": table_key(tkey), "authority": tkey[0],
             "article": tkey[1] or "", "code": tkey[2],
             "status": "provisional" if info.get("provisional") else "ok",
             "source": info.get("source", ""),
             "segments": _segments_text(segments),
+            "printed": _printed_text(manifests, segments),
             "pages": sum(e - s + 1 for _i, s, e in segments),
-            "file": ontology.relative_path(tkey[0], tkey[1], tkey[2], year,
-                                           idx + 1, start, PDF_EXT),
+            "file": ontology.relative_path(
+                tkey[0], tkey[1], tkey[2], year, idx + 1,
+                printed_page(manifests[idx], start), PDF_EXT),
             "notes": "; ".join(sorted(set(notes))),
         })
     for idx, manifest in enumerate(manifests):
@@ -345,12 +368,15 @@ def table_list(readers, manifests, year, labels):
                     "article": tkey[1] or "", "code": tkey[2],
                     "status": "reprint", "source": info.get("source", ""),
                     "segments": _segments_text([(idx, info["start"], info["end"])]),
+                    "printed": _printed_text(manifests,
+                                             [(idx, info["start"], info["end"])]),
                     "pages": info["end"] - info["start"] + 1, "file": "",
                     "notes": "copy settled away by resolve_repeats"})
         for code in manifest.get("listed_missing") or []:
             rows.append({
                 "key": code, "authority": "", "article": "", "code": code,
                 "status": "listed-missing", "source": "listing", "segments": "",
+                "printed": "",
                 "pages": 0, "file": "", "notes": f"listed in {labels[idx]}"})
     return rows
 
@@ -418,7 +444,9 @@ def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
         # F1 is V1 p1039, not the vol. II half it continues into.
         first_idx, first_start, _first_end = segments[0]
         rel = ontology.relative_path(authority, article, code, year,
-                                     first_idx + 1, first_start, PDF_EXT)
+                                     first_idx + 1,
+                                     printed_page(manifests[first_idx], first_start),
+                                     PDF_EXT)
         path = Path(out_root, OUT_DIR, "PDF", rel)
         path.parent.mkdir(parents=True, exist_ok=True)
 

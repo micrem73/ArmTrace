@@ -1598,6 +1598,9 @@ def main(argv=None):
                       f"{type(exc).__name__}: {exc}\n")
                 del reader
                 continue
+            # The printed page number goes into every filename, so the offset
+            # is measured for every volume, not only those with an INDICE.
+            manifest["folio_offset"] = indice.folio_map(reader)[0]
             volumes.append({"label": label, "path": report, "reader": reader,
                             "manifest": manifest, "facts": facts})
 

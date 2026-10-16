@@ -26,3 +26,12 @@ One line of decision, one line of reason. Newest last.
   isolation; parallel code edits would collide. After a fix the list is rebuilt from cached page text
   and diffed, and only changed rows are re-cut and re-checked. 5 failed cycles → `HUMAN-REVIEW.md`.
   Years are not run in parallel.
+
+## 2026-10-16 — filename carries code and printed page
+
+- **The filename's `P` number is the page printed on the document, not the PDF index.**
+  It is the number a reader finds in the paper report. Computed as PDF index + the volume's folio
+  offset (`indice.folio_map`, the mode of folio − index; 2025: vol. I −4, vol. II +1038), stored as
+  `folio_offset` in the manifest. A volume with no legible folio falls back to the PDF index, and
+  the table list notes it.
+- **The filename carries the table code, never its title.** Titles are not needed in the name or the list.

@@ -2726,7 +2726,10 @@ def main(argv=None):
             for t in m_tables:
                 if t.get("code") and t.get("kept") is not False and t.get("start"):
                     key = (t.get("authority"), t.get("article") or "", t["code"])
-                    origin.setdefault(key, (volume_no, t["start"]))
+                    # The filename carries the PRINTED page: start + the
+                    # volume's folio offset, as emit.printed_page() writes it.
+                    offset = manifest.get("folio_offset") or 0
+                    origin.setdefault(key, (volume_no, t["start"] + offset))
             vocab = volume_vocabulary(hits, set(elenco), set(marks),
                                       manifest_codes)
 
