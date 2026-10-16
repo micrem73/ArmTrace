@@ -48,3 +48,15 @@ One line of decision, one line of reason. Newest last.
 - **Checker results distinguish `absent` from `unreadable`.** MEF, Difesa annexes and relation
   exhibits print no page stamp, and Dogane pages no ministry heading; a value the document does not
   print is not doubt about the cut. Only `unreadable` (printed but illegible) makes a verdict UNSURE.
+
+## 2026-10-16 — full 2025 check, review round 1
+
+- **A Difesa annex is filed under the article its own pages cite** (`pageio.cited_article`, step
+  `difesa_articles`). 2025: Annesso 2 → `DIFESA/A5/2` (Registro Nazionale delle Imprese, art. 5),
+  3A–3C → `A2C6`, Annesso 4 cites none → `DIFESA/4`, no article level rather than a guessed one.
+  The old rule filed every annex under `A2C6`.
+- **An exhibit cut off a shared page holds the exhibit only.** Its band starts 2 pt above its own
+  heading (the 20 pt margin took the last row of 8.6 into 8.7), and a ruled exhibit ends at its last
+  rule (Tabella 12 carried the paragraph introducing Tabella 13). Prose between exhibits belongs to
+  neither.
+- **Vol. I printed p. 1034 (the one-page "VALORE" summary before F1) stays untabled**, by review.

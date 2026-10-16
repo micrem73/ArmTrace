@@ -403,7 +403,35 @@ def page_fingerprint(page):
         box = []
     digest = hashlib.sha1(data)
     digest.update(repr(box).encode())
+    # A cut exhibit page is one "Do" of a form XObject, so its own content
+    # stream is the same line for every exhibit: two crops of equal size
+    # (8.3 and 8.7 of 2025) hashed alike. The forms' streams are the content.
+    for xobject in _form_xobjects(page):
+        try:
+            digest.update(xobject.get_data())
+        except Exception:
+            pass
     return digest.hexdigest()
+
+
+def _form_xobjects(page, depth=0):
+    """The form XObjects a page draws, nested ones included, in name order."""
+    found = []
+    try:
+        xobjects = page["/Resources"].get_object().get("/XObject")
+        xobjects = xobjects.get_object() if xobjects is not None else {}
+    except Exception:
+        return found
+    for name in sorted(xobjects):
+        try:
+            xobject = xobjects[name].get_object()
+        except Exception:
+            continue
+        if xobject.get("/Subtype") == "/Form":
+            found.append(xobject)
+            if depth < 3:
+                found.extend(_form_xobjects(xobject, depth + 1))
+    return found
 
 
 def read_page_stamped(page):

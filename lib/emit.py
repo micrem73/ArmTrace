@@ -120,9 +120,21 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
         # Charts are boundaries exactly as tables are, so a chart sharing the page
         # is cut away rather than left in the file: 12 pages of 2025 vol. I carry
         # both a table and a chart, and none of the charts is exported.
-        lo = headings[index][2] - CUT_MARGIN
-        hi = (headings[index + 1][2] - 2.0
+        #
+        # The band starts HEADING_GAP above its own heading, not CUT_MARGIN: the
+        # wider margin reached up into the exhibit printed just above, and put
+        # the "Totale per area" row of Tabella 8.6 into the 8.7 file (p42).
+        lo = headings[index][2] - HEADING_GAP
+        hi = (headings[index + 1][2] - HEADING_GAP
               if index + 1 < len(headings) else float(height))
+        # A table ends with its grid. Prose the ministry prints after it -- on
+        # p48 the paragraph introducing Tabella 13 under Tabella 12 -- belongs
+        # to neither exhibit, so a ruled band stops at its last rule. A band
+        # with no rules (a text-only exhibit) keeps its extent.
+        rules = [d["rect"] for d in canvas.get_drawings()
+                 if d["rect"].y0 >= lo and d["rect"].y1 <= hi]
+        if rules:
+            hi = min(hi, max(r.y1 for r in rules) + HEADING_GAP)
         for band in (pymupdf.Rect(0, 0, width, lo),
                      pymupdf.Rect(0, hi, width, height)):
             if band.is_empty or band.is_infinite:
@@ -975,3 +987,6 @@ _FRAME_ROTATE = {"upright": 0, "rot90": 270, "rot180": 180, "rot270": 90}
 # edge and the last column of digits butts against it, so a tight crop clips
 # the figure.
 CUT_MARGIN = 20.0
+# Gap kept between an exhibit band and what borders it: its own heading above,
+# the next heading or its last grid rule below.
+HEADING_GAP = 2.0

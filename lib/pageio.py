@@ -68,6 +68,26 @@ def page_names_table(text, code):
     return re.search(spaced + tail, text.upper()) is not None
 
 
+# A citation of an article of L. 185/90, in the spellings the Difesa annexes
+# print: "art. 5. Legge n.185/90", "Art.2 co.6 L. 185", "ART.2 comma 6 L.185",
+# "L. 185/90 art_2co6". The law number must sit within a short reach of the
+# article, so a stray "art." in prose does not count.
+ARTICLE_CITE = re.compile(
+    r"art[\s._]*(\d+)(?:[\s._]*(?:comma|co|c)[\s._]*(\d+))?[^\n]{0,25}?185"
+    r"|185\s*/\s*90[^\n]{0,15}?art[\s._]*(\d+)(?:[\s._]*(?:comma|co|c)[\s._]*(\d+))?",
+    re.IGNORECASE)
+
+
+def cited_article(text):
+    """'A5', 'A2C6' for the first L. 185/90 article the text cites, else None."""
+    m = ARTICLE_CITE.search(text)
+    if not m:
+        return None
+    article = m.group(1) or m.group(3)
+    comma = m.group(2) or m.group(4)
+    return f"A{article}" + (f"C{comma}" if comma else "")
+
+
 def is_allegato_page(text):
     """True for a Dogane allegato cover or summary page."""
     return bool(ALLEGATO_HEAD.search(_WS.sub("", text)))

@@ -50,6 +50,7 @@ from lib import indice, ontology, pagecache
 from lib.emit import (TRASH_DIR, dump_trash, report as render_report, split_pdf,
                       table_key, table_list, table_plan, write_table_list)
 from lib.pageio import (
+    cited_article,
     is_table_cover,
     page_names_table,
     page_text,
@@ -1466,6 +1467,37 @@ def halves_join(volumes, earlier, later):
 
 
 
+def difesa_articles(volumes):
+    """File each Difesa annex under the article its own pages cite.
+
+    classify_page() files every annex under A2C6, but 2025's Annesso 2 is the
+    Registro Nazionale delle Imprese, art. 5, and Annesso 4 cites no article at
+    all (decided 2026-10-16, DECISIONS.md). An annex citing none gets no article
+    level: DIFESA/4, never a guessed one. Order of the tables is kept.
+    """
+    for volume in volumes:
+        manifest, reader = volume["manifest"], volume["reader"]
+        rekeyed = {}
+        for (authority, article, code), info in manifest["tables"].items():
+            if authority == ontology.DIFESA:
+                cited = None
+                for p in range(info["start"], info["end"] + 1):
+                    try:
+                        cited = cited_article(page_text(reader.pages[p - 1]))
+                    except Exception:
+                        cited = None
+                    if cited:
+                        break
+                if cited != article:
+                    old = "/".join(x for x in (authority, article, code) if x)
+                    new = "/".join(x for x in (authority, cited, code) if x)
+                    if old in manifest.get("boundary", {}):
+                        manifest["boundary"][new] = manifest["boundary"].pop(old)
+                    article = cited
+            rekeyed[(authority, article, code)] = info
+        manifest["tables"] = rekeyed
+
+
 def drop_covers(volumes):
     """Start each table after its own cover sheet, so the file holds only the
     pages the table numbers (decided 2026-10-16, DECISIONS.md) -- but only
@@ -1651,6 +1683,7 @@ def main(argv=None):
 
         resolve_repeats(volumes)
         drop_covers(volumes)
+        difesa_articles(volumes)
 
         for volume in volumes:
             manifest = volume["manifest"]
