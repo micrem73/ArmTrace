@@ -15,6 +15,9 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - Test: `python3 -m pytest tests/`
 - Lint: TBD
 - Extract one edition: `python3 Reports2PDFTables_2025.py` (both volumes; writes `Out/PDF/`, `Out/TRASH/`, `Out/manifest-2025.json`)
+- Table list of a year: `python3 Reports2PDFTables_2025.py --dry-run --no-trash --tables Out/tables-2025.tsv` (~10 s with a warm page cache)
+- Cut one table: `python3 Reports2PDFTables_2025.py --only MEF/UE` (repeatable; key = `authority/[article/]code`, as in the list)
+- Fast test (table list only): `python3 -m pytest tests/test_table_list.py`; full test (all PDFs, ~1 min warm) `python3 -m pytest tests/`
 - Validate: `python3 VerifyTables.py --year 2025 --manifest In/manifest.tsv` (writes `Out/VERIFY/`)
 - Debug into a scratch tree with `--out <dir>`, so the last run's `Out/` is not overwritten.
 

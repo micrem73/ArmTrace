@@ -47,7 +47,8 @@ from pathlib import Path
 from pypdf import PdfReader
 
 from lib import indice, ontology, pagecache
-from lib.emit import TRASH_DIR, dump_trash, report as render_report, split_pdf, table_plan
+from lib.emit import (TRASH_DIR, dump_trash, report as render_report, split_pdf,
+                      table_key, table_list, table_plan, write_table_list)
 from lib.pageio import (
     page_text,
     appendix_code,
@@ -1551,7 +1552,17 @@ def main(argv=None):
     parser.add_argument("--no-trash", action="store_true",
                         help="non scrivere Out/TRASH/ (le pagine non attribuite "
                              "restano solo nel report)")
+    parser.add_argument("--tables", default="",
+                        help="scrivi l'elenco delle tabelle dell'anno (TSV) in "
+                             "questo percorso")
+    parser.add_argument("--only", action="append", default=[],
+                        help="scrivi solo questa tabella, es. MEF/UE o "
+                             "DOG/A1C2/N (ripetibile); niente TRASH")
     args = parser.parse_args(argv)
+    if args.manifest:
+        # One file per run: appending across runs piled every run's volumes
+        # into the same JSONL, and a reader took the first copy it met.
+        Path(args.manifest).unlink(missing_ok=True)
 
     jobs = group_by_year(collect_jobs(args))
     n_volumes = sum(len(v) for v in jobs.values())
@@ -1651,8 +1662,20 @@ def main(argv=None):
         paths = [v["path"] for v in volumes]
         manifests = [v["manifest"] for v in volumes]
         plan = table_plan(readers, manifests)
+        if args.tables:
+            rows = table_list(readers, manifests, year,
+                              [v["label"] for v in volumes])
+            target = write_table_list(args.tables, rows)
+            print(f"    table list : {len(rows)} row(s) in {target}")
+        only = set(args.only) or None
+        if only:
+            known = {table_key(k) for k in plan}
+            unknown = sorted(only - known)
+            if unknown:
+                print(f"    --only     : not in the plan: {', '.join(unknown)}")
         if not args.dry_run and plan:
-            written = split_pdf(readers, manifests, out_root, year, paths)
+            written = split_pdf(readers, manifests, out_root, year, paths,
+                                only=only)
             print(f"    wrote      : {len(written)} PDF in "
                   f"{Path(out_root, OUT_DIR, 'PDF')}/<authority>/"
                   f"[<articolo>/]<tabella>{year}.PDF")
@@ -1661,8 +1684,8 @@ def main(argv=None):
         # on every run -- including --dry-run -- because coverage is the number a
         # reader most wants from a run whose output cannot yet be trusted; only
         # the files are conditional.
-        if args.no_trash:
-            print("    trash       : skipped (--no-trash)")
+        if args.no_trash or only:
+            print("    trash       : skipped (--no-trash / --only)")
         else:
             trashed = dump_trash(volumes, plan, out_root, year,
                                  write=not args.dry_run)

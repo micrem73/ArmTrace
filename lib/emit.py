@@ -289,7 +289,85 @@ def table_plan(readers, manifests):
 
 
 
-def split_pdf(readers, manifests, out_root, year, paths=None):
+def table_key(tkey):
+    """'MEF/UE', 'DOG/A1C2/N': the (authority, article, code) key as one string."""
+    authority, article, code = tkey
+    return "/".join(x for x in (authority, article, code) if x)
+
+
+def _segments_text(segments):
+    return "+".join(f"V{idx + 1}:{start}-{end}" for idx, start, end in segments)
+
+
+TABLE_LIST_FIELDS = ("key", "authority", "article", "code", "status", "source",
+                     "segments", "pages", "file", "notes")
+
+
+def table_list(readers, manifests, year, labels):
+    """One row per table of the year, in the order a person reads the volumes.
+
+    The rows for written tables come from table_plan(), the plan split_pdf()
+    writes from, so the list cannot name a page range the PDF does not have.
+    Around them: copies resolve_repeats settled away (status `reprint`, no
+    file) and codes a listing promised but no page carries (`listed-missing`).
+    Pages are PDF page indices, 1-based, per volume.
+    """
+    plan = table_plan(readers, manifests)
+    rows = []
+    for tkey, segments in plan.items():
+        idx, start, _end = segments[0]
+        info = manifests[idx]["tables"].get(tkey) or \
+            manifests[segments[-1][0]]["tables"].get(tkey, {})
+        notes = []
+        for m_idx, manifest in enumerate(manifests):
+            b = manifest.get("boundary", {}).get(table_key(tkey))
+            if b:
+                notes.append(f"boundary V{m_idx + 1}:{b.get('pages')} "
+                             f"{b.get('authority')} total={b.get('total')}")
+            if tkey[2] in (manifest.get("singletons") or []):
+                notes.append(f"singleton V{m_idx + 1}")
+        rows.append({
+            "key": table_key(tkey), "authority": tkey[0],
+            "article": tkey[1] or "", "code": tkey[2],
+            "status": "provisional" if info.get("provisional") else "ok",
+            "source": info.get("source", ""),
+            "segments": _segments_text(segments),
+            "pages": sum(e - s + 1 for _i, s, e in segments),
+            "file": ontology.relative_path(tkey[0], tkey[1], tkey[2], year,
+                                           idx + 1, start, PDF_EXT),
+            "notes": "; ".join(sorted(set(notes))),
+        })
+    for idx, manifest in enumerate(manifests):
+        for tkey, info in manifest["tables"].items():
+            if info.get("kept") is False:
+                rows.append({
+                    "key": table_key(tkey), "authority": tkey[0],
+                    "article": tkey[1] or "", "code": tkey[2],
+                    "status": "reprint", "source": info.get("source", ""),
+                    "segments": _segments_text([(idx, info["start"], info["end"])]),
+                    "pages": info["end"] - info["start"] + 1, "file": "",
+                    "notes": "copy settled away by resolve_repeats"})
+        for code in manifest.get("listed_missing") or []:
+            rows.append({
+                "key": code, "authority": "", "article": "", "code": code,
+                "status": "listed-missing", "source": "listing", "segments": "",
+                "pages": 0, "file": "", "notes": f"listed in {labels[idx]}"})
+    return rows
+
+
+def write_table_list(path, rows):
+    """Write table_list() rows as TSV, replacing any previous list."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["\t".join(TABLE_LIST_FIELDS)]
+    for row in rows:
+        lines.append("\t".join(str(row[f]).replace("\t", " ")
+                               for f in TABLE_LIST_FIELDS))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
     """Write one PDF per table under the ministry/article tree.
 
         <out_root>/PDF/MAE/A12023.PDF
@@ -315,8 +393,13 @@ def split_pdf(readers, manifests, out_root, year, paths=None):
     copy settled away by resolve_repeats is skipped: one table, one file.
 
     The plan comes from table_plan(), which dump_trash() reads as well.
+
+    `only`, a set of table_key() strings, writes just those tables: the cut one
+    subagent asks for, from the same plan a full run would use.
     """
     plan = table_plan(readers, manifests)
+    if only is not None:
+        plan = {k: v for k, v in plan.items() if table_key(k) in only}
 
     # Every relation exhibit is cut, not only the ones sharing a page. An exhibit
     # that has a page to itself is no cleaner for it: the ministry writes the
