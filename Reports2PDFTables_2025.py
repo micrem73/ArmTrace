@@ -1539,7 +1539,7 @@ def main(argv=None):
     parser.add_argument("--report", action="append", default=[],
                         help="percorso esplicito del PDF (ripetibile)")
     parser.add_argument("--all", action="store_true",
-                        help="processa ogni volume in reports_185_1990/")
+                        help="processa ogni volume in In/")
     parser.add_argument("--base", default="", help="radice dei percorsi (default: .)")
     parser.add_argument("--out", default="",
                         help=f"radice di output (default: <base>/{OUT_DIR})")

@@ -135,7 +135,7 @@ from lib.pageio import (
 # is how a rename quietly stops being checked.
 from lib import ontology
 
-REPORTS_DIR = "reports_185_1990"
+REPORTS_DIR = "In"
 OUT_DIR = "Out"
 PDF_EXT = ".PDF"
 

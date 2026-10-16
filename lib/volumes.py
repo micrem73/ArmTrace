@@ -31,7 +31,7 @@ def parse_volume(stem):
 
 
 def report_year(report_path):
-    """Reporting year from the reports_185_1990/<anno>/ path."""
+    """Reporting year from the In/<anno>/ path."""
     m = re.search(rf"{REPORTS_DIR}[/\\](\d{{4}})", str(report_path))
     if not m:
         raise ValueError(
@@ -59,7 +59,7 @@ def detect_year(reports_dir=REPORTS_DIR):
 
 
 def find_report(year, volume, reports_dir=REPORTS_DIR):
-    """The PDF for the requested volume inside reports_185_1990/<anno>/."""
+    """The PDF for the requested volume inside In/<anno>/."""
     folder = Path(reports_dir, year)
     if not folder.is_dir():
         raise SystemExit(f"Cartella non trovata: {folder}")

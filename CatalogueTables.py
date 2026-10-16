@@ -52,7 +52,7 @@ What is stored per (authority, article, code, year)
 Ordering is deliberate and follows the same shape as the rest of the pipeline:
 `lib/geometry.py` knows about glyphs, `lib/grammar.py` knows about printed
 values and bands, this script knows about files and ministries, and nothing below
-knows about `reports_185_1990/` paths.
+knows about `In/` paths.
 
 Usage:
     ./CatalogueTables.py --year 2025
