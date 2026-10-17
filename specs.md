@@ -11,15 +11,15 @@ ArmTrace ingests the official Italian arms export reports published under Law 18
 ```
 Official reports (PDF), one folder per year (In/)
         |
-  [1] Table list extraction: which tables exist, per year
+  [1] Table list: which tables exist, per year (Out/<year>/tablesindex.sqlite)
         |
-  [2] Table extraction (subagents): one PDF per table (Out/)
+  [2] Split: one PDF per table, for review (Out/<year>/PDF/), plus trash
         |
-  [3] Validation (subagents): up to 5 review cycles, then human review
+  [3] Validation (subagents): escalation by kind of failure, then human review
         |
-  [4] Table PDFs to rows   [decide: not yet defined]
+  [4] SQL extraction: reads the original volumes in In/ through tablesindex.sqlite
         |
-  [5] SQL database
+  [5] SQL database (SQLite, plus a plain .sql dump)
         |
   [6] MCP server (read-only query tools)
         |
@@ -29,30 +29,32 @@ Official reports (PDF), one folder per year (In/)
         |
   [9] Visual outputs (later phase)
 ```
-
 ## 3. Import pipeline
 
 Covers stages [1] to [3]. Initial coverage: 2025 first, then each earlier year down to 2016.
 
 - **E1.** Keep each original report file untouched in `In/<year>/`.
-- **E2.** For each year, list the tables that exist, looking into every volume of that year. For each table record the start and end page, the authority and the table name. Sources for the list are the index and any other summary that precedes the tables. Some listed tables do not exist. Some tables exist without being listed, especially in the introduction of volume 1. The list has to account for both cases.
-- **E3.** Using subagents, extract every table into a single PDF per table, written to `Out/<authority>/[<lawcode>/]<TableCode><Year>V<Volume>P<PageNumber>`. Generated files are never hand-edited. The file name carries the table's provenance: authority, law code, table, year, volume, page.
-- **E4.** Using subagents, validate every extraction: the PDF name matches the table name, the authority and the law code it refers to; the number of pages of the PDF matches the number of pages the table states it has; the table name in captions, footer or header matches the file name.
-- **E5.** A table that fails validation after 5 review cycles is explicitly sent to human review. Never drop or silently correct a value. Never invent one.
+- **E2.** For each year, list the tables that exist, looking into every volume of that year, once per year (`Out/<year>/tablesindex.sqlite`). For each table record the start and end page, the authority and the printed table code. Sources for the list are the index and any other summary that precedes the tables. Some listed tables do not exist. Some tables exist without being listed, especially in the introduction of volume 1. The list has to account for both cases.
+- **E3.** Cut every table into a single PDF with the deterministic splitter, written to `Out/<year>/PDF/<authority>/[<lawcode>/]<TableCode><Year>V<Volume>P<PageNumber>.PDF`; subagents check each one as soon as it is cut. `TableCode` is the printed code (`UE`, `F1`), not the title; `PageNumber` is the page number printed at the table's first page, not the PDF page index. Generated files are never hand-edited. The split PDFs are for review: each carries its provenance (source file, SHA-256, pages) in its metadata.
+- **E4.** Using subagents, validate every extraction: the PDF name matches the table code, the authority, the law code and the printed start page it refers to; the number of pages of the PDF matches the number of pages the table states it has; the table name in captions, footer or header matches the file name.
+- **E5.** Escalation is by kind of failure, not by count. A convention question (what counts as part of a table, where it is filed, where it ends) goes to human review at once; a code defect is fixed, and goes to human review if it still fails after 2 fixes; a checker doubt gets a second, independent checker, and goes to human review if the two disagree. Never drop or silently correct a value. Never invent one.
 - **E6.** Layout differences between editions live in per-edition code. A new edition shares most of the codebase and adds only the code specific to that year.
 - **E7.** The run is reproducible: the same input and configuration give the same PDF files.
-- **E8.** Work order: pilot on 2025, then validation review by the maintainer, then each earlier year in decreasing order down to 2016.
+- **E8.** Work order: pilot on 2025, then validation review by the maintainer, then each earlier year in decreasing order down to 2016. Years are not run in parallel.
+- **E9.** Every part of every source page ends up in exactly one place: a table file, a table's cut-out part, or the trash. A page check enforces it at the end of every run.
 
 ## 4. Database
 
-Stages [4] and [5]. **[decide]** How validated table PDFs become rows is not defined yet: method, tools and whether this is part of the import pipeline. The requirements below are the ones that already hold for the database itself.
+Stages [4] and [5]. SQL extraction reads the original volumes in `In/`, locating each table through `Out/<year>/tablesindex.sqlite`, never the split PDFs: those drop the tagged table structure, page labels, bookmarks and metadata of the source. Order of work: catalogue the table shapes across years, diff them, then the schema, then the extractor with its verification; the choice of reading tool comes last (DECISIONS.md).
 
-- **D1.** SQL database with a documented, versioned schema. **[decide]** Database engine.
-- **D2.** Every row remains traceable to the table PDF it came from, identified by its file name (E3).
+- **D1.** SQLite, with a plain `.sql` dump as the deliverable; documented, versioned schema. Decided, not built: one lossless cell table (`stg_cell`) plus curated projections.
+- **D2.** Every row remains traceable to its source: report file, volume, printed page and table key.
 - **D3.** Entities that appear across years (companies, recipient countries, banks, authorities) are normalised, with the original spelling kept. **[decide]** How aggressive normalisation should be and how to record uncertain matches.
-- **D4.** Monetary values keep the original currency and unit as published. **[decide]** Whether to add inflation-adjusted or converted values.
+- **D4.** Monetary values keep the original currency and unit as published, parsed exactly (Italian convention, decimal, never floating point); a printed dash is empty, never zero. **[decide]** Whether to add inflation-adjusted or converted values.
 - **D5.** The schema and a data dictionary are published with the code.
 - **D6.** Data releases are versioned, so a published answer can be reproduced against the version it used.
+- **D7.** The tables' own printed totals are the extraction's check: the sum of the rows must match the printed total.
+- **D8.** Text printed in fonts with no character map is recovered glyph by glyph, only where the glyph's identity is certain. A glyph that cannot be named stays undecoded and is carried into the database flagged.
 
 ## 5. MCP server
 
@@ -113,7 +115,7 @@ Stages [4] and [5]. **[decide]** How validated table PDFs become rows is not def
 **[decide]** Order and timing. A reasonable sequence, following the dependencies above:
 
 1. Table list, table PDFs and validation for the 2025 pilot, then each earlier year down to 2016 (E).
-2. Table PDFs to rows and the database (D) **[decide]**.
+2. SQL extraction from the original volumes and the database (D).
 3. MCP server and basic query loop with visible SQL (M, L).
 4. Test set and evaluation (Q).
 5. Interface for non-technical users (I).

@@ -12,7 +12,7 @@ The effect is that oversight exists on paper only. Institutions are supposed to 
 
 ## Goals
 
-- Extract each table of the official export reports into its own validated PDF, then into a clean, versioned SQL database.
+- Find every table of the official export reports, cut each into its own validated PDF for review, and extract it from the original report into a clean, versioned SQL database.
 - Expose that database through an MCP server so an LLM can translate natural-language questions into SQL, run them, and return the results with the underlying query visible.
 - Keep every answer traceable to its source report, year and page.
 - Stay usable by non-technical people working at a local scale: a newsroom, a campaign, a municipal council.
@@ -36,6 +36,8 @@ The effect is that oversight exists on paper only. Institutions are supposed to 
 ## Constraints
 
 - The source reports are PDFs with layouts that change over time, so the import pipeline needs shared code plus year-specific code, and every extracted table has to be validated.
+- Part of some reports is printed in fonts with no character map (the MAE annex, 2020 and 2023–2025): the text has to be recovered glyph by glyph, with no guessing.
+- Reports before 2011 have no text layer; OCR is out of scope.
 - Natural-language-to-SQL can return wrong queries that look right; the system needs guardrails and visible queries.
 - Open-source, with limited and project-based funding.
 
@@ -58,5 +60,4 @@ The effect is that oversight exists on paper only. Institutions are supposed to 
 - How to evaluate the accuracy of generated SQL, and what error rate is acceptable.
 - Which visual analytics approaches fit non-expert users best.
 - Governance and hosting once the project outgrows a single maintainer.
-- Whether reports older than 2016 can be reliably extracted.
-- How validated table PDFs become rows in the database.
+- Whether reports older than 2016 can be reliably extracted: 2001–2010 have no text layer, and in 2014 vol. I and 2015 only one table is found so far.

@@ -8,31 +8,32 @@ Standing rules for the import pipeline (table list, table PDFs, validation, huma
 
 - Work one phase at a time. Finish it, run its checks, and stop for review before starting the next.
 - If the work departs from this plan, update `plan.md` in the same commit.
+- Where the work stands is kept in `CLAUDE.md` ("Where the work stands"), not here.
 
 ## Repository layout
 
 ```
-armtrace/
-  In/               # original report PDFs, untouched, one folder per year (E1)
-  Out/              # pipeline output: one PDF per table, not hand-edited (E3)
-                    #   <authority>/[<lawcode>/]<TableCode><Year>V<Volume>P<PageNumber>
-  extraction/       # shared pipeline code plus per-year code (E6)
-  .claude/agents/   # subagents for table extraction and validation (E3, E4)
-  db/               # schema, migrations, data dictionary (D1, D5)
-  mcp_server/       # read-only MCP server (M1-M7)
-  llm/              # prompts, query loop, guardrails (L1-L7)
-  eval/             # question set with known SQL and results (Q1-Q4)
-  docs/
-  CLAUDE.md
-  intent.md
-  specs.md
-  plan.md
-  DECISIONS.md
+ArmTrace/
+  In/<year>/          # original report PDFs, untouched (E1); manifest.tsv, download_185.sh
+  Out/<year>/         # PDF/ tables, TRASH/, review.html, tablesindex.sqlite (E2, E3)
+  Out/.work/          # cache, table list, verdicts: regenerable, never read by people
+  lib/                # shared code: engine.py (step-1 engine), pageio, glyphs, ...
+  lib/data/           # versioned data files (glyph map, glyph decisions)
+  editions/           # y<year>.py: what one edition differs in (E6)
+  tools/              # recheck, build_index, page_check, review_pages, build_glyphmap
+  tests/              # traps, golden rows per verified year, evals
+  .claude/agents/     # table-checker subagent (E4)
+  .claude/skills/     # check-year, download-sources
+  Reports2PDFTables.py, run_year.py, VerifyTables.py, CatalogueTables.py
+  CLAUDE.md  DECISIONS.md  README.md  intent.md  specs.md  plan.md
+  # later: db/, mcp_server/, llm/, eval/ for Phases 3-6
 ```
 
 Adjust if the language or tooling chosen makes another layout more natural, and note the change in `DECISIONS.md`.
 
-## Phase 0: Setup
+## Phase 0: Setup (done)
+
+Python 3.10, ruff, pytest; `make check` is the one "done" command. Licence still open (step 4).
 
 1. Initialise the repository with the layout above, a README that points to `intent.md`, `specs.md` and this file, and a contribution guide stub (O3).
 2. Set up the language toolchain, linting, formatting and a test runner. **[decide]** language and runner if not already chosen.
@@ -42,35 +43,38 @@ Adjust if the language or tooling chosen makes another layout more natural, and 
 
 **Done when:** a fresh clone installs, lints and runs an empty test suite with one documented command each.
 
-## Phase 1: Import pipeline, pilot 2025 (E1-E5, E7)
+## Phase 1: Import pipeline, pilot 2025 (E1-E5, E7, E9) (done: tag `2025-clean`)
 
 1. Place the 2025 report files in `In/2025/` and record where they were obtained (E1).
 2. Write the table list extractor. Across every volume of the year, list each table with start and end page, authority and table name, using the index and any other summary. Mark tables that are listed but cannot be found, and tables that exist but are not listed, especially in the introduction of volume 1 (E2).
 3. Write the table extractor. Using subagents, extract every table into a single PDF at `Out/<authority>/[<lawcode>/]<TableCode><Year>V<Volume>P<PageNumber>` (E3).
-4. Add validation using subagents: file name against table name, authority and law code; PDF page count against the pages the table states; table name in captions, footer or header against the file name (E4). Tables that still fail after 5 review cycles go to human review. Nothing is dropped, silently corrected or invented (E5).
-5. Check that a re-run on the same input gives the same PDF files (E7).
+4. Add validation using subagents: file name against table code, authority, law code and printed start page; PDF page count against the pages the table states; table code in captions, footer or header against the file name (E4). Failures escalate by kind: convention questions to the human at once, code defects after 2 failed fixes, checker doubts when a second checker disagrees (E5). Nothing is dropped, silently corrected or invented.
+5. Check that a re-run on the same input gives the same PDF files (E7), and that every part of every page lands in exactly one output (E9).
 6. Stop and review with the maintainer: show the validation report next to the original pages.
 
 **Done when:** the 2025 table list exists, every table that exists has its PDF, validation passes or the remaining failures are listed for human review, a re-run reproduces the same files, and the maintainer has reviewed the report against the original pages.
 
-## Phase 2: Earlier years, 2024 to 2016 (E6, E8)
+## Phase 2: Earlier years, 2024 to 2016 (E6, E8) (in progress)
 
-1. Add one year at a time in decreasing order. Shared code first, then only the code specific to that year (E6).
+1. Add one year at a time in decreasing order. Shared code first (`lib/engine.py`), then only the code specific to that year (`editions/y<year>.py`, overriding only the functions `engine.OVERRIDES` lists) (E6). The golden tests of the verified years say whether a shared change broke one.
 2. Note every layout change that needed year-specific code. Reduce those over time.
 3. Run the same validation and human review loop for each year.
 
 **Done when:** every year from 2016 to 2025 has its table list, its table PDFs and a validation report, and the maintainer has reviewed each report.
 
-## Phase 3: Table PDFs to database (D)
+## Phase 3: SQL extraction and database (D)
 
-**[decide]** The route from validated table PDFs to rows is not defined yet. Settle it with the maintainer before writing code, and record the decision in `DECISIONS.md`.
+The route is decided (DECISIONS.md): the extractor reads the original volumes in `In/`, finding each table through `Out/<year>/tablesindex.sqlite`, never the split PDFs. SQLite, with a plain `.sql` dump as the deliverable.
 
-1. Design the first schema from the table types found in Phases 1 and 2. Each row must remain traceable to its table PDF by file name (D1, D2). Version the schema with migrations. **[decide]** database engine.
-2. Load the validated tables. Anything that cannot be read with confidence is flagged, not guessed.
-3. Normalise recurring entities (companies, recipient countries, banks, authorities), keeping the original spelling (D3). Record uncertain matches as uncertain. **[decide]** matching policy, ask before going beyond exact matches.
-4. Write the data dictionary (D5) and add data release versioning (D6).
+1. Catalogue the table shapes of every verified year (`CatalogueTables.py`: rotation, rules, headers, record grammar), then diff them across years.
+2. Only then write the schema: one lossless cell table (`stg_cell`) plus curated projections; each row traceable to source file, volume, printed page and table key (D1, D2). Version it with migrations.
+3. Write the extractor with its verification: printed totals against the sum of the rows, row counts, text coverage against the source page (D7). Values parsed exactly (D4). Anything that cannot be read with confidence is recorded as unknown with a reason, not guessed.
+4. MAE text goes through `lib/glyphs.py`; undecoded glyphs are carried flagged (D8).
+5. Compare reading tools last, against the ground truth the verification gives.
+6. Normalise recurring entities (companies, recipient countries, banks, authorities), keeping the original spelling (D3). Record uncertain matches as uncertain. **[decide]** matching policy, ask before going beyond exact matches.
+7. Write the data dictionary (D5) and add data release versioning (D6).
 
-**Done when:** the validated tables load into the database, each row points to its source PDF, and the maintainer has checked a sample against the source pages.
+**Done when:** the tables of the verified years load into the database, each row points to its source page, the printed totals match, and the maintainer has checked a sample against the source pages.
 
 ## Phase 4: MCP server (M)
 
@@ -125,9 +129,9 @@ Do not start before the maintainer confirms scope. **[decide]**
 - No new **[decide]** item resolved without a recorded decision.
 - Docs updated: README commands, `DECISIONS.md`, and the data dictionary once it exists.
 
-## Questions for the maintainer before starting
+## Questions for the maintainer
 
-1. Language and stack preferences?
-2. Are the report PDFs for 2016 to 2025 already collected, and where do they come from?
-3. Which domain collaborators can review the validation reports and help build the question set?
-4. How should validated table PDFs become rows in the database?
+Answered: Python, SQLite (DECISIONS.md); sources 2001–2025 come from the official URLs in `In/manifest.tsv`; rows come from the original volumes through `tablesindex.sqlite`.
+
+1. Which domain collaborators can review the validation reports and help build the question set?
+2. Licence for the code and for the data (O1, O2).
