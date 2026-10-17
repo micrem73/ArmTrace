@@ -101,47 +101,15 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
 
         wanted = printed_number(keep_code, manifest, volume_index)
         headings = exhibit_headings(canvas)
-        numbers = [h[1] for h in headings]
-        if wanted is None or wanted not in numbers:
+        band = exhibit_band(canvas, headings, wanted, height)
+        if band is None:
             return False
-        index = numbers.index(wanted)
-
-        # A band runs from its OWN heading down to the next heading, and the last
-        # band runs to the foot of the page. Starting at the previous heading
-        # instead -- which is the obvious thing to write, and what a first
-        # attempt did -- keeps the *previous* exhibit's body, because a body sits
-        # between its heading and the next one.
-        #
-        # Starting at ZERO, which is what this did next, is wrong for the same
-        # reason one step further out: the ministry prints the narrative that
-        # introduces an exhibit onto the same page, above it. p63 carried 17 lines
-        # of section 8.3.2 ahead of Tabella 21, and p45 six ahead of Tabella 9.
-        # The table is what is wanted, so the band starts at the heading.
-        #
-        # Charts are boundaries exactly as tables are, so a chart sharing the page
-        # is cut away rather than left in the file: 12 pages of 2025 vol. I carry
-        # both a table and a chart, and none of the charts is exported.
-        #
-        # The band starts HEADING_GAP above its own heading, not CUT_MARGIN: the
-        # wider margin reached up into the exhibit printed just above, and put
-        # the "Totale per area" row of Tabella 8.6 into the 8.7 file (p42).
-        lo = headings[index][2] - HEADING_GAP
-        hi = (headings[index + 1][2] - HEADING_GAP
-              if index + 1 < len(headings) else float(height))
-        # A table ends with its grid. Prose the ministry prints after it -- on
-        # p48 the paragraph introducing Tabella 13 under Tabella 12 -- belongs
-        # to neither exhibit, so a ruled band stops at its last rule. A band
-        # with no rules (a text-only exhibit) keeps its extent.
-        rules = [d["rect"] for d in canvas.get_drawings()
-                 if d["rect"].y0 >= lo and d["rect"].y1 <= hi]
-        if rules:
-            hi = min(hi, table_foot(canvas, max(r.y1 for r in rules), hi)
-                     + HEADING_GAP)
-        for band in (pymupdf.Rect(0, 0, width, lo),
-                     pymupdf.Rect(0, hi, width, height)):
-            if band.is_empty or band.is_infinite:
+        lo, hi = band
+        for cut in (pymupdf.Rect(0, 0, width, lo),
+                    pymupdf.Rect(0, hi, width, height)):
+            if cut.is_empty or cut.is_infinite:
                 continue
-            canvas.add_redact_annot(band, fill=False)
+            canvas.add_redact_annot(cut, fill=False)
 
         # The volume furniture goes with the prose. On a rotated page it runs
         # vertically while the table runs horizontally, so it sits INSIDE the
@@ -220,6 +188,103 @@ def table_foot(page, grid_bottom, limit):
             break
         bottom = max(bottom, y1)
     return bottom
+
+
+def exhibit_band(canvas, headings, wanted, height):
+    """(lo, hi) of exhibit `wanted` ('8.3') on an UPRIGHT canvas, or None.
+
+    A band runs from its OWN heading down to the next heading; the last band
+    runs to the foot of the page. Starting at the previous heading keeps the
+    previous exhibit's body; starting at zero keeps the narrative the ministry
+    prints above an exhibit (p63: 17 lines of 8.3.2 ahead of Tabella 21).
+    Charts are headings like tables, so a chart sharing the page is a boundary.
+
+    The band starts HEADING_GAP above its own heading, not CUT_MARGIN: the
+    wider margin reached into the exhibit above and put 8.6's "Totale per
+    area" row into the 8.7 file (p42). A ruled exhibit ends at its grid, or at
+    the note printed under it (table_foot): prose after a table -- p48, the
+    paragraph introducing Tabella 13 -- belongs to neither exhibit.
+
+    Shared by cut_exhibit_page (keep the band) and cut_leftover_page (keep
+    everything but the bands), so the two cannot disagree on a boundary.
+    """
+    numbers = [h[1] for h in headings]
+    if wanted is None or wanted not in numbers:
+        return None
+    index = numbers.index(wanted)
+    lo = headings[index][2] - HEADING_GAP
+    hi = (headings[index + 1][2] - HEADING_GAP
+          if index + 1 < len(headings) else float(height))
+    rules = [d["rect"] for d in canvas.get_drawings()
+             if d["rect"].y0 >= lo and d["rect"].y1 <= hi]
+    if rules:
+        hi = min(hi, table_foot(canvas, max(r.y1 for r in rules), hi)
+                 + HEADING_GAP)
+    return lo, hi
+
+
+def cut_leftover_page(volume_path, page_no, codes, out_path, manifest,
+                      volume_index):
+    """Write what is left of a cut page once its exported exhibits are taken.
+
+    Every part of every page lives in exactly one output (decided 2026-10-17):
+    the exhibit bands go to their table files, and this -- the narrative, the
+    charts, the running header -- goes to the volume's trash file. The page is
+    turned upright as for the cut, and each exhibit band is removed only across
+    the exhibit's own width, so the volume furniture printed along the edge of a
+    rotated page stays here. Returns False when nothing is left.
+    """
+    libs = _pymupdf()
+    if libs is None:
+        return False
+    pymupdf, geometry = libs
+    document = pymupdf.open(volume_path)
+    try:
+        source = document[page_no - 1]
+        frame = geometry.Frame.for_page(source)
+        turn = _FRAME_ROTATE.get(frame.name)
+        if turn is None:
+            return False
+        if turn in (90, 270):
+            width, height = source.rect.height, source.rect.width
+        else:
+            width, height = source.rect.width, source.rect.height
+        work = pymupdf.open()
+        canvas = work.new_page(width=width, height=height)
+        canvas.show_pdf_page(pymupdf.Rect(0, 0, width, height), document,
+                             page_no - 1, rotate=turn)
+        headings = exhibit_headings(canvas)
+        drawings = [d["rect"] for d in canvas.get_drawings()]
+        for code in codes:
+            band = exhibit_band(canvas, headings,
+                                printed_number(code, manifest, volume_index),
+                                height)
+            if band is None:
+                continue
+            lo, hi = band
+            inside = [r for r in drawings if r.y0 >= lo and r.y1 <= hi]
+            x0 = min((r.x0 for r in inside), default=0) - CUT_MARGIN
+            x1 = max((r.x1 for r in inside), default=width) + CUT_MARGIN
+            # The heading and any note may run wider than the grid.
+            for block in canvas.get_text("dict").get("blocks", []):
+                for line in block.get("lines", []):
+                    bx0, by0, bx1, by1 = line["bbox"]
+                    if lo <= by0 and by1 <= hi and (bx1 - bx0) < width * 0.9 \
+                            and line.get("dir", (1, 0))[0] > 0.5:
+                        x0, x1 = min(x0, bx0 - 2), max(x1, bx1 + 2)
+            canvas.add_redact_annot(pymupdf.Rect(max(0, x0), lo,
+                                                 min(width, x1), hi), fill=False)
+        canvas.apply_redactions(
+            images=pymupdf.PDF_REDACT_IMAGE_NONE,
+            graphics=pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
+            text=pymupdf.PDF_REDACT_TEXT_REMOVE)
+        if not canvas.get_text("words") and not canvas.get_images():
+            return False
+        work.save(out_path)
+        work.close()
+        return True
+    finally:
+        document.close()
 
 
 def drop_minority_direction(page):
@@ -487,7 +552,7 @@ def _bookmarks(reader):
     return found
 
 
-def provenance(tkey, segments, readers, manifests, paths, year):
+def provenance(tkey, segments, readers, manifests, paths, year, cut=False):
     """Document info for one split PDF: where every page of it came from.
 
     The split PDFs are a review view; SQL extraction reads the source volumes
@@ -506,6 +571,9 @@ def provenance(tkey, segments, readers, manifests, paths, year):
             "pdf_pages": [start, end],
             "printed_pages": [printed_page(manifests[idx], start),
                               printed_page(manifests[idx], end)],
+            # True when the file holds a cut-out part of these pages, not the
+            # whole pages: the rest of each page is in the volume's trash file.
+            "cut": cut,
         })
         marks += [title for page, title in _bookmarks(readers[idx])
                   if start <= page <= end]
@@ -612,7 +680,7 @@ def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
             if ok:
                 merged.add_metadata(provenance((authority, article, code),
                                                segments, readers, manifests,
-                                               paths, year))
+                                               paths, year, cut=True))
                 with open(path, "wb") as fh:
                     merged.write(fh)
                 written.append(str(path))
@@ -866,6 +934,10 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
     if covered != page_count:
         print(f"    TRASH ACCOUNTING FAILED for {stem}: {covered} pages "
               f"accounted for out of {page_count}")
+    # A page carrying two exhibits is claimed by both, each file holding its own
+    # cut-out part. Any other double claim is a real defect.
+    shared = {e["page"] for e in manifest.get("rel_pages") or []}
+    twice = [p for p in twice if p not in shared]
     if twice:
         print(f"    DOUBLE-CLAIMED: {len(twice)} page(s) claimed by two "
               f"tables in {stem} (first p{twice[0]}) -- not trashed")
@@ -882,7 +954,17 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
         slug, note = trash_reason(manifest, start, end, manifest["tables"])
         rows.append((start, end, end - start + 1, slug, note))
 
-    if not write or not rows:
+    # What is left of each cut page once its exhibits are taken: the prose,
+    # charts and running header around them. Every part of every page lives in
+    # exactly one output; tools/page_check.py proves it at the end of a run.
+    leftovers = []
+    for entry in manifest.get("rel_pages") or []:
+        page = entry["page"]
+        codes = sorted(key[2] for key in claimed.get(page, ()))
+        if codes:
+            leftovers.append((page, codes))
+
+    if not write or not (rows or leftovers):
         return written
 
     folder = Path(out_root, OUT_DIR, TRASH_DIR, year)
@@ -917,6 +999,24 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
         except Exception:
             pass
     source = volume.get("path")
+    scratch = tempfile.mkdtemp(prefix="relazione-leftover-")
+    try:
+        for page, codes in leftovers:
+            tmp = Path(scratch, f"{page}.PDF")
+            if not source or not cut_leftover_page(source, page, codes, str(tmp),
+                                                   manifest, idx):
+                continue
+            first = len(writer.pages)
+            writer.add_page(PdfReader(str(tmp)).pages[0])
+            note = "outside " + " ".join(codes)
+            rows.append((page, page, 1, "cut-leftover", note))
+            placed.append((first + 1, first + 1))
+            try:
+                writer.add_outline_item(f"p{page} leftover ({note})", first)
+            except Exception:
+                pass
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
     writer.add_metadata({
         "/Title": f"{stem} - unattributed pages",
         "/Subject": json.dumps({

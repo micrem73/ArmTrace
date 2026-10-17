@@ -1773,6 +1773,18 @@ def main(argv=None):
 
     print("=" * 70)
     print(f"Totale: {total} tabelle in {n_volumes} volume/i")
+    # The final check of every full run: every source page in exactly one place
+    # (a table file, a table's cut-out part, or the trash). Skipped when the run
+    # wrote nothing or only part of the output.
+    sys.stdout.flush()
+    if not args.dry_run and not args.only and not args.no_trash \
+            and not (args.out or args.base):
+        import subprocess
+        for year in jobs:
+            if year != "?" and subprocess.run(
+                    [sys.executable, str(Path(__file__).parent / "tools" / "page_check.py"),
+                     year]).returncode:
+                raise SystemExit(1)
     if args.dry_run:
         print("(dry-run: nessun PDF scritto)")
 

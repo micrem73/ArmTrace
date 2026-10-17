@@ -78,3 +78,8 @@ One line of decision, one line of reason. Newest last.
 - **Unattributed pages go into one trash PDF per volume**, `Out/TRASH/<year>/<volume>_TRASH.PDF`, with a
   bookmark per run and provenance in its metadata; `<volume>.tsv` maps each run (source pages,
   reason) to its pages in that file. 2025: vol. I 43 pages / 15 runs, vol. II 104 pages / 34 runs.
+- **Every part of every source page lives in exactly one output**: a table file, a table's cut-out
+  part, or the trash. The leftovers of cut exhibit pages (prose, charts, running header) go to the
+  volume's trash file as `cut-leftover` rows. `tools/page_check.py <year>` proves it from what is on
+  disk (provenance + trash index) and runs as the final step of every full extraction; a failure
+  fails the run. 2025: 2096 pages, 29 of them split into cut parts.
