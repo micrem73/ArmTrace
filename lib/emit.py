@@ -10,6 +10,7 @@ only when the manifest says the volume has shared pages, and 2025 vol. I is simp
 volume that has them."""
 
 
+import re
 import shutil
 import tempfile
 from collections import Counter
@@ -134,7 +135,8 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
         rules = [d["rect"] for d in canvas.get_drawings()
                  if d["rect"].y0 >= lo and d["rect"].y1 <= hi]
         if rules:
-            hi = min(hi, max(r.y1 for r in rules) + HEADING_GAP)
+            hi = min(hi, table_foot(canvas, max(r.y1 for r in rules), hi)
+                     + HEADING_GAP)
         for band in (pymupdf.Rect(0, 0, width, lo),
                      pymupdf.Rect(0, hi, width, height)):
             if band.is_empty or band.is_infinite:
@@ -183,6 +185,41 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
     finally:
         document.close()
 
+
+
+# A note printed under a table's grid belongs to the table: "(*) Per la presenza
+# di licenze cumulative..." under Tabella 2. It opens with a note marker.
+NOTE_START = re.compile(r"^\s*(?:\(\s*\*+\s*\)|\*+|\(\d+\)|Fonte\b|Note?\b|N\.\s*B\.)",
+                        re.IGNORECASE)
+NOTE_MAX_GAP = 14.0     # pt from the grid to the note, and between note lines
+
+
+def table_foot(page, grid_bottom, limit):
+    """Where a ruled table really ends: its grid, or the notes printed under it.
+
+    Lines are read top-down from the grid. The first must open with a note
+    marker and sit within NOTE_MAX_GAP of the grid; the note then runs while
+    each next line follows within NOTE_MAX_GAP. Prose after the table (which
+    never opens with a marker) is left out, as decided for Tabella 12.
+    """
+    lines = []
+    for block in page.get_text("dict").get("blocks", []):
+        for line in block.get("lines", []):
+            x0, y0, x1, y1 = line["bbox"]
+            if grid_bottom - 1 <= y0 < limit:
+                text = "".join(sp.get("text", "") for sp in line.get("spans", []))
+                if text.strip():
+                    lines.append((y0, y1, text))
+    lines.sort()
+    bottom = grid_bottom
+    if not lines or lines[0][0] - grid_bottom > NOTE_MAX_GAP \
+            or not NOTE_START.match(lines[0][2]):
+        return bottom
+    for y0, y1, _text in lines:
+        if y0 - bottom > NOTE_MAX_GAP:
+            break
+        bottom = max(bottom, y1)
+    return bottom
 
 
 def drop_minority_direction(page):
@@ -310,10 +347,14 @@ def table_key(tkey):
 def printed_page(manifest, page):
     """The page number printed on the paper for PDF page `page` (1-based).
 
-    The volume's folio offset (indice.folio_map, the mode of folio - page) is
-    stored on the manifest by step 1. A volume with no legible folio has None,
-    and the PDF index stands in; table_list() notes it.
+    First the PDF's own page labels (/PageLabels, stored on the manifest by
+    step 1): the publisher's declaration, no guess. Then the volume's folio
+    offset (indice.folio_map, the mode of folio - page) for volumes without
+    numeric labels. Then the PDF index; table_list() notes that case.
     """
+    labels = manifest.get("page_labels") or []
+    if 0 < page <= len(labels) and str(labels[page - 1]).isdigit():
+        return int(labels[page - 1])
     offset = manifest.get("folio_offset")
     return page + offset if offset is not None else page
 
@@ -410,6 +451,72 @@ def write_table_list(path, rows):
     return path
 
 
+_SHA256 = {}
+
+
+def _sha256(path):
+    """SHA-256 of a source volume, computed once per run."""
+    if path not in _SHA256:
+        import hashlib
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for block in iter(lambda: fh.read(1 << 20), b""):
+                h.update(block)
+        _SHA256[path] = h.hexdigest()
+    return _SHA256[path]
+
+
+def _bookmarks(reader):
+    """[(pdf page 1-based, title)] for every outline entry with a page."""
+    found = []
+
+    def walk(items):
+        for item in items:
+            if isinstance(item, list):
+                walk(item)
+                continue
+            try:
+                found.append((reader.get_destination_page_number(item) + 1,
+                              str(item.title)))
+            except Exception:
+                continue  # container entries with no page ('araba.pdf')
+    try:
+        walk(reader.outline)
+    except Exception:
+        pass
+    return found
+
+
+def provenance(tkey, segments, readers, manifests, paths, year):
+    """Document info for one split PDF: where every page of it came from.
+
+    The split PDFs are a review view; SQL extraction reads the source volumes
+    (DECISIONS.md). This keeps a file traceable on its own, once separated
+    from the table list: /Title is the table key, /Subject a JSON record with
+    each source file, its SHA-256, the PDF pages and their printed numbers,
+    and the bookmark titles that point into the table. Deterministic: no dates.
+    """
+    import json
+    sources, marks = [], []
+    for idx, start, end in segments:
+        path = paths[idx] if paths is not None else None
+        sources.append({
+            "file": Path(path).name if path else None,
+            "sha256": _sha256(path) if path else None,
+            "pdf_pages": [start, end],
+            "printed_pages": [printed_page(manifests[idx], start),
+                              printed_page(manifests[idx], end)],
+        })
+        marks += [title for page, title in _bookmarks(readers[idx])
+                  if start <= page <= end]
+    record = {"table": table_key(tkey), "authority": tkey[0],
+              "article": tkey[1], "code": tkey[2], "year": str(year),
+              "sources": sources, "bookmarks": marks}
+    return {"/Title": table_key(tkey),
+            "/Subject": json.dumps(record, ensure_ascii=False, sort_keys=True),
+            "/Creator": "ArmTrace step 1 (Reports2PDFTables)"}
+
+
 def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
     """Write one PDF per table under the ministry/article tree.
 
@@ -503,6 +610,9 @@ def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
             if ok:
+                merged.add_metadata(provenance((authority, article, code),
+                                               segments, readers, manifests,
+                                               paths, year))
                 with open(path, "wb") as fh:
                     merged.write(fh)
                 written.append(str(path))
@@ -521,6 +631,8 @@ def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
                     cut_failed.append((code, p))
                     continue
                 writer.add_page(reader.pages[p - 1])
+        writer.add_metadata(provenance((authority, article, code), segments,
+                                       readers, manifests, paths, year))
         with open(path, "wb") as fh:
             writer.write(fh)
         written.append(str(path))

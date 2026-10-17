@@ -60,3 +60,18 @@ One line of decision, one line of reason. Newest last.
   rule (Tabella 12 carried the paragraph introducing Tabella 13). Prose between exhibits belongs to
   neither.
 - **Vol. I printed p. 1034 (the one-page "VALORE" summary before F1) stays untabled**, by review.
+
+## 2026-10-17 — what the split PDFs keep, and where SQL comes from
+
+- **SQL extraction reads the source volumes in `In/`, through `Out/tables-<year>.tsv`; the split PDFs
+  are a review view only.** A split keeps each page's content and its embedded fonts, but drops what
+  lives at document level: the tagged structure (2025 vol. I: 36 `Table` elements, 755 `TR`, 4712
+  `TD`, the publisher's own cell grid), page labels, bookmarks and document metadata. The exhibit
+  crops drop marked content too. Reading the sources loses none of it.
+- **Printed page numbers come from the PDF's /PageLabels first**, the folio-offset guess second, the
+  PDF index last. For 2025 the labels agree with the folio offset on all 150 tables.
+- **Every split PDF carries its provenance** in its document info: /Title = table key, /Subject =
+  JSON with each source file, its SHA-256, PDF and printed page range, and the bookmark titles
+  pointing into the table. No dates, so output stays byte-reproducible.
+- **A note printed under a table's grid belongs to the table** (opens with `(*)`, `*`, `(1)`,
+  `Fonte`, `Nota`, `N.B.`, within 14 pt). Prose after a table still does not.
