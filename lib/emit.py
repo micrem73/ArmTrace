@@ -797,16 +797,16 @@ def trash_reason(manifest, start, end, tables):
 
 
 def dump_trash(volumes, plan, out_root, year, write=True):
-    """Write Out/TRASH/<anno>/<volume>_p<a>-<b>.PDF for every unattributed run.
+    """Write Out/TRASH/<anno>/<volume>_TRASH.PDF: every unattributed page of a volume.
 
-        Out/TRASH/2025/2025_LXVII_n4_VOLUME_II_p001-066.PDF
+        Out/TRASH/2025/2025_LXVII_n4_VOLUME_II_TRASH.PDF
         Out/TRASH/2025/2025_LXVII_n4_VOLUME_II.tsv
 
-    One file per contiguous run, because a run is the unit a person triages: the
-    pages between two tables, or the block of Gazzetta pages bound into the
-    volume, is one thing to look at. The TSV beside them gives every run its page
-    range, size and reason, which is what makes the folder greppable rather than
-    a pile of PDFs.
+    One file per volume, with an outline entry per contiguous run (the pages
+    between two tables, a block of Gazzetta pages): a run is still the unit a
+    person triages, but the folder is two files rather than fifty. The TSV
+    gives every run its source pages, size, reason and its pages inside the
+    trash file.
 
     `write=False` prints the accounting and writes nothing, so --dry-run still
     reports the coverage -- which is the number a reader most wants from a run
@@ -875,7 +875,7 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
           f"({trashed / page_count:.0%} of the volume)")
     if runs:
         print(f"                 -> {Path(out_root, OUT_DIR, TRASH_DIR, year)}/"
-              f"{stem}_p<a>-<b>{PDF_EXT} + {stem}.tsv")
+              f"{stem}_TRASH{PDF_EXT} + {stem}.tsv")
 
     rows = []
     for start, end in runs:
@@ -894,33 +894,54 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
     # Out/PDF.
     for stale in folder.glob(f"{stem}_p*{PDF_EXT}"):
         stale.unlink()
+    for stale in folder.glob(f"{stem}_TRASH{PDF_EXT}"):
+        stale.unlink()
     for stale in folder.glob(f"{stem}*.tsv"):
         stale.unlink()
 
-    names = []
+    # One PDF per volume (decided 2026-10-17): every unattributed page of the
+    # volume, in order, with an outline entry per run so the file is navigable
+    # run by run. The TSV maps each run to its pages inside that file.
+    import json
+    writer = PdfWriter()
+    placed = []
     for start, end, size, slug, note in rows:
-        writer = PdfWriter()
+        first = len(writer.pages)
         for p in range(start, end + 1):
             writer.add_page(reader.pages[p - 1])
-        # An outline entry per run, so a folder of 14 PDFs opened in a viewer is
-        # navigable without reading the filenames.
+        placed.append((first + 1, len(writer.pages)))
         try:
             writer.add_outline_item(
                 f"p{start}-{end} ({size}pp) {slug}"
-                + (f" -- {note}" if note else ""), 0)
+                + (f" - {note}" if note else ""), first)
         except Exception:
-            pass              # an outline is a convenience, never a failure
-        path = folder / f"{stem}_p{start:03d}-{end:03d}{PDF_EXT}"
-        with open(path, "wb") as fh:
-            writer.write(fh)
-        written.append(str(path))
-        names.append(path.name)
+            pass
+    source = volume.get("path")
+    writer.add_metadata({
+        "/Title": f"{stem} - unattributed pages",
+        "/Subject": json.dumps({
+            "volume": stem, "year": str(year),
+            "file": Path(source).name if source else None,
+            "sha256": _sha256(source) if source else None,
+            "runs": [{"pdf_pages": [start, end],
+                      "printed_pages": [printed_page(manifest, start),
+                                        printed_page(manifest, end)],
+                      "reason": slug}
+                     for start, end, _size, slug, _note in rows],
+        }, ensure_ascii=False, sort_keys=True),
+        "/Creator": "ArmTrace step 1 (Reports2PDFTables)",
+    })
+    path = folder / f"{stem}_TRASH{PDF_EXT}"
+    with open(path, "wb") as fh:
+        writer.write(fh)
+    written.append(str(path))
 
     tsv = folder / f"{stem}.tsv"
     with open(tsv, "w", encoding="utf-8") as fh:
-        fh.write("start\tend\tpages\treason\tnote\tfile\n")
-        for (start, end, size, slug, note), name in zip(rows, names):
-            fh.write(f"{start}\t{end}\t{size}\t{slug}\t{note}\t{name}\n")
+        fh.write("start\tend\tpages\treason\tnote\tfile\ttrash_pages\n")
+        for (start, end, size, slug, note), (t0, t1) in zip(rows, placed):
+            fh.write(f"{start}\t{end}\t{size}\t{slug}\t{note}\t{path.name}"
+                     f"\t{t0}-{t1}\n")
     written.append(str(tsv))
 
     for start, end, size, slug, note in rows[:8]:

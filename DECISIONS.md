@@ -75,3 +75,6 @@ One line of decision, one line of reason. Newest last.
   pointing into the table. No dates, so output stays byte-reproducible.
 - **A note printed under a table's grid belongs to the table** (opens with `(*)`, `*`, `(1)`,
   `Fonte`, `Nota`, `N.B.`, within 14 pt). Prose after a table still does not.
+- **Unattributed pages go into one trash PDF per volume**, `Out/TRASH/<year>/<volume>_TRASH.PDF`, with a
+  bookmark per run and provenance in its metadata; `<volume>.tsv` maps each run (source pages,
+  reason) to its pages in that file. 2025: vol. I 43 pages / 15 runs, vol. II 104 pages / 34 runs.
