@@ -1,0 +1,31 @@
+# Checker eval cases for 2025: tools/eval_checker.py. A mutation turns a correct cut
+# into a wrong one in a scratch tree; expect is the verdict the checker must give.
+# FAIL cases are caught by FAIL or UNSURE (both reach a person or a second checker);
+# PASS cases must get PASS. Add a case for every miss a person finds.
+case	key	mutation	expect	note
+pass-exhibit	MAE/T2	none	PASS	relation exhibit, cropped from a shared page
+pass-mae-b3	MAE/B3	none	PASS
+pass-mae-g2	MAE/G2	none	PASS
+pass-straddle	MAE/F1	none	PASS	70 pages across the volume join
+pass-mef-aa	MEF/AA	none	PASS
+pass-mef-ff1	MEF/FF1	none	PASS
+pass-mef-long	MEF/EE	none	PASS	41 pages, no page stamp
+pass-difesa-3b	DIFESA/A2C6/3B	none	PASS
+pass-difesa-art5	DIFESA/A5/2	none	PASS	annex filed under the article it cites (review round 1)
+pass-difesa-noart	DIFESA/4	none	PASS	annex citing no article: no article level
+pass-cover-kept	DOG/A1C2/M1APPENDICE	none	PASS	cover kept: data pages print no code
+pass-dog-o1	DOG/A1C89/O1	none	PASS
+pass-dog-mg6	DOG/A11C5BIS/MG6	none	PASS
+pass-dog-mt7	DOG/A10QUATER/MT7	none	PASS
+short-mae	MAE/B1	drop-last	FAIL	last page missing; source-after is that page
+short-dog	DOG/A11C5BIS/MG3	drop-last	FAIL	Pag. 8 di 8 missing
+short-mef	MEF/HH1	drop-last	FAIL
+long-mae	MAE/H2	add-next	FAIL	first page of MAE/I appended
+long-difesa	DIFESA/A2C6/3A	add-next	FAIL	first page of 3B appended
+long-dog	DOG/A1C2/N1	add-next	FAIL	first page of O1 appended
+early-mae	MAE/O2	add-prev	FAIL	last page of MAE/O1 prepended
+cover-not-dropped	DOG/A11C5BIS/MG6	add-prev	FAIL	cover kept although data pages print the code (review round 1)
+wrong-code	MEF/CC	code=CC1	FAIL	file and row say CC1, page says CC
+wrong-start	MAE/I	printed=+1	FAIL	file name and row one printed page late
+wrong-article	DIFESA/A5/2	article=A2C6	FAIL	filed under A2C6, pages cite art. 5
+wrong-authority	MEF/PP	authority=MAE	FAIL	filed under MAE, page is MEF

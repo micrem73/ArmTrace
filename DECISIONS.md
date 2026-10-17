@@ -127,3 +127,9 @@ One line of decision, one line of reason. Newest last.
   review round 1 never reached 2024. The template and the 2024 copy are deleted; 2024 restarts as an
   edition file. One entry point: `python3 Reports2PDFTables.py <year>`. A trap test fails when an
   edition redefines an engine function that `OVERRIDES` does not list.
+- **The table checker has its own eval: known-good and deliberately broken cuts, scored by `make eval`.**
+  Its verdicts decide what each table needs next, and nothing tested them: a prompt edit or a new
+  model could pass a short cut unseen. 2025 kept no FAIL verdicts, so the broken cases are made by
+  mutating good cuts (a page dropped or added, wrong code, printed page, article, authority) in a
+  throwaway copy of the repo, where step 1 is a stub so the checker judges the cut it is given.
+  Costs tokens, so it is run on change, not in `make check`.

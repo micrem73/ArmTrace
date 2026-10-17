@@ -17,10 +17,11 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - Cut one table: `python3 Reports2PDFTables.py 2025 --only MEF/UE` (repeatable; key = `authority/[article/]code`)
 - Check one table (subagent): `.claude/agents/table-checker.md`; renders with `python3 tools/review_pages.py 2025 <key>`, writes `Out/.work/2025/checks/<key>/verdict.json`
 - After a code change or a round of checks: `python3 tools/recheck.py 2025` (what each table needs next: check, recheck, second-check, fix, human), then republish: `python3 tools/build_index.py 2025` (also deletes the PNGs of PASS tables; `--keep-png` to keep)
-- **Done = `make check`** (ruff, then the full test suite; exits non-zero on any failure). Healthy output ends with `All checks passed!` and `30 passed in 54.25s` (about 1 min warm). The first run after editing `lib/pageio.py` or upgrading pypdf rebuilds the page cache, which takes much longer.
+- **Done = `make check`** (ruff, then the full test suite; exits non-zero on any failure). Healthy output: `All checks passed!`, then `N passed in ~50s` with no `failed` or `error` (about 1 min warm). The first run after editing `lib/pageio.py` or upgrading pypdf rebuilds the page cache, which takes much longer.
 - Fast loop: `make test-fast` (traps, recheck, table list); lint only: `make lint` (`ruff.toml`: correctness rules only)
 - The golden tests need the sources: a test that says `sources for <year>: missing …` means download them, not a regression.
 - A `code` FAIL is fixed test-first: add the failing assertion (trap test or golden row), then change the code, not the test. Regenerate `tests/golden/` (`python3 tests/snapshot.py <year>`) only for tables re-checked after the change.
+- Checker eval: `make eval` (`tools/eval_checker.py 2025`: 26 cases, about $4 and 3 min). It runs the table-checker on known-good and deliberately broken cuts (`tests/evals/checker-2025.tsv`). Run it after changing `.claude/agents/table-checker.md`, the `check-year` skill or a convention, after a model change, and before a new year. A wrong cut that gets PASS is a failure. Add a case for every miss a person finds.
 - Hooks (`.claude/hooks/guard.py`): Edit/Write is blocked on `In/<year>/` and on `Out/` outside `Out/.work/`. Each edited `.py` file is linted.
 - Debug into a scratch tree with `--out <dir>`, so the last run's `Out/` is not overwritten.
 
