@@ -21,7 +21,9 @@ Run from the repo root.
    index and printed page).
 3. **Look** at every image with Read. The pages are often rotated 90°; read them anyway.
    Text layers are often garbled, so judge only from the images, never from extracted text.
-4. **Write** the verdict to `Out/.work/<year>/checks/<key with / replaced by _>/verdict.json`.
+4. **Write** the verdict to `Out/.work/<year>/checks/<key with / replaced by _>/verdict.json`
+   — or to `verdict-second.json` when you were asked for a second opinion. Do not read
+   another checker's verdict for this table before writing yours.
 
 ## What to check
 
@@ -59,6 +61,7 @@ the table (relation exhibits): read the folio from `source-first`, the whole pag
 {
   "key": "MEF/UE", "year": "2025", "file": "MEF/UE2025V2P1484.PDF",
   "verdict": "PASS | FAIL | UNSURE",
+  "kind": "convention | code | checker   (FAIL and UNSURE only)",
   "checks": {
     "code":       {"result": "pass", "seen": "Tabella UE", "image": "file-first"},
     "authority":  {"result": "pass", "seen": "Ministero dell'Economia e delle Finanze", "image": "file-first"},
@@ -74,5 +77,15 @@ the table (relation exhibits): read the folio from `source-first`, the whole pag
 ```
 
 `verdict` is FAIL if any check fails, UNSURE if none fails but `code`, `page_count` or
-`edges` is `unreadable` (not `absent`), PASS otherwise. Finish with one line:
+`edges` is `unreadable` (not `absent`), PASS otherwise.
+
+For FAIL and UNSURE, also set `"kind"` — it decides who acts next:
+
+| kind | when | next |
+|---|---|---|
+| `convention` | the cut follows a rule, but the rule itself is in question: what counts as part of a table (cover, footnote, totals sheet), which article or code it is filed under, where it ends | the human decides, at once |
+| `code` | the expected result is clear from the pages and the cut does not match it (wrong bounds, wrong code, missing page) | the code is fixed; after 2 failed fixes, the human |
+| `checker` | you are not sure your own reading or these instructions are right (illegible, ambiguous rule here) | a second, independent checker; if the two disagree, the human |
+
+Put the reason for the kind in `cause`. Finish with one line:
 `<key>: <verdict> — <cause or 'ok'>`.

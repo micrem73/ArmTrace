@@ -52,6 +52,8 @@ CREATE TABLE tables (
     verify_findings TEXT,
     check_verdict TEXT,     -- PASS | FAIL | UNSURE | PENDING (checker)
     check_cause TEXT,
+    action TEXT,            -- next step from tools/recheck.py: done | check |
+                            -- recheck | second-check | fix | human
     notes TEXT,
     PRIMARY KEY (year, key)
 );
@@ -72,7 +74,7 @@ CREATE TABLE trash (        -- source pages no table holds
 TABLE_COLUMNS = ["year", "key", "authority", "article", "code", "status",
                  "witness", "file", "pages", "printed", "bookmarks",
                  "tagged_pages", "verify_verdict", "verify_findings",
-                 "check_verdict", "check_cause", "notes", "sources"]
+                 "check_verdict", "check_cause", "action", "notes", "sources"]
 TRASH_COLUMNS = ["year", "volume", "source_file", "pdf_from", "pdf_to",
                  "printed_from", "printed_to", "pages", "reason", "note",
                  "trash_file", "trash_from", "trash_to"]
@@ -156,6 +158,7 @@ def build(year):
                          f"run step 1 first")
     trash_rows = read_tsv(layout.trash_tsv(year, ROOT))
     verified = verifier_verdicts(year)
+    actions = {r["key"]: r for r in read_tsv(layout.work_year(year, ROOT) / "queue.tsv")}
     tagged = {pdf.name: tagged_table_pages(pdf)
               for pdf in sorted(Path(ROOT, REPORTS_DIR, year).glob("*.pdf"))}
 
@@ -194,7 +197,9 @@ def build(year):
             "tagged_pages": tagged_pages,
             "verify_verdict": verdict, "verify_findings": findings,
             "check_verdict": check.get("verdict", "PENDING") if row["file"] else "",
-            "check_cause": check.get("cause", ""),
+            "check_cause": check.get("cause", "")
+                           or actions.get(key, {}).get("reason", ""),
+            "action": actions.get(key, {}).get("action", "") if row["file"] else "",
             "notes": row["notes"],
             "sources": "+".join(f"{s['source_file']}:{s['pdf_from']}-{s['pdf_to']}"
                                 + ("(cut)" if s["cut"] else "")
@@ -254,10 +259,12 @@ def write_review(year, tables, trash):
     extracted = [t for t in tables if t["file"]]
     pages = sum(t["pages"] for t in extracted)
     count = lambda field, word: sum(1 for t in extracted if t[field] == word)
+    # What needs someone: a person first (HUMAN-REVIEW.md), then the work
+    # queued for the agents, then verifier failures nobody has queued.
+    rank = {"human": 0, "fix": 1, "second-check": 2, "recheck": 3, "check": 4}
     attention = [t for t in extracted
-                 if t["check_verdict"] in ("FAIL", "UNSURE", "PENDING")
-                 or t["verify_verdict"] in ("FAIL",)]
-    attention.sort(key=lambda t: (ORDER.get(t["check_verdict"], 2), t["key"]))
+                 if t["action"] in rank or t["verify_verdict"] == "FAIL"]
+    attention.sort(key=lambda t: (rank.get(t["action"], 5), t["key"]))
     parts = [f"<title>Review {year}</title>", STYLE, f"<h1>ArmTrace {year}</h1>",
              "<table class='sum'>",
              f"<tr><th>tables</th><td>{len(extracted)}</td><th>pages in tables</th>"
@@ -276,6 +283,7 @@ def write_review(year, tables, trash):
     for t in attention:
         word = t["check_verdict"]
         parts.append(f'<section class="{word.lower()}"><h3>{esc(t["key"])} '
+                     f'<span class="v">next: {esc(t["action"] or "-")}</span> '
                      f'<span class="v">{word}</span> '
                      f'<span class="v">verifier {esc(t["verify_verdict"])}</span></h3>')
         parts.append(f'<p class="meta"><a href="{rel(here / t["file"])}">{esc(t["file"])}'

@@ -25,6 +25,7 @@ import sys
 from pathlib import Path
 
 import pymupdf
+import hashlib
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -57,6 +58,18 @@ def parse_segments(text):
         a, b = span.split("-")
         out.append((int(vol[1:]), int(a), int(b)))
     return out
+
+
+def content_hash(pdf):
+    """sha1 of the file's page text, page by page: what a verdict judged.
+
+    tools/recheck.py compares it with the file as it is now, so a table whose
+    content changed after its check is re-checked, and one whose bytes changed
+    only in metadata is not.
+    """
+    doc = pymupdf.open(pdf)
+    text = "\f".join(page.get_text() for page in doc)
+    return hashlib.sha1(text.encode()).hexdigest(), doc.page_count
 
 
 def save(doc, index0, path):
@@ -120,6 +133,10 @@ def main(year, key):
             images.append({"label": label, "png": str(path.relative_to(ROOT)),
                            "volume": vol, "pdf_index": idx})
 
+    digest, _pages = content_hash(pdf)
+    (out / "checked.json").write_text(json.dumps(
+        {"key": key, "file": row["file"], "content": digest, "pages": n},
+        indent=1), encoding="utf-8")
     print(json.dumps({"year": year, "row": row, "file_pages": n,
                       "images": images}, ensure_ascii=False, indent=1))
 

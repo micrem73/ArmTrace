@@ -95,3 +95,14 @@ One line of decision, one line of reason. Newest last.
 - **`run_year.py <year>`** runs step 1, the verifier, the publish step and the page check, stopping
   at the first failure. The page check reads only what is published.
 - The page cache keeps one entry per volume; superseded entries are deleted.
+
+## 2026-10-17 — escalation by kind, not by count
+
+- **Replaces "5 review cycles, then a person".** In 2025 every failure resolved in 1–2 rounds, and most
+  were convention questions that only a decision settles; extra cycles would have meant either the
+  agent deciding them or wasted rounds, and a high cycle count invites fitting the code to the
+  checker (the T2 footnote loss was such a side effect). Now the checker gives each FAIL/UNSURE a
+  kind: `convention` → the human at once; `code` → fixed, the human after 2 failed fixes; `checker`
+  → a second independent checker, the human if they disagree. `tools/recheck.py` keeps per-table
+  history, re-queues tables whose content changed, lists tables that changed after a PASS, and writes
+  `Out/<year>/HUMAN-REVIEW.md`.

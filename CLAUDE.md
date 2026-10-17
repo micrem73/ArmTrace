@@ -16,7 +16,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - Table list only (~10 s warm): `python3 Reports2PDFTables_2025.py --dry-run --no-trash` → `Out/.work/2025/tables.tsv`
 - Cut one table: `python3 Reports2PDFTables_2025.py --only MEF/UE` (repeatable; key = `authority/[article/]code`)
 - Check one table (subagent): `.claude/agents/table-checker.md`; renders with `python3 tools/review_pages.py 2025 <key>`, writes `Out/.work/2025/checks/<key>/verdict.json`
-- After a round of checks, republish: `python3 tools/build_index.py 2025` (also deletes the PNGs of PASS tables; `--keep-png` to keep)
+- After a code change or a round of checks: `python3 tools/recheck.py 2025` (what each table needs next: check, recheck, second-check, fix, human), then republish: `python3 tools/build_index.py 2025` (also deletes the PNGs of PASS tables; `--keep-png` to keep)
 - Test: `python3 -m pytest tests/` (full, ~1 min warm); fast: `python3 -m pytest tests/test_table_list.py`
 - Lint: TBD
 - Debug into a scratch tree with `--out <dir>`, so the last run's `Out/` is not overwritten.
@@ -36,7 +36,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - Using subagents, validate every extraction: the file name corresponds to the table code, authority, law code and printed start page it refers to. The page count of the PDF corresponds to the number of pages that the table says it has. The table code in captions, footer or header corresponds to the file name. 
 - SQL extraction reads the original volumes in `In/` through `Out/<year>/tablesindex.sqlite`, never the split PDFs: those drop the tagged table structure, page labels, bookmarks and metadata of the source. The split PDFs are for review, and each carries its provenance (source file, SHA-256, pages) in its metadata.
 - Every part of every source page ends up in exactly one place: a table file, a table's cut-out part, or the trash. Never in two, never in none. The page check enforces it at the end of every extraction.
-- Tables that fail validation after 5 review cycles are explicitly asked for human review. Never drop or silently correct a value. Never invent one.
+- Escalation is by kind of failure, not by count (`tools/recheck.py`). The checker states the kind of every FAIL/UNSURE: a **convention** question (what counts as part of a table, where it is filed, where it ends) goes to the human at once; a **code** defect is fixed, and goes to the human if it still fails after 2 fixes; a **checker** doubt gets a second, independent checker, and goes to the human if the two disagree. Tables that had passed and change after a fix are re-checked and listed for the human before the commit. Items for the human are in `Out/<year>/HUMAN-REVIEW.md` and on `review.html`. Never drop or silently correct a value. Never invent one.
 - Layout differences between editions live in a per-edition code. A new edition should share mostly of the codebase, plus specific code needed for that year. 
 - The run is reproducible: same input and configuration give the same PDF files.
 
