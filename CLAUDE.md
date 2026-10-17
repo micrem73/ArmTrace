@@ -41,6 +41,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - The run is reproducible: same input and configuration give the same PDF files.
 
 
+
 ## Order of work
 
 1. One pilot edition first - 2025. 
@@ -59,6 +60,7 @@ If you must proceed, pick the simplest reversible option and record it with the 
 
 - Keep dependencies few. Justify each new one in the commit message.
 - Work in small steps and stop for review at the end of each numbered step above that asks for it.
+- Keep it simple! Minimize produced files, do not duplicate informations.
 
 ## Things Claude gets wrong
 
