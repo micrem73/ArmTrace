@@ -3,8 +3,9 @@
 
     python3 tools/review_pages.py 2025 MEF/UE
 
-Reads the table's row from Out/tables-<year>.tsv, opens the cut PDF and the
-source volume(s), and writes PNGs under Out/REVIEW/<year>/<key>/:
+Reads the table's row from Out/.work/<year>/tables.tsv, opens the table PDF in
+Out/<year>/PDF/ and the source volume(s), and writes PNGs under
+Out/.work/<year>/checks/<key>/ (lib/layout.py):
 
     file-first.png, file-second.png      first pages of the cut file
     file-last.png                        its last page
@@ -28,19 +29,19 @@ import pymupdf
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from lib.patterns import OUT_DIR, REPORTS_DIR  # noqa: E402
+from lib import layout  # noqa: E402
+from lib.patterns import REPORTS_DIR  # noqa: E402
 from lib.volumes import find_report  # noqa: E402
 
 DPI = 90
 MAX_MID = 3
 
 
-def key_dir(key):
-    return key.replace("/", "_")
+key_dir = layout.key_dir
 
 
 def table_row(year, key):
-    path = ROOT / OUT_DIR / f"tables-{year}.tsv"
+    path = layout.tables_tsv(year, ROOT)
     with open(path, encoding="utf-8") as fh:
         for row in csv.DictReader(fh, delimiter="\t"):
             if row["key"] == key:
@@ -67,10 +68,10 @@ def main(year, key):
     row = table_row(year, key)
     if not row["file"]:
         raise SystemExit(f"{key}: status {row['status']}, no file to review")
-    pdf = ROOT / OUT_DIR / "PDF" / row["file"]
+    pdf = layout.pdf_dir(year, ROOT) / row["file"]
     if not pdf.exists():
         raise SystemExit(f"{key}: {pdf} missing (cut it with --only {key})")
-    out = ROOT / OUT_DIR / "REVIEW" / year / key_dir(key)
+    out = layout.checks_dir(year, ROOT) / key_dir(key)
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.png"):
         old.unlink()

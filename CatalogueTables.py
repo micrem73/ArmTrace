@@ -82,7 +82,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import geometry as geo            # noqa: E402
 from lib import grammar as gra             # noqa: E402
-from lib import ontology                   # noqa: E402
+from lib import layout, ontology                   # noqa: E402
 
 PDF_EXT = ".PDF"
 CATALOG_DIR = "CATALOG"
@@ -1531,8 +1531,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     year = args.year
-    input_dir = Path(args.input_dir) if args.input_dir else Path("Out", "PDF")
-    out_root = Path(args.out_root) if args.out_root else Path("Out")
+    # Defaults follow lib/layout.py: tables from Out/<year>/PDF, step 1's
+    # manifest from Out/.work/<year>/, and the catalog -- an intermediate for
+    # SQL extraction, not something a person reads -- under Out/.work/.
+    input_dir = Path(args.input_dir) if args.input_dir else layout.pdf_dir(year)
+    out_root = Path(args.out_root) if args.out_root else layout.work_dir()
+    if not args.manifest and layout.manifest_path(year).exists():
+        args.manifest = str(layout.manifest_path(year))
     catalog_dir = out_root / CATALOG_DIR
     catalog_path = Path(args.catalog) if args.catalog \
         else catalog_dir / "catalog.sqlite"

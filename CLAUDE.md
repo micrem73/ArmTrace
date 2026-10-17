@@ -12,16 +12,21 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 
 - Install: `pip install --user -r requirements.txt` (`python3 -m venv` fails on this host: no `ensurepip`)
 - Download sources: `bash In/download_185.sh In In/manifest.tsv` (checks page counts against the manifest; exits 1 on any problem). Skill: `download-sources`
-- Test: `python3 -m pytest tests/`
+- **Run a year:** `python3 run_year.py 2025` — step 1 (tables, trash), verifier, publish (`tablesindex`, `review.html`), final page check. Stops at the first failure; the page check must pass.
+- Table list only (~10 s warm): `python3 Reports2PDFTables_2025.py --dry-run --no-trash` → `Out/.work/2025/tables.tsv`
+- Cut one table: `python3 Reports2PDFTables_2025.py --only MEF/UE` (repeatable; key = `authority/[article/]code`)
+- Check one table (subagent): `.claude/agents/table-checker.md`; renders with `python3 tools/review_pages.py 2025 <key>`, writes `Out/.work/2025/checks/<key>/verdict.json`
+- After a round of checks, republish: `python3 tools/build_index.py 2025` (also deletes the PNGs of PASS tables; `--keep-png` to keep)
+- Test: `python3 -m pytest tests/` (full, ~1 min warm); fast: `python3 -m pytest tests/test_table_list.py`
 - Lint: TBD
-- Extract one edition: `python3 Reports2PDFTables_2025.py` (both volumes; writes `Out/PDF/`, `Out/TRASH/`, `Out/manifest-2025.json`)
-- Table list of a year: `python3 Reports2PDFTables_2025.py --dry-run --no-trash --tables Out/tables-2025.tsv` (~10 s with a warm page cache)
-- Cut one table: `python3 Reports2PDFTables_2025.py --only MEF/UE` (repeatable; key = `authority/[article/]code`, as in the list)
-- Final page check (runs automatically at the end of a full extraction; must pass): `python3 tools/page_check.py 2025`
-- Review report, then delete the PNGs of PASS tables: `python3 tools/review_report.py 2025` (`--keep-png` to keep them)
-- Fast test (table list only): `python3 -m pytest tests/test_table_list.py`; full test (all PDFs, ~1 min warm) `python3 -m pytest tests/`
-- Validate: `python3 Reports2PDFTables_2025.py --manifest Out/manifest-2025.jsonl`, then `python3 VerifyTables.py --year 2025 --manifest Out/manifest-2025.jsonl` (writes `Out/VERIFY/`; `--manifest` is step 1's JSON, not `In/manifest.tsv`)
 - Debug into a scratch tree with `--out <dir>`, so the last run's `Out/` is not overwritten.
+
+## Output (`lib/layout.py`)
+
+- `Out/<year>/PDF/…` tables · `Out/<year>/TRASH/<volume>_TRASH.PDF` unclaimed pages
+- `Out/<year>/review.html` — the one page a person opens
+- `Out/<year>/tablesindex.sqlite` (+ `tablesindex.tsv`, `tablesindex-trash.tsv`, same rows as text) — the handover to SQL extraction
+- `Out/.work/` — cache, manifest, table list, trash runs, verifier report, checker verdicts. Regenerable; never read by people.
 
 ## Requirements
 
@@ -29,7 +34,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - Extract a list of existing tables of each year, looking into every volumes for that year. For each table, report if existing start-end page number, authority, table code. Tables can be listed in "indice", or in other summaries leading the tables. Some listed tables cannot exist. Tables can exist even if ot explicitly listed in tables, expecially in introduciton of volume 1. 
 - Build the year's table list once (`Out/tables-<year>.tsv`). Using subagents, cut every table into a single PDF with the deterministic splitter, one table per subagent, and check it as soon as it is cut. Subagents report failures with page evidence; one agent fixes the splitting code, rebuilds the list and re-sends only the rows that changed. Do not run years in parallel.
 - Using subagents, validate every extraction: the file name corresponds to the table code, authority, law code and printed start page it refers to. The page count of the PDF corresponds to the number of pages that the table says it has. The table code in captions, footer or header corresponds to the file name. 
-- SQL extraction reads the original volumes in `In/` through the table list (`Out/tables-<year>.tsv`), never the split PDFs: those drop the tagged table structure, page labels, bookmarks and metadata of the source. The split PDFs are for review, and each carries its provenance (source file, SHA-256, pages) in its metadata.
+- SQL extraction reads the original volumes in `In/` through `Out/<year>/tablesindex.sqlite`, never the split PDFs: those drop the tagged table structure, page labels, bookmarks and metadata of the source. The split PDFs are for review, and each carries its provenance (source file, SHA-256, pages) in its metadata.
 - Every part of every source page ends up in exactly one place: a table file, a table's cut-out part, or the trash. Never in two, never in none. The page check enforces it at the end of every extraction.
 - Tables that fail validation after 5 review cycles are explicitly asked for human review. Never drop or silently correct a value. Never invent one.
 - Layout differences between editions live in a per-edition code. A new edition should share mostly of the codebase, plus specific code needed for that year. 

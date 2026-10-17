@@ -18,7 +18,7 @@ from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
 
-from lib import ontology
+from lib import layout, ontology
 from lib import patterns as P
 from lib.patterns import OUT_DIR, PDF_EXT, REL_HEADING
 from lib.pageio import rel_code
@@ -639,7 +639,7 @@ def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
                                      first_idx + 1,
                                      printed_page(manifests[first_idx], first_start),
                                      PDF_EXT)
-        path = Path(out_root, OUT_DIR, "PDF", rel)
+        path = layout.pdf_dir(year, out_root) / rel
         path.parent.mkdir(parents=True, exist_ok=True)
 
         # A table whose every page needs cutting is written entirely by the cut,
@@ -867,14 +867,14 @@ def trash_reason(manifest, start, end, tables):
 def dump_trash(volumes, plan, out_root, year, write=True):
     """Write Out/TRASH/<anno>/<volume>_TRASH.PDF: every unattributed page of a volume.
 
-        Out/TRASH/2025/2025_LXVII_n4_VOLUME_II_TRASH.PDF
-        Out/TRASH/2025/2025_LXVII_n4_VOLUME_II.tsv
+        Out/2025/TRASH/2025_LXVII_n4_VOLUME_II_TRASH.PDF
+        Out/.work/2025/trash.tsv          (one row per run, every volume)
 
     One file per volume, with an outline entry per contiguous run (the pages
     between two tables, a block of Gazzetta pages): a run is still the unit a
     person triages, but the folder is two files rather than fifty. The TSV
     gives every run its source pages, size, reason and its pages inside the
-    trash file.
+    trash file; it is published into Out/<year>/tablesindex*.
 
     `write=False` prints the accounting and writes nothing, so --dry-run still
     reports the coverage -- which is the number a reader most wants from a run
@@ -894,6 +894,8 @@ def dump_trash(volumes, plan, out_root, year, write=True):
     overage = span_past_end(plan, len(volumes), page_counts)
 
     written = []
+    for volume in volumes:
+        volume["trash_rows"] = []
     for idx, volume in enumerate(volumes):
         # Guarded per volume, for the reason build_manifest is: the trash is a
         # review artefact and must never be the thing that costs a run its PDFs.
@@ -905,7 +907,22 @@ def dump_trash(volumes, plan, out_root, year, write=True):
         except Exception as exc:
             print(f"    TRASH FAILED for {volume['label']} (artefacts are safe): "
                   f"{type(exc).__name__}: {exc}")
+    if write:
+        rows = [row for volume in volumes for row in volume.get("trash_rows", [])]
+        target = layout.trash_tsv(year, out_root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write("\t".join(TRASH_FIELDS) + "\n")
+            for row in rows:
+                fh.write("\t".join(str(row[f]).replace("\t", " ")
+                                   for f in TRASH_FIELDS) + "\n")
+        written.append(str(target))
     return written
+
+
+TRASH_FIELDS = ("volume", "source_file", "start", "end", "pages", "reason",
+                "note", "printed_from", "printed_to", "trash_file",
+                "trash_from", "trash_to")
 
 
 
@@ -946,8 +963,8 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
           f"{len(runs)} run(s) of {page_count} "
           f"({trashed / page_count:.0%} of the volume)")
     if runs:
-        print(f"                 -> {Path(out_root, OUT_DIR, TRASH_DIR, year)}/"
-              f"{stem}_TRASH{PDF_EXT} + {stem}.tsv")
+        print(f"                 -> {layout.trash_dir(year, out_root)}/"
+              f"{stem}_TRASH{PDF_EXT}")
 
     rows = []
     for start, end in runs:
@@ -967,7 +984,7 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
     if not write or not (rows or leftovers):
         return written
 
-    folder = Path(out_root, OUT_DIR, TRASH_DIR, year)
+    folder = layout.trash_dir(year, out_root)
     folder.mkdir(parents=True, exist_ok=True)
     # Clear this volume's own previous trash before writing, so a run that now
     # yields fewer blocks does not leave the old ones behind: a stale file here
@@ -977,8 +994,6 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
     for stale in folder.glob(f"{stem}_p*{PDF_EXT}"):
         stale.unlink()
     for stale in folder.glob(f"{stem}_TRASH{PDF_EXT}"):
-        stale.unlink()
-    for stale in folder.glob(f"{stem}*.tsv"):
         stale.unlink()
 
     # One PDF per volume (decided 2026-10-17): every unattributed page of the
@@ -1036,19 +1051,21 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
         writer.write(fh)
     written.append(str(path))
 
-    tsv = folder / f"{stem}.tsv"
-    with open(tsv, "w", encoding="utf-8") as fh:
-        fh.write("start\tend\tpages\treason\tnote\tfile\ttrash_pages\n")
-        for (start, end, size, slug, note), (t0, t1) in zip(rows, placed):
-            fh.write(f"{start}\t{end}\t{size}\t{slug}\t{note}\t{path.name}"
-                     f"\t{t0}-{t1}\n")
-    written.append(str(tsv))
+    # The trash index rows go back to dump_trash, which writes one
+    # .work/<year>/trash.tsv for every volume of the year.
+    volume["trash_rows"] = [
+        {"volume": stem, "source_file": Path(source).name if source else "",
+         "start": start, "end": end, "pages": size, "reason": slug, "note": note,
+         "printed_from": printed_page(manifest, start),
+         "printed_to": printed_page(manifest, end),
+         "trash_file": path.name, "trash_from": t0, "trash_to": t1}
+        for (start, end, size, slug, note), (t0, t1) in zip(rows, placed)]
 
     for start, end, size, slug, note in rows[:8]:
         print(f"        p{start}-{end:<6} {size:5}pp  {slug:16}"
               + (f" {note}" if note else ""))
     if len(rows) > 8:
-        print(f"        ... {len(rows) - 8} more run(s) in {tsv.name}")
+        print(f"        ... {len(rows) - 8} more run(s)")
     return written
 
 

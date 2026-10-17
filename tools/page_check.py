@@ -3,9 +3,9 @@
 
     python3 tools/page_check.py 2025
 
-Reads only what is on disk -- each table PDF's provenance (its /Subject JSON)
-and the trash index Out/TRASH/<year>/<volume>.tsv -- and accounts for every
-page of every source volume in In/<year>/. A page passes when it is either
+Reads only what is published -- each table PDF's provenance (its /Subject
+JSON) in Out/<year>/PDF/ and the trash runs in Out/<year>/tablesindex-trash.tsv
+-- and accounts for every page of every source volume in In/<year>/. A page passes when it is either
 
   * whole, in exactly one place: one table file, or the trash; or
   * cut: one or more table files each hold a cut-out part of it (provenance
@@ -26,13 +26,14 @@ from pypdf import PdfReader
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from lib.patterns import OUT_DIR, PDF_EXT, REPORTS_DIR  # noqa: E402
+from lib import layout  # noqa: E402
+from lib.patterns import PDF_EXT, REPORTS_DIR  # noqa: E402
 
 
 def owners(year, out_root=ROOT):
     """{(source file name, pdf page): [(kind, where)]}"""
     found = defaultdict(list)
-    for pdf in sorted(Path(out_root, OUT_DIR, "PDF").rglob(f"*{year}V*{PDF_EXT}")):
+    for pdf in sorted(layout.pdf_dir(year, out_root).rglob(f"*{year}V*{PDF_EXT}")):
         meta = PdfReader(pdf).metadata or {}
         try:
             record = json.loads(meta.get("/Subject") or "")
@@ -44,13 +45,13 @@ def owners(year, out_root=ROOT):
             kind = "cut" if src.get("cut") else "whole"
             for page in range(a, b + 1):
                 found[(src["file"], page)].append((kind, record["table"]))
-    for tsv in sorted(Path(out_root, OUT_DIR, "TRASH", str(year)).glob("*.tsv")):
-        volume = tsv.stem + ".pdf"
-        with open(tsv, encoding="utf-8") as fh:
+    trash = layout.index_trash_tsv(year, out_root)
+    if trash.exists():
+        with open(trash, encoding="utf-8") as fh:
             for row in csv.DictReader(fh, delimiter="\t"):
                 kind = "leftover" if row["reason"] == "cut-leftover" else "trash"
-                for page in range(int(row["start"]), int(row["end"]) + 1):
-                    found[(volume, page)].append((kind, "TRASH"))
+                for page in range(int(row["pdf_from"]), int(row["pdf_to"]) + 1):
+                    found[(row["source_file"], page)].append((kind, "TRASH"))
     return found
 
 

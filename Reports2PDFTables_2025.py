@@ -46,7 +46,7 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-from lib import indice, ontology, pagecache
+from lib import indice, layout, ontology, pagecache
 from lib.emit import (TRASH_DIR, dump_trash, report as render_report, split_pdf,
                       table_key, table_list, table_plan, write_table_list)
 from lib.pageio import (
@@ -1625,6 +1625,13 @@ def main(argv=None):
                         help="scrivi solo questa tabella, es. MEF/UE o "
                              "DOG/A1C2/N (ripetibile); niente TRASH")
     args = parser.parse_args(argv)
+    out_root = args.out or args.base or "."
+    # The manifest and the table list are internals: written to
+    # Out/.work/<year>/ unless a path is given (layout.py).
+    if not args.manifest:
+        args.manifest = str(layout.manifest_path(YEAR, out_root))
+    if not args.tables and not args.only:
+        args.tables = str(layout.tables_tsv(YEAR, out_root))
     if args.manifest:
         # One file per run: appending across runs piled every run's volumes
         # into the same JSONL, and a reader took the first copy it met.
@@ -1752,8 +1759,8 @@ def main(argv=None):
             written = split_pdf(readers, manifests, out_root, year, paths,
                                 only=only)
             print(f"    wrote      : {len(written)} PDF in "
-                  f"{Path(out_root, OUT_DIR, 'PDF')}/<authority>/"
-                  f"[<articolo>/]<tabella>{year}.PDF")
+                  f"{layout.pdf_dir(year, out_root)}/<authority>/"
+                  f"[<articolo>/]<tabella>{year}V<vol>P<pagina>.PDF")
 
         # The pages no table owns, written beside them. The accounting is printed
         # on every run -- including --dry-run -- because coverage is the number a
@@ -1766,8 +1773,8 @@ def main(argv=None):
                                  write=not args.dry_run)
             if trashed and not args.dry_run:
                 pdfs = sum(1 for p in trashed if p.endswith(PDF_EXT))
-                print(f"    trashed    : {pdfs} PDF + {len(trashed) - pdfs} TSV in "
-                      f"{Path(out_root, OUT_DIR, TRASH_DIR, year)}/")
+                print(f"    trashed    : {pdfs} PDF in "
+                      f"{layout.trash_dir(year, out_root)}/")
         print()
         del volumes
 
@@ -1776,15 +1783,7 @@ def main(argv=None):
     # The final check of every full run: every source page in exactly one place
     # (a table file, a table's cut-out part, or the trash). Skipped when the run
     # wrote nothing or only part of the output.
-    sys.stdout.flush()
-    if not args.dry_run and not args.only and not args.no_trash \
-            and not (args.out or args.base):
-        import subprocess
-        for year in jobs:
-            if year != "?" and subprocess.run(
-                    [sys.executable, str(Path(__file__).parent / "tools" / "page_check.py"),
-                     year]).returncode:
-                raise SystemExit(1)
+
     if args.dry_run:
         print("(dry-run: nessun PDF scritto)")
 

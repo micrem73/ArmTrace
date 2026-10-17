@@ -133,7 +133,7 @@ from lib.pageio import (
 # parse_stem() is the only thing that takes it apart again. CatalogueTables
 # imports the same function for the same reason -- three parsers for one shape
 # is how a rename quietly stops being checked.
-from lib import ontology
+from lib import layout, ontology
 
 REPORTS_DIR = "In"
 OUT_DIR = "Out"
@@ -1746,20 +1746,18 @@ def collect_out_files(out_root):
     V/P tail is skipped rather than guessed at -- that is what find_stray() is
     for, and it reports them.
     """
-    root = Path(out_root, OUT_DIR, "PDF")
-    if not root.is_dir():
-        return []
     found = []
-    for path in sorted(root.rglob(f"*{PDF_EXT}")):
-        if not path.is_file():
-            continue
-        parts = split_out_path(root, path)
-        if parts is None:
-            continue
-        authority, article, code, year, volume, page = parts
-        found.append({"code": code, "year": year, "volume": volume,
-                      "page": page, "path": path,
-                      "authority": authority, "article": article})
+    for _year, root in layout.year_pdf_roots(out_root):
+        for path in sorted(root.rglob(f"*{PDF_EXT}")):
+            if not path.is_file():
+                continue
+            parts = split_out_path(root, path)
+            if parts is None:
+                continue
+            authority, article, code, year, volume, page = parts
+            found.append({"code": code, "year": year, "volume": volume,
+                          "page": page, "path": path,
+                          "authority": authority, "article": article})
     return found
 
 
@@ -1772,19 +1770,17 @@ def find_stray(out_root):
     listing by name rather than counting, because "there is a stray file" is
     only actionable if it says which one.
     """
-    root = Path(out_root, OUT_DIR, "PDF")
-    if not root.is_dir():
-        return []
     strays = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        if path.suffix != PDF_EXT:
-            strays.append(str(path.relative_to(root)))
-            continue
-        parts = split_out_path(root, path)
-        if parts is None or not parts[2] or not parts[3]:
-            strays.append(str(path.relative_to(root)))
+    for _year, root in layout.year_pdf_roots(out_root):
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.suffix != PDF_EXT:
+                strays.append(str(path.relative_to(root.parent.parent)))
+                continue
+            parts = split_out_path(root, path)
+            if parts is None or not parts[2] or not parts[3]:
+                strays.append(str(path.relative_to(root.parent.parent)))
     return strays
 
 
@@ -2636,7 +2632,7 @@ def main(argv=None):
 
     tables = collect_out_files(out_root)
     if not tables:
-        print(f"Nessun PDF per-tabella in {Path(out_root, OUT_DIR, 'PDF')}/. "
+        print(f"Nessun PDF per-tabella in {layout.out_dir(out_root)}/<anno>/PDF/. "
               f"Esegui prima Reports2PDFTables.")
         return 2
 
@@ -2649,24 +2645,29 @@ def main(argv=None):
         known_years = set(present)
 
     manifests, manifest_note = {}, ""
-    if args.manifest:
-        manifests, manifest_note = load_manifest(args.manifest)
-        if not manifests:
-            manifest_note = (f"manifest '{args.manifest}' non trovato o vuoto: "
-                             f"la provenienza non sara' verificata")
+    # Step 1's manifest: the one given, else each year's Out/.work/<anno>/.
+    manifest_paths = ([args.manifest] if args.manifest else
+                      [str(layout.manifest_path(y, out_root)) for y in years])
+    for manifest_path in manifest_paths:
+        loaded, note = load_manifest(manifest_path)
+        manifests.update(loaded)
+        manifest_note = manifest_note or note
+    if not manifests:
+        manifest_note = (f"manifest {', '.join(manifest_paths)} non trovato o "
+                         f"vuoto: la provenienza non sara' verificata")
 
-    cache = Cache(Path(out_root, OUT_DIR, VERIFY_SUBDIR, ".cache"))
+    cache = Cache(layout.verify_dir(out_root) / ".cache")
     fingerprint_tag = f"s{args.sample}f{0 if args.no_fingerprint else 1}"
 
     # One log per year, beside its JSON: Out/VERIFY/verify-<anno>.log. Same
     # gate as the JSON -- --dry-run writes nothing at all, so a read-only run
     # leaves no trace to be mistaken for a result.
-    verify_root = Path(out_root, OUT_DIR, VERIFY_SUBDIR)
+    verify_root = layout.verify_dir(out_root)
     logs_written = []
 
     print("=" * 78)
     print(f"VerifyTables — {len(years)} anno/i, {len(tables)} file in "
-          f"{Path(out_root, OUT_DIR, 'PDF')}")
+          f"{layout.out_dir(out_root)}/<anno>/PDF")
     print(f"  rapporti: {reports_dir}")
     print("  verdetto: PASS/FAIL/WARN/SKIP — WARN non fallisce un run")
     print("=" * 78)

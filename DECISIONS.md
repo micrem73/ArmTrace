@@ -83,3 +83,15 @@ One line of decision, one line of reason. Newest last.
   volume's trash file as `cut-leftover` rows. `tools/page_check.py <year>` proves it from what is on
   disk (provenance + trash index) and runs as the final step of every full extraction; a failure
   fails the run. 2025: 2096 pages, 29 of them split into cut parts.
+
+## 2026-10-17 — output layout
+
+- **`Out/<year>/` holds what people and the extractor use; `Out/.work/` everything else** (`lib/layout.py`).
+  Per year: the table PDFs, one trash PDF per volume, `review.html` (the one page to open), and
+  `tablesindex.sqlite` with `tablesindex.tsv` / `tablesindex-trash.tsv` (same rows as text, for grep,
+  diff and tests). `tablesindex` replaces the table list, the checker summary, the trash TSVs and
+  the verifier's HTML as things to read; its `segments` table is what the SQL extractor queries to
+  find a table in the source volumes. `tagged_pages` counts source pages with a tagged Table.
+- **`run_year.py <year>`** runs step 1, the verifier, the publish step and the page check, stopping
+  at the first failure. The page check reads only what is published.
+- The page cache keeps one entry per volume; superseded entries are deleted.

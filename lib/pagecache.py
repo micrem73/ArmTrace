@@ -3,7 +3,7 @@
 pypdf's extract_text is 94% of a step-1 run (2025: 1099 of 1165 s), and step 1
 used to call it three times per page: read_index, indice.folio_map and
 pageio.read_page. attach() reads every page once through read_page, stores
-(text, stamp) under Out/CACHE/, and hangs the result on the reader so that
+(text, stamp) under Out/.work/cache/, and hangs the result on the reader so that
 pageio.page_text() and pageio.read_page() answer from it.
 
 The cache key is the PDF's bytes, the pypdf version and the source of
@@ -17,10 +17,9 @@ from pathlib import Path
 
 import pypdf
 
-from lib import pageio
-from lib.patterns import OUT_DIR
+from lib import layout, pageio
 
-CACHE_DIR = Path(OUT_DIR, "CACHE")
+CACHE_DIR = layout.cache_dir()
 
 
 def _key(pdf_path):
@@ -60,6 +59,11 @@ def attach(reader, pdf_path, cache_dir=CACHE_DIR):
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(entries, ensure_ascii=False), encoding="utf-8")
         tmp.replace(path)
+    # An entry is superseded when its source, pypdf or pageio.py changed:
+    # keep only the current one per volume, so the cache does not grow.
+    for stale in Path(cache_dir).glob(f"{Path(pdf_path).stem}-*.json"):
+        if stale != path:
+            stale.unlink()
     by_ref = {}
     for page, entry in zip(reader.pages, entries):
         ref = page.indirect_reference

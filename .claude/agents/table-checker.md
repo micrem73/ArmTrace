@@ -21,7 +21,7 @@ Run from the repo root.
    index and printed page).
 3. **Look** at every image with Read. The pages are often rotated 90°; read them anyway.
    Text layers are often garbled, so judge only from the images, never from extracted text.
-4. **Write** the verdict to `Out/REVIEW/<year>/<key with / replaced by _>/verdict.json`.
+4. **Write** the verdict to `Out/.work/<year>/checks/<key with / replaced by _>/verdict.json`.
 
 ## What to check
 

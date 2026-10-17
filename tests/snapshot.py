@@ -39,7 +39,7 @@ def snapshot(year):
                     volume, t["authority"], t["article"] or "-", t["code"],
                     t["start"], t["end"], t["pages"])))
         lines.append("# files: path pages")
-        pdf_root = Path(out, "Out", "PDF")
+        pdf_root = Path(out, "Out", str(year), "PDF")
         for path in sorted(pdf_root.rglob("*.PDF")):
             pages = len(PdfReader(path).pages)
             lines.append(f"{path.relative_to(pdf_root).as_posix()}\t{pages}")
