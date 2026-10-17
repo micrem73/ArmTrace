@@ -5,9 +5,9 @@ government annual reports published under **Law 185/1990** (Article 5, Law
 9 July 1990 n. 185): the source reports → one PDF per table → a catalog of what
 each table is.
 
-> Working guidance for coding agents lives in [AGENTS.md](./AGENTS.md) for
-> *finding* tables — invariants, detection traps, disproven approaches,
-> per-year coverage — and in
+> Working guidance for coding agents lives in [CLAUDE.md](./CLAUDE.md); the
+> detection traps behind *finding* tables are commented beside the code they
+> protect (`lib/`) and pinned by `tests/`. Guidance for *reading* them is in
 > [READING-TABLES.md](./READING-TABLES.md) for *reading* them: rotation,
 > bands, record grammars, and what the tables contain. [ROADMAP.md](./ROADMAP.md)
 > is the order the remaining work is done in. This file is for a person who wants
@@ -161,8 +161,7 @@ vol. II, well inside the Dogane block.
 
 A volume is not always one family: 2024 vol. II is family 1 for its first 600
 pages and then carries the Dogane annex. Per-family detection rules and the
-traps behind them are in
-[AGENTS.md](./AGENTS.md#5-traps).
+traps behind them are commented in `lib/patterns.py` and the year modules.
 
 ---
 
@@ -421,7 +420,7 @@ seven tab-separated fields per row — `year`, `leg`, `num`, `vol`, `file`,
 
 No PDF, sqlite or other binary is tracked by git, and **nothing is in Git LFS** —
 the repository holds only the scripts, `manifest.tsv`, `download_185.sh`, `lib/`,
-`SOURCES.md`, `AGENTS.md`, [READING-TABLES.md](./READING-TABLES.md), `ROADMAP.md` and this file.
+`SOURCES.md`, `CLAUDE.md`, [READING-TABLES.md](./READING-TABLES.md), `ROADMAP.md` and this file.
 Both large sets are regenerable: the reports from `manifest.tsv` and
 `SOURCES.md`, and `Out/` by re-running the pipeline. LFS was never a solution here
 — it does not stop the files being committed, it only moves the bytes into a

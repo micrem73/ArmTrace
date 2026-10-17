@@ -25,7 +25,7 @@ WHY EACH YEAR IS ITS OWN SCRIPT. On 2026-10-11 the per-year scripts stopped
 sharing one engine. The objective is tables produced with no errors, not one elegant
 program; a detector that is right for 2025 is not right for 2024, and merging them
 means re-testing every year on every change. So each year owns its detectors and is
-never edited once its year verifies clean -- the rule is in AGENTS.md section 2.
+never edited once its year verifies clean.
 
 WHAT MAY CHANGE HERE. Anything above the primitives, and only here: page_code,
 page_code_listed, scan_headers, detect_family, build_manifest, resolve_repeats,
@@ -39,8 +39,7 @@ shadow it; do not edit lib/ to suit one year.
 
 Both volumes, always: VOLUME below is pinned per year and is not always "both": 2025 must be,
 because Tabella F1 straddles the join (printed 1035-1042 in volume I, 1043-1104 in
-volume II) and a per-volume run loses the eight pages of volume I. See AGENTS.md
-section 1a.
+volume II) and a per-volume run loses the eight pages of volume I.
 """
 
 import argparse
@@ -448,7 +447,7 @@ def page_code_listed(lines, listed, banner):
     #
     # Gated three ways, all of which are needed. The code must be one the ELENCO
     # promised; the page must carry the MEF banner; and the code must sit in the
-    # header region, above the body -- AGENTS.md section 4 records the bare "I" in
+    # header region, above the body -- 2025 has a bare "I" in
     # a Dogane table list, 108 lines down a page, which is exactly this shape
     # without the position. The first table row below the code is never eligible.
     for i, line in enumerate(lines):

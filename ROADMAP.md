@@ -1,8 +1,8 @@
 # ROADMAP — from per-table PDFs to a queryable SQL archive
 
 The order the work is done in, and why. What is decided, what is built, what is left.
-[AGENTS.md](./AGENTS.md) owns finding tables, [READING-TABLES.md](./READING-TABLES.md)
-owns reading them; neither is restated here. AGENTS.md is the operating contract; this file
+[CLAUDE.md](./CLAUDE.md) is the operating contract and [READING-TABLES.md](./READING-TABLES.md)
+owns reading tables; neither is restated here. This file
 holds the *plan* (§1–§4) and the *measurements* (§5–§9), because a measurement is not a
 rule — it goes stale on its own schedule and belongs with the state of the work.
 
@@ -150,7 +150,7 @@ leaves behind is the shape of the method: an independent witness per claim, FAIL
 
 Defects and gaps in the pipeline, distinct from the open questions in §4.
 
-- **2016 vol. II leaves 358 of 768 pages unattributed, and they are tables.** The block prints `TAB. M` on 278 of them; the header scan detects only the *suffixed* series and never the four bare codes, so the main art. 1 comma 2 allegato is absent from the output while the summary tables beside it are exported. The bare series *is* found in 2025 and merely misread in 2024, so the codes are not the obstacle — 2016 loses them because nothing else witnesses them. **Needs an engine change** — a new header style for `TAB. M` with no suffix, gated against prose — and a re-run of every year in scope (AGENTS.md §2).
+- **2016 vol. II leaves 358 of 768 pages unattributed, and they are tables.** The block prints `TAB. M` on 278 of them; the header scan detects only the *suffixed* series and never the four bare codes, so the main art. 1 comma 2 allegato is absent from the output while the summary tables beside it are exported. The bare series *is* found in 2025 and merely misread in 2024, so the codes are not the obstacle — 2016 loses them because nothing else witnesses them. **Needs an engine change** — a new header style for `TAB. M` with no suffix, gated against prose — and a re-run of every year in scope.
 - **2024 is measured and failing — fix it before extending anything.** §6. **Needs an engine change** in `detect_family()`, and a re-run of every year in scope. Likewise 2015 and 2014 vol. I should join 2001–2010 in an explicit *unsupported* list rather than emitting a misleading 1-table split.
 - **The trailing-page check only runs where the stamp is legible** — 2019 vol. II, 2023 vol. III and the family-3 volumes carry none, so nothing is checked there and they are exported differently. They need a second kind of witness.
 - **Recover the missing page numbers in the 2016 and 2018 indices.** Their ministry rows carry none, so validation rejects the index and the volume falls back to page furniture. The numbers are on the same page.
@@ -159,6 +159,6 @@ Defects and gaps in the pipeline, distinct from the open questions in §4.
 
 ### Closed on 2026-10-11
 
-- **`TRASH` wrote nothing for 2025 vol. I.** `trash_reason()` took `tables` and never used it, and looked the key up through a `by_path` that stopped existing when the ministry tree rekeyed `tables` from paths to the `(authority, article, code)` triple. Every volume whose trash reached that last witness raised `NameError`; vol. I was the only one to reach it, because vol. II's runs are all claimed earlier in the chain. The rewrite that fixed the adjacency test left its prose and not its lookup — the same shape as the `ELENCO_CODE` bug, and the reason the rule in AGENTS.md §3 exists. Fixed by rebuilding the display string from `tables`; verified on the real manifest and on the real write path (16 files, accounting identical to the pre-fix log).
+- **`TRASH` wrote nothing for 2025 vol. I.** `trash_reason()` took `tables` and never used it, and looked the key up through a `by_path` that stopped existing when the ministry tree rekeyed `tables` from paths to the `(authority, article, code)` triple. Every volume whose trash reached that last witness raised `NameError`; vol. I was the only one to reach it, because vol. II's runs are all claimed earlier in the chain. The rewrite that fixed the adjacency test left its prose and not its lookup — the same shape as the `ELENCO_CODE` bug, and the reason a manifest that parses is not trusted until it is read. Fixed by rebuilding the display string from `tables`; verified on the real manifest and on the real write path (16 files, accounting identical to the pre-fix log).
 - **31 of 2025's files FAILed `uniqueness.own_code_absent`.** Every relation exhibit, absent from the INDICE *and* every bookmark tree, so the manifest was their only witness — an artefact of verifying without `--manifest`, not a defect. With it: **142 ok, 0 FAIL, 8 warn**, and `provenienza` runs for the first time (1982/2096 attributed, 0 duplicates, 117 unattributed).
 - **The 11 `no-detector` runs on vol. I** are narrative under a relation exhibit (p26) and two charts (p57), not undetected tables. Trashing them is correct.

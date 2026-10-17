@@ -19,8 +19,10 @@ One line of decision, one line of reason. Newest last.
 - **Validation by Claude Code subagents reading rendered page images; no LLM call inside the pipeline.**
   Images can be read on pages whose text layer is garbled (~498 pages in 2025), which text checks cannot.
   Python stays deterministic and reproducible.
-- **The AGENTS.md traps become regression tests plus `docs/TRAPS.md`; AGENTS.md is retired.**
-  Each trap is a bug that shipped; a test keeps it fixed, prose does not.
+- **AGENTS.md is retired; its traps live as comments beside the code they protect, and as tests.**
+  Each trap is a bug that shipped; a test keeps it fixed, prose does not. A separate trap list drifts.
+- **OCR is out of scope.** Garbled and ciphered pages (~498 in 2025) are the ceiling; they still
+  split, since the split needs only page boundaries.
 - **Table list is built once per year; subagents cut and check one table each; one agent fixes the code.**
   Boundaries depend on the whole volume (listings, joins, reprints), so a table cannot be cut in
   isolation; parallel code edits would collide. After a fix the list is rebuilt from cached page text

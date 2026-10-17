@@ -154,8 +154,7 @@ def same_table(printed, detected):
     A missing *digit* is deliberately NOT forgiven, because in this archive a
     digit is a different table: "Tabella II" and "Tabella II1" are two tables,
     as are AA and AA1, and every family-2 pair A1/A2, B1..B7. Folding them
-    together here would hide exactly the confusion AGENTS.md section 4 warns
-    about. So the rule is: one extra capital, nothing else.
+    together here would hide exactly that confusion. So the rule is: one extra capital, nothing else.
 
     This only widens a comparison. It never decides that a code exists, so
     nothing is created by being generous here.
@@ -264,7 +263,7 @@ def rel_headings(lines):
     between them -- p40 prints 8.3 and 8.4 side by side, p42 prints 8.6 and 8.7,
     p60 stacks 18 above 19 -- and a detector that returned one code per page
     would silently drop three tables while looking like it had found them. That
-    is the same shape as the Dogane appendix defect in AGENTS.md section 4, where
+    is the same shape as the Dogane appendix defect (appendix_code), where
     losing one unclassifiable opening page was enough to invent a table of one.
 
     Duplicates collapse, so an exhibit whose heading repeats on a continuation

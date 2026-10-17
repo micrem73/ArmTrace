@@ -6,8 +6,8 @@ printed vocabulary of the archive, which does not change between 2016 and 2025.
 
 This is the highest-blast-radius file in the repository. A wrong pattern here is wrong
 for every year at once, where before it was wrong for one. Every entry carries the
-measurement or the failure that produced it -- see AGENTS.md section 5, the trap list,
-which is not inferrable from the code."""
+measurement or the failure that produced it. Keep those comments: each is a bug that
+shipped, and the code that avoids it looks entirely correct."""
 
 
 import re

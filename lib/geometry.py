@@ -147,7 +147,7 @@ FOREIGN_FRACTION = 0.20
 CHART_CURVES = 200
 
 # Private Use Area, the residue of a subsetted font whose ToUnicode CMap was
-# destroyed. See lib/patterns.py (PUA_RE) and AGENTS.md section 4.
+# destroyed. See lib/patterns.py (PUA_RE) and lib/pageio.py (is_garbled).
 PUA = re.compile(r"[\ue000-\uf8ff]")
 
 LIGATURES = str.maketrans({

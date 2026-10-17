@@ -93,7 +93,7 @@ except ImportError:
 
 # The printed patterns, the page reader and the stamp reader are imported from
 # lib/ rather than reimplemented: every one of them encodes a trap that shipped
-# (see AGENTS.md section 5) and a second copy would be a second thing to get
+# and a second copy would be a second thing to get
 # wrong.
 #
 # They are imported from lib/ and NOT from a per-year script, and that is the
@@ -192,8 +192,8 @@ STAMP_WORD = re.compile(r"(?i)(?:pagina|pag|page)[\s.]*")
 # No local code-shape patterns: CODE_RE, CODE_TAIL, INLINE_CODE and LEADING_CODE
 # are imported from step 1 and used as they are. This block used to redeclare all
 # four, and one copy outlived the reason it was made. Do not add one back -- use
-# the imported name. Why that matters: AGENTS.md section 4, "A private copy of a
-# trap", and section 2.
+# the imported name. A private copy of a trap is the same bug with a second place
+# to fix it in. tests/test_traps.py enforces this.
 
 # The Dogane appendix code, as the filename spells it: the suffix is glued, so
 # that layout.code_shape and volume_vocabulary() admit the code. Built from the
@@ -632,7 +632,7 @@ def page_code(lines, vocabulary):
     # top of the page; a bare capital in the body is a table cell, and 2025
     # has one that reads as a code -- the "I" in a list of MG-table numbers
     # inside the Dogane annexes, 108 lines down a page. The positional gate
-    # here is not the discovery gate AGENTS.md warns about: the code is
+    # here is not a discovery gate: the code is
     # already known to the volume, and the position only decides whether a
     # known code is being *confirmed* as this page's own.
     for line in lines[:BARE_CODE_MAX_LINE]:
@@ -671,7 +671,7 @@ def volume_vocabulary(hits, index_codes, bookmark_codes, manifest_codes):
     """Every table code the volume shows any sign of.
 
     Deliberately not restricted to the codes that repeat. The frequency rule
-    in AGENTS.md -- a real table repeats its code, a prose mention appears
+    -- a real table repeats its code, a prose mention appears
     once -- is a rule about *concluding* that something is a table, and it is
     applied where that conclusion is drawn, in check_uniqueness. Applying it
     here instead would mean a code seen twice anywhere in the volume is
@@ -1200,7 +1200,7 @@ VOLUME_SPLIT = re.compile(r"^\s*Volume\s+(I{1,3}V?|IV)\s*$", re.IGNORECASE)
 # CODE_TAIL, not a local [A-Z]{1,3}\d?. This was the one place the one-digit
 # defect was still alive: the generator's ELENCO_ROW and ELENCO_TITLE had been
 # widened to \d{0,2} and this had not, so harvest_elenco returned nothing for
-# "Tabella MT13" or "Tabella MG10" -- the codes AGENTS.md section 4 records as
+# "Tabella MT13" or "Tabella MG10" -- codes
 # named by no index and no bookmark tree, where the listing is the only other
 # witness. A cross-check that quietly stops seeing half the family is worse than
 # one that is visibly absent, because it still reports agreement.
@@ -1324,8 +1324,8 @@ def harvest_elenco(texts):
     start page per code, which is the only place the archive states how long
     a table is, independently of the stamp.
 
-    The marker is looked for in the top lines only, for the reason recorded
-    in AGENTS.md section 4: on 2025 vol. II the table pages themselves print
+    The marker is looked for in the top lines only, because
+    on 2025 vol. II the table pages themselves print
     SEGNALAZIONI in a trailing header block.
     """
     found = defaultdict(list)
@@ -2258,7 +2258,7 @@ def html_report(payload, path):
             out.append("</ul>")
         # Atteso, non un difetto: i Dogane e i Difesa non hanno indice. Serve
         # elencarlo perche' il numero e' impressionante, e chiamarlo problema
-        # sarebbe falso. Vedi AGENTS.md sezione 6.
+        # sarebbe falso.
         if index.get("unattested_files"):
             codes = index["unattested_files"]
             out.append(
