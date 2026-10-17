@@ -118,3 +118,12 @@ One line of decision, one line of reason. Newest last.
 - **`In/<year>/` and `Out/` (outside `Out/.work/`) are protected by a PreToolUse hook, not only by prose.**
   A rule that must hold without exception needs a block, not just a reminder. Bash writes are not
   covered: the scripts that own those trees use Bash.
+
+## 2026-10-17 — one engine, one small file per edition
+
+- **`lib/engine.py` is the step-1 engine for every year; `editions/y<year>.py` holds what one edition
+  differs in (`VOLUME`, and its own version of a function only if `engine.OVERRIDES` lists it).**
+  The per-year copies made each fix local to its year: the cover and Difesa-article rules of 2025
+  review round 1 never reached 2024. The template and the 2024 copy are deleted; 2024 restarts as an
+  edition file. One entry point: `python3 Reports2PDFTables.py <year>`. A trap test fails when an
+  edition redefines an engine function that `OVERRIDES` does not list.

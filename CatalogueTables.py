@@ -1558,7 +1558,7 @@ def main(argv=None):
 
     if not files:
         print(f"No per-table PDFs for {year} under {input_dir}. "
-              f"Run Reports2PDFTables_{year}.py first.")
+              f"Run Reports2PDFTables.py {year} first.")
         return 1
 
     started = time.time()

@@ -30,7 +30,7 @@ pip install -r requirements.txt
 reports_185_1990/download_185.sh reports_185_1990 reports_185_1990/manifest.tsv
 
 # 3. step 1 — one PDF per table  ->  Out/PDF/  (+ Out/TRASH/ for the rest)
-./Reports2PDFTables_2025.py
+./Reports2PDFTables.py 2025
 
 # 4. step 2 — what shape is each table?  ->  Out/CATALOG/
 ./CatalogueTables.py --year 2025 --manifest Out/manifest-2025.jsonl
@@ -43,16 +43,12 @@ Step 3 prints a report per volume — tables found per ministry, page counts,
 what was skipped and why — before it writes anything. Add `--dry-run` to see it
 without writing.
 
-**Always pass `--volume both`, never a single volume.** 2025 Tabella F1 is one
-table of 70 pages split across the two volumes (printed 1035–1042, then
-1043–1104), and a per-volume run loses the eight pages of volume I.
-
-For one year only, use the thin per-year entry point, which pins the year and
-refuses a `--year` of its own:
-
-```bash
-./Reports2PDFTables_2025.py            # same as --year 2025 --volume both
-```
+The year is the first argument; which volumes a run reads comes from the
+edition (`editions/y<year>.py`), never from the command line. 2025 reads both:
+Tabella F1 is one table of 70 pages split across the two volumes (printed
+1035–1042, then 1043–1104), and a per-volume run loses the eight pages of volume I.
+The engine (`lib/engine.py`) is shared by every year; an edition file holds only
+what differs, and may replace a function only if `engine.OVERRIDES` lists it.
 
 ---
 
@@ -172,24 +168,22 @@ shape each table is; step 3 audits step 1's output. They are independent — ste
 re-reads the PDFs and step 3 re-reads the volumes, and both reach their own
 conclusions rather than trusting step 1's manifest.
 
-### 1. `Reports2PDFTables_<anno>.py` — volumes → `Out/PDF/`
+### 1. `Reports2PDFTables.py <anno>` — volumes → `Out/PDF/`
 
 Splits a report volume into one PDF per table, written to
 `Out/PDF/<authority>/[<article>/]<table><year>.PDF`.
 
 ```bash
-./Reports2PDFTables_2025.py
-./Reports2PDFTables_2025.py --all              # every in-scope volume
-./Reports2PDFTables_2025.py --dry-run          # report only, write nothing
-./Reports2PDFTables_2025.py --report reports_185_1990/2023/2023_LXVII_n2_VOLUME_II.pdf
+./Reports2PDFTables.py 2025
+./Reports2PDFTables.py 2025 --dry-run          # report only, write nothing
+./Reports2PDFTables.py 2025 --only MEF/UE      # one table, no trash
 ```
 
 | Flag | Meaning |
 |---|---|
-| `--year` | reporting year — **required** when several are present |
-| `--volume` | `1`, `2` or `both` (default `2`); use `both` |
 | `--report` | explicit PDF path, repeatable |
-| `--all` | every in-scope volume (`--all` stops at 2015; earlier years are deferred, not broken) |
+| `--only` | write only this table, e.g. `MEF/UE` (repeatable); no trash |
+| `--tables` | where to write the year's table list (default `Out/.work/<year>/tables.tsv`) |
 | `--base` | root for all paths (default `.`) |
 | `--out` | output root (default `<base>/Out`) |
 | `--dry-run` | print the coverage report, write nothing |

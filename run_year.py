@@ -3,7 +3,7 @@
 
     python3 run_year.py 2025
 
-  1. step 1     Reports2PDFTables_<year>.py   tables, trash, table list
+  1. step 1     Reports2PDFTables.py <year>   tables, trash, table list
   2. verify     VerifyTables.py               deterministic audit
   3. recheck    tools/recheck.py              next step per table (check/fix/human)
   4. publish    tools/build_index.py          tablesindex + review.html
@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent
 def main(year):
     py = sys.executable
     steps = [
-        ("step 1", [py, str(ROOT / f"Reports2PDFTables_{year}.py")]),
+        ("step 1", [py, str(ROOT / "Reports2PDFTables.py"), year]),
         # review.html replaces the verifier's own page: --no-html.
         ("verify", [py, str(ROOT / "VerifyTables.py"), "--year", year,
                     "--no-html"]),

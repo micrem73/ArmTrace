@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def run_step1(year, out):
     manifest = Path(out, "manifest.jsonl")
     subprocess.run(
-        [sys.executable, str(ROOT / f"Reports2PDFTables_{year}.py"),
+        [sys.executable, str(ROOT / "Reports2PDFTables.py"), year,
          "--out", str(out), "--manifest", str(manifest), "--no-trash"],
         cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
     return manifest

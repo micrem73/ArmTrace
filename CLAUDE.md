@@ -13,11 +13,11 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - Install: `pip install --user -r requirements.txt` (`python3 -m venv` fails on this host: no `ensurepip`)
 - Download sources: `bash In/download_185.sh In In/manifest.tsv` (checks page counts against the manifest; exits 1 on any problem). Skill: `download-sources`
 - **Run a year:** `python3 run_year.py 2025` — step 1 (tables, trash), verifier, publish (`tablesindex`, `review.html`), final page check. Stops at the first failure; the page check must pass.
-- Table list only (~10 s warm): `python3 Reports2PDFTables_2025.py --dry-run --no-trash` → `Out/.work/2025/tables.tsv`
-- Cut one table: `python3 Reports2PDFTables_2025.py --only MEF/UE` (repeatable; key = `authority/[article/]code`)
+- Table list only (~10 s warm): `python3 Reports2PDFTables.py 2025 --dry-run --no-trash` → `Out/.work/2025/tables.tsv`
+- Cut one table: `python3 Reports2PDFTables.py 2025 --only MEF/UE` (repeatable; key = `authority/[article/]code`)
 - Check one table (subagent): `.claude/agents/table-checker.md`; renders with `python3 tools/review_pages.py 2025 <key>`, writes `Out/.work/2025/checks/<key>/verdict.json`
 - After a code change or a round of checks: `python3 tools/recheck.py 2025` (what each table needs next: check, recheck, second-check, fix, human), then republish: `python3 tools/build_index.py 2025` (also deletes the PNGs of PASS tables; `--keep-png` to keep)
-- **Done = `make check`** (ruff, then the full test suite; exits non-zero on any failure). Healthy output ends with `All checks passed!` and `28 passed in 147.52s`. About 2.5 min warm. The first run after editing `lib/pageio.py` or upgrading pypdf rebuilds the page cache, which takes much longer.
+- **Done = `make check`** (ruff, then the full test suite; exits non-zero on any failure). Healthy output ends with `All checks passed!` and `30 passed in 54.25s` (about 1 min warm). The first run after editing `lib/pageio.py` or upgrading pypdf rebuilds the page cache, which takes much longer.
 - Fast loop: `make test-fast` (traps, recheck, table list); lint only: `make lint` (`ruff.toml`: correctness rules only)
 - The golden tests need the sources: a test that says `sources for <year>: missing …` means download them, not a regression.
 - A `code` FAIL is fixed test-first: add the failing assertion (trap test or golden row), then change the code, not the test. Regenerate `tests/golden/` (`python3 tests/snapshot.py <year>`) only for tables re-checked after the change.
@@ -40,7 +40,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - SQL extraction reads the original volumes in `In/` through `Out/<year>/tablesindex.sqlite`, never the split PDFs: those drop the tagged table structure, page labels, bookmarks and metadata of the source. The split PDFs are for review, and each carries its provenance (source file, SHA-256, pages) in its metadata.
 - Every part of every source page ends up in exactly one place: a table file, a table's cut-out part, or the trash. Never in two, never in none. The page check enforces it at the end of every extraction.
 - Escalation is by kind of failure, not by count (`tools/recheck.py`). The checker states the kind of every FAIL/UNSURE: a **convention** question (what counts as part of a table, where it is filed, where it ends) goes to the human at once; a **code** defect is fixed, and goes to the human if it still fails after 2 fixes; a **checker** doubt gets a second, independent checker, and goes to the human if the two disagree. Tables that had passed and change after a fix are re-checked and listed for the human before the commit. Items for the human are in `Out/<year>/HUMAN-REVIEW.md` and on `review.html`. Never drop or silently correct a value. Never invent one.
-- Layout differences between editions live in a per-edition code. A new edition should share mostly of the codebase, plus specific code needed for that year. 
+- Layout differences between editions live in a per-edition code. A new edition should share mostly of the codebase, plus specific code needed for that year. The engine is `lib/engine.py`; an edition is `editions/y<year>.py` (`VOLUME`, plus only the functions `engine.OVERRIDES` lists). A fix that holds for every year goes in the engine, and the golden tests of the verified years say whether it broke one.
 - The run is reproducible: same input and configuration give the same PDF files.
 
 

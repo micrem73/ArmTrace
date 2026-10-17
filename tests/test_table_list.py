@@ -18,7 +18,7 @@ GOLDEN = Path(__file__).parent / "golden"
 def test_table_list_unchanged(year, sources, tmp_path):
     out = tmp_path / "tables.tsv"
     subprocess.run(
-        [sys.executable, str(ROOT / f"Reports2PDFTables_{year}.py"),
+        [sys.executable, str(ROOT / "Reports2PDFTables.py"), year,
          "--dry-run", "--no-trash", "--tables", str(out)],
         cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
     assert out.read_text() == (GOLDEN / f"{year}-tables.tsv").read_text()

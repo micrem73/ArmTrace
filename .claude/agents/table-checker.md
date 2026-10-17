@@ -13,7 +13,7 @@ change code, the table list, or any file outside your table's review folder.
 Run from the repo root.
 
 1. **Cut** (deterministic, ~15 s):
-   `python3 Reports2PDFTables_<year>.py --only <key>`
+   `python3 Reports2PDFTables.py <year> --only <key>`
 2. **Render** what you need to see:
    `python3 tools/review_pages.py <year> <key>`
    It prints JSON: the table-list `row` (segments = PDF indices, printed = page numbers on

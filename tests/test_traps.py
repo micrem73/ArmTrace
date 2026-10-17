@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from lib.engine import OVERRIDES
+
 ROOT = Path(__file__).resolve().parent.parent
 SHARED = [ROOT / "VerifyTables.py", ROOT / "run_year.py",
           *sorted((ROOT / "lib").glob("*.py")), *sorted((ROOT / "tools").glob("*.py"))]
@@ -42,3 +44,18 @@ def test_verifier_keeps_no_private_copy_of_patterns():
                 for t in node.targets if isinstance(t, ast.Name) and t.id.isupper()}
     copies = assigned(ROOT / "VerifyTables.py") & assigned(ROOT / "lib" / "patterns.py")
     assert copies <= ALLOWED_COPIES.keys()
+
+
+EDITIONS = sorted((ROOT / "editions").glob("y*.py"))
+
+
+@pytest.mark.parametrize("path", EDITIONS, ids=lambda p: p.name)
+def test_edition_replaces_only_declared_functions(path):
+    """Each year was once a full copy of the engine, and a fix reached only the
+    year it was made in. An edition may redefine an engine function only if
+    engine.OVERRIDES names it, so a second copy cannot grow back unseen."""
+    def functions(p):
+        return {n.name for n in parse(p).body if isinstance(n, ast.FunctionDef)}
+    engine = functions(ROOT / "lib" / "engine.py")
+    assert not (functions(path) & engine) - set(OVERRIDES)
+    assert set(OVERRIDES) <= engine
