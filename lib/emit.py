@@ -19,8 +19,7 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 
 from lib import layout, ontology
-from lib import patterns as P
-from lib.patterns import OUT_DIR, PDF_EXT, REL_HEADING
+from lib.patterns import PDF_EXT, REL_HEADING
 from lib.pageio import rel_code
 
 

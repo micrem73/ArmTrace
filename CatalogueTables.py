@@ -1414,7 +1414,6 @@ def write_census(conn, year, path, elapsed):
     # ministry read back as `PDF/...` and the census grouped them under an
     # authority called `PDF`. Keying the lookup on the same tuple the primary
     # key uses is what keeps the report's counts equal to the table's.
-    by_key = {(r[0], r[1], r[2]): r for r in rows}
     extras = {}
     for r in rows:
         extras[r[:3]] = conn.execute(
@@ -1516,9 +1515,9 @@ def main(argv=None):
     parser.add_argument("--year", required=True,
                         help="reporting year to catalogue")
     parser.add_argument("--input-dir", default=None,
-                        help=f"per-table PDFs (default: Out/PDF)")
+                        help="per-table PDFs (default: Out/PDF)")
     parser.add_argument("--out-root", default=None,
-                        help=f"output root (default: Out)")
+                        help="output root (default: Out)")
     parser.add_argument("--catalog", default=None,
                         help="catalog path (default: <out>/{CATALOG_DIR}/catalog.sqlite)")
     parser.add_argument("--manifest", default=None,

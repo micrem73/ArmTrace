@@ -107,3 +107,14 @@ One line of decision, one line of reason. Newest last.
   → a second independent checker, the human if they disagree. `tools/recheck.py` keeps per-table
   history, re-queues tables whose content changed, lists tables that changed after a PASS, and writes
   `Out/<year>/HUMAN-REVIEW.md`.
+
+## 2026-10-17 — one "done" command, hooks behind the hard rules
+
+- **`make check` is "done": ruff (correctness rules only, `ruff.toml`), then the full test suite.**
+  One command that exits non-zero gives an agent the same verdict a person gets. Ruff is a single
+  dev-only binary; style rules stay off so the lint never asks for churn.
+- **The golden tests fail with "sources missing" when `In/<year>/` is absent or the wrong size.**
+  Sources are not in git, so a fresh worktree has none; a bare subprocess error read like a regression.
+- **`In/<year>/` and `Out/` (outside `Out/.work/`) are protected by a PreToolUse hook, not only by prose.**
+  A rule that must hold without exception needs a block, not just a reminder. Bash writes are not
+  covered: the scripts that own those trees use Bash.

@@ -17,8 +17,11 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - Cut one table: `python3 Reports2PDFTables_2025.py --only MEF/UE` (repeatable; key = `authority/[article/]code`)
 - Check one table (subagent): `.claude/agents/table-checker.md`; renders with `python3 tools/review_pages.py 2025 <key>`, writes `Out/.work/2025/checks/<key>/verdict.json`
 - After a code change or a round of checks: `python3 tools/recheck.py 2025` (what each table needs next: check, recheck, second-check, fix, human), then republish: `python3 tools/build_index.py 2025` (also deletes the PNGs of PASS tables; `--keep-png` to keep)
-- Test: `python3 -m pytest tests/` (full, ~1 min warm); fast: `python3 -m pytest tests/test_table_list.py`
-- Lint: TBD
+- **Done = `make check`** (ruff, then the full test suite; exits non-zero on any failure). Healthy output ends with `All checks passed!` and `28 passed in 147.52s`. About 2.5 min warm. The first run after editing `lib/pageio.py` or upgrading pypdf rebuilds the page cache, which takes much longer.
+- Fast loop: `make test-fast` (traps, recheck, table list); lint only: `make lint` (`ruff.toml`: correctness rules only)
+- The golden tests need the sources: a test that says `sources for <year>: missing …` means download them, not a regression.
+- A `code` FAIL is fixed test-first: add the failing assertion (trap test or golden row), then change the code, not the test. Regenerate `tests/golden/` (`python3 tests/snapshot.py <year>`) only for tables re-checked after the change.
+- Hooks (`.claude/hooks/guard.py`): Edit/Write is blocked on `In/<year>/` and on `Out/` outside `Out/.work/`. Each edited `.py` file is linted.
 - Debug into a scratch tree with `--out <dir>`, so the last run's `Out/` is not overwritten.
 
 ## Output (`lib/layout.py`)

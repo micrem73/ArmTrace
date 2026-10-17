@@ -243,7 +243,7 @@ def record_boundary(outside, where, page, authority, count):
 # after it by exactly that page -- which is how F1 came out one page early, on
 # p845, a page that is not F1 at all.
 ELENCO_ROW_2024 = re.compile(
-    rf"^\s*(\d+)\s+(\d+)\s+(TAB\.?\s+)?([A-Z][A-Z0-9]{{0,7}})(?![A-Za-z0-9])(.*)$"
+    r"^\s*(\d+)\s+(\d+)\s+(TAB\.?\s+)?([A-Z][A-Z0-9]{0,7})(?![A-Za-z0-9])(.*)$"
 )
 # The running total that ends the row, wherever the row happens to end.
 ELENCO_TOTAL_2024 = re.compile(r"(\d+)\s*$")

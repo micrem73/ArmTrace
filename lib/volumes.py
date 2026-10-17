@@ -8,7 +8,6 @@ standing in for VOLUME, 2001 DOCUMENTO_UNICO."""
 import re
 from pathlib import Path
 
-from lib import patterns as P
 from lib.patterns import FIRST_YEAR, REPORTS_DIR, ROMAN
 
 

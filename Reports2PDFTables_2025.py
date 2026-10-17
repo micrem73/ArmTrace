@@ -47,7 +47,7 @@ from pathlib import Path
 from pypdf import PdfReader
 
 from lib import indice, layout, ontology, pagecache
-from lib.emit import (TRASH_DIR, dump_trash, report as render_report, split_pdf,
+from lib.emit import (dump_trash, report as render_report, split_pdf,
                       table_key, table_list, table_plan, write_table_list)
 from lib.pageio import (
     cited_article,

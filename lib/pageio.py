@@ -9,7 +9,6 @@ detectors."""
 
 import re
 
-from lib import patterns as P
 from lib.patterns import (
     ALLEGATO_HEAD, APPENDIX_CODE, APPENDIX_SUFFIX, ELENCO_HEAD, ELENCO_MIN_CODES,
     ELENCO_ROW, MAX_TRAILING_PAGES, PAGE_NUMBER_RE, PUA_RE, REL_HEADING,

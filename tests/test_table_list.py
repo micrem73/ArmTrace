@@ -15,7 +15,7 @@ GOLDEN = Path(__file__).parent / "golden"
 
 @pytest.mark.parametrize(
     "year", sorted(p.name.split("-")[0] for p in GOLDEN.glob("*-tables.tsv")))
-def test_table_list_unchanged(year, tmp_path):
+def test_table_list_unchanged(year, sources, tmp_path):
     out = tmp_path / "tables.tsv"
     subprocess.run(
         [sys.executable, str(ROOT / f"Reports2PDFTables_{year}.py"),

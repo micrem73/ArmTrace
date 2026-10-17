@@ -1,0 +1,4 @@
+# Correctness only (pyflakes + syntax): each finding is a bug or dead code, never
+# style. Widen the selection one rule at a time, fixing what it finds.
+[lint]
+select = ["F", "E9"]
