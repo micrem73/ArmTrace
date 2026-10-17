@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Collect the checkers' verdicts into one page a person reviews.
 
-    python3 tools/review_report.py 2025
+    python3 tools/review_report.py 2025 [--keep-png]
 
 Reads Out/REVIEW/<year>/*/verdict.json and the table list, and writes
 Out/REVIEW/<year>/report.html (self-contained apart from the PNGs beside it,
 links relative, so it opens from file://) and Out/REVIEW/<year>/summary.tsv.
 Tables with no verdict yet are listed as PENDING. FAIL and UNSURE come first,
 each with its rendered pages next to the verdict.
+
+Last step: the rendered PNGs of every PASS table are deleted (the report does
+not show them, and a re-check renders them again). FAIL, UNSURE and PENDING
+keep theirs. --keep-png skips the deletion.
 """
 import csv
 import html
@@ -21,7 +25,7 @@ IMAGE_ORDER = ["source-before", "source-first", "file-first", "file-second", "fi
                "file-mid-2", "file-mid-3", "file-last", "source-after"]
 
 
-def main(year):
+def main(year, keep_png=False):
     review = ROOT / "Out" / "REVIEW" / year
     with open(ROOT / "Out" / f"tables-{year}.tsv", encoding="utf-8") as fh:
         rows = [r for r in csv.DictReader(fh, delimiter="\t") if r["file"]]
@@ -81,6 +85,16 @@ def main(year):
             parts.append("</div>")
         parts.append("</section>")
     (review / "report.html").write_text("\n".join(parts), encoding="utf-8")
+
+    removed = 0
+    if not keep_png:
+        for _row, folder, v in entries:
+            if (v or {}).get("verdict") == "PASS":
+                for png in folder.glob("*.png"):
+                    png.unlink()
+                    removed += 1
+    print(f"deleted {removed} PNG(s) of PASS tables" if not keep_png
+          else "PNGs kept (--keep-png)")
     print(f"{review / 'report.html'}: " +
           ", ".join(f"{k} {n}" for k, n in sorted(counts.items(),
                                                    key=lambda kv: ORDER[kv[0]])))
@@ -99,6 +113,7 @@ img{width:220px;border:1px solid #ccc} figcaption{font-size:12px;text-align:cent
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    args = [a for a in sys.argv[1:] if a != "--keep-png"]
+    if len(args) != 1:
         raise SystemExit(__doc__)
-    main(sys.argv[1])
+    main(args[0], keep_png="--keep-png" in sys.argv[1:])
