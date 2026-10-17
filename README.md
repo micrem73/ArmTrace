@@ -7,8 +7,8 @@ each table is.
 
 > Working guidance for coding agents lives in [CLAUDE.md](./CLAUDE.md); the
 > detection traps behind *finding* tables are commented beside the code they
-> protect (`lib/`) and pinned by `tests/`. Guidance for *reading* them is in
-> [READING-TABLES.md](./READING-TABLES.md) for *reading* them: rotation,
+> protect (`lib/`) and pinned by `tests/`.
+> [READING-TABLES.md](./READING-TABLES.md) covers *reading* them: rotation,
 > bands, record grammars, and what the tables contain. [ROADMAP.md](./ROADMAP.md)
 > is the order the remaining work is done in. This file is for a person who wants
 > to *run* the pipeline and use its output.

@@ -21,8 +21,7 @@ One line of decision, one line of reason. Newest last.
   Python stays deterministic and reproducible.
 - **AGENTS.md is retired; its traps live as comments beside the code they protect, and as tests.**
   Each trap is a bug that shipped; a test keeps it fixed, prose does not. A separate trap list drifts.
-- **OCR is out of scope.** Garbled and ciphered pages (~498 in 2025) are the ceiling; they still
-  split, since the split needs only page boundaries.
+- **OCR is out of scope.** The unreadable pages (ROADMAP.md §3) are the ceiling, not a defect.
 - **Table list is built once per year; subagents cut and check one table each; one agent fixes the code.**
   Boundaries depend on the whole volume (listings, joins, reprints), so a table cannot be cut in
   isolation; parallel code edits would collide. After a fix the list is rebuilt from cached page text

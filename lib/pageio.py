@@ -154,7 +154,8 @@ def same_table(printed, detected):
     A missing *digit* is deliberately NOT forgiven, because in this archive a
     digit is a different table: "Tabella II" and "Tabella II1" are two tables,
     as are AA and AA1, and every family-2 pair A1/A2, B1..B7. Folding them
-    together here would hide exactly that confusion. So the rule is: one extra capital, nothing else.
+    together here would hide exactly that confusion. So the rule is: one extra
+    capital, nothing else.
 
     This only widens a comparison. It never decides that a code exists, so
     nothing is created by being generous here.

@@ -2,8 +2,7 @@
 
 The order the work is done in, and why. What is decided, what is built, what is left.
 [CLAUDE.md](./CLAUDE.md) is the operating contract and [READING-TABLES.md](./READING-TABLES.md)
-owns reading tables; neither is restated here. This file
-holds the *plan* (§1–§4) and the *measurements* (§5–§9), because a measurement is not a
+owns reading tables; neither is restated here. This file holds the *plan* (§1–§4) and the *measurements* (§5–§9), because a measurement is not a
 rule — it goes stale on its own schedule and belongs with the state of the work.
 
 **The problem this ordering solves.** The archive's tables are neither stable across years

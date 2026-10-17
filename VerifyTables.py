@@ -92,9 +92,8 @@ except ImportError:
     sys.exit("Errore: pypdf non installato. Esegui: pip install -r requirements.txt")
 
 # The printed patterns, the page reader and the stamp reader are imported from
-# lib/ rather than reimplemented: every one of them encodes a trap that shipped
-# and a second copy would be a second thing to get
-# wrong.
+# lib/ rather than reimplemented: every one of them encodes a trap that shipped,
+# and a second copy would be a second thing to get wrong.
 #
 # They are imported from lib/ and NOT from a per-year script, and that is the
 # rule this file exists to keep. Since 2026-10-11 each year owns its own
@@ -105,13 +104,19 @@ except ImportError:
 # cannot report.
 from lib.patterns import (
     APPENDIX_SUFFIX,
+    BARE_CODE_MAX_LINE,
     CODE_RE,
     CODE_TAIL,
     FAMILY2_CODES,
     INDEX_ROW,
     INLINE_CODE,
     LEADING_CODE,
+    MAX_TRAILING_PAGES,
     MIN_RUN,
+    OUT_DIR,
+    PDF_EXT,
+    REL_CODE,
+    REPORTS_DIR,
     STAMP_BAND,
     STAMP_NUM,
     STAMP_SIZE,
@@ -134,10 +139,6 @@ from lib.pageio import (
 # imports the same function for the same reason -- three parsers for one shape
 # is how a rename quietly stops being checked.
 from lib import layout, ontology
-
-REPORTS_DIR = "In"
-OUT_DIR = "Out"
-PDF_EXT = ".PDF"
 
 # Where the report of each verdict goes. Kept out of PDF/ and CATALOG/ so that
 # nothing this script writes can be mistaken for pipeline output.
@@ -192,8 +193,7 @@ STAMP_WORD = re.compile(r"(?i)(?:pagina|pag|page)[\s.]*")
 # No local code-shape patterns: CODE_RE, CODE_TAIL, INLINE_CODE and LEADING_CODE
 # are imported from step 1 and used as they are. This block used to redeclare all
 # four, and one copy outlived the reason it was made. Do not add one back -- use
-# the imported name. A private copy of a trap is the same bug with a second place
-# to fix it in. tests/test_traps.py enforces this.
+# the imported name; tests/test_traps.py enforces this.
 
 # The Dogane appendix code, as the filename spells it: the suffix is glued, so
 # that layout.code_shape and volume_vocabulary() admit the code. Built from the
@@ -237,18 +237,13 @@ BARE_KEYWORD = re.compile(r"(?i)tabella|tab\.|tab")
 # one: these tables carry no law reference at all, they are absent from the
 # INDICE, and they are absent from every bookmark tree. Judged against the
 # art. 27 shape, every one of them would FAIL, exactly as the five Difesa
-# annessi did before ANNEXO_CODE existed.
-REL_CODE = re.compile(r"^T\d{1,3}$")
+# annessi did before ANNEXO_CODE existed. REL_CODE is imported from lib.patterns.
 
 # The same code as it is PRINTED, so the verifier can look for it on the page: a
 # file called T812025.PDF carries a heading reading "Tabella 8.1", and a check
 # that searched for "T81" there would find nothing and call a correct file empty.
-REL_HEADING = re.compile(
-    r"(?i:^|\s)Tabella\s+(\d+(?:\.\d+)?)"
-    r"(?:\s*\(\s*parte\s+\d+\s+di\s+\d+\s*\))?\s*$")
-
-# The same, anchored to the whole line, which is the form the exhibit heading
-# actually takes and the form that rejects the 17 prose cross-references in 2025
+# Anchored to the whole line, which is the form the exhibit heading actually
+# takes and the form that rejects the 17 prose cross-references in 2025
 # vol. I -- including "(Tabella 1)." at the end of a sentence and "Tabella 5 e
 # Grafico 6" naming two exhibits at once.
 REL_LINE = re.compile(
@@ -262,20 +257,10 @@ REL_LINE = re.compile(
 # scanning deep. Kept in step with REL_HEADING_SCAN in step 1.
 REL_SCAN_LINES = 40
 
-# How far down a page a bare code line may sit and still be read as the page's
-# own stamp. The 2025 charts print theirs in the fourth line; a table cell
-# that happens to read as a code sits much further down.
-BARE_CODE_MAX_LINE = 8
-
 # A page that carries nothing but the running header and the folio: the
 # section's opening page, and the shape a stray front page takes. Four lines
 # is the observed floor for a real page with content in it.
 HEADER_ONLY_LINES = 4
-
-# Step 1's own cap on how much a table may lose to a trim. A file with more
-# unstamped pages at its tail than this is a detection failure, not a pasted
-# document, and is reported at that size rather than silently excused.
-MAX_TRAILING_PAGES = 25
 
 
 # ==========================================================================
@@ -670,9 +655,8 @@ def seen_family(codes):
 def volume_vocabulary(hits, index_codes, bookmark_codes, manifest_codes):
     """Every table code the volume shows any sign of.
 
-    Deliberately not restricted to the codes that repeat. The frequency rule
-    -- a real table repeats its code, a prose mention appears
-    once -- is a rule about *concluding* that something is a table, and it is
+    Deliberately not restricted to the codes that repeat. The frequency
+    rule -- a real table repeats its code, a prose mention appears once -- is a rule about *concluding* that something is a table, and it is
     applied where that conclusion is drawn, in check_uniqueness. Applying it
     here instead would mean a code seen twice anywhere in the volume is
     admitted and everything else is invisible, which loses exactly the
@@ -1200,9 +1184,8 @@ VOLUME_SPLIT = re.compile(r"^\s*Volume\s+(I{1,3}V?|IV)\s*$", re.IGNORECASE)
 # CODE_TAIL, not a local [A-Z]{1,3}\d?. This was the one place the one-digit
 # defect was still alive: the generator's ELENCO_ROW and ELENCO_TITLE had been
 # widened to \d{0,2} and this had not, so harvest_elenco returned nothing for
-# "Tabella MT13" or "Tabella MG10" -- codes
-# named by no index and no bookmark tree, where the listing is the only other
-# witness. A cross-check that quietly stops seeing half the family is worse than
+# "Tabella MT13" or "Tabella MG10" -- codes named by no index and no bookmark
+# tree, where the listing is the only other witness. A cross-check that quietly stops seeing half the family is worse than
 # one that is visibly absent, because it still reports agreement.
 ELENCO_CODE = re.compile(
     rf"^(?:Tabella|Tab\.?)\s+(?P<code>{CODE_TAIL})(?![A-Za-z0-9])"
@@ -1324,9 +1307,8 @@ def harvest_elenco(texts):
     start page per code, which is the only place the archive states how long
     a table is, independently of the stamp.
 
-    The marker is looked for in the top lines only, because
-    on 2025 vol. II the table pages themselves print
-    SEGNALAZIONI in a trailing header block.
+    The marker is looked for in the top lines only, because on 2025 vol. II
+    the table pages themselves print SEGNALAZIONI in a trailing header block.
     """
     found = defaultdict(list)
     for page in sorted(texts):

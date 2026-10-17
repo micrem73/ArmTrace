@@ -3,9 +3,8 @@
 *Finding* tables (witnesses, spans, stamps, ministry placement, detection traps) is
 commented in `lib/` and pinned by `tests/`. This file owns *reading* one — rotation, bands, columns,
 grammars, printed values, and what the archive will not yield at all. The manifest
-key and the optional article level are defined in `lib/emit.py` and `lib/ontology.py`
-only, and OCR being out of scope is in DECISIONS.md; a second copy of the key is how
-the Dogane-overwrites-MAE bug returns.
+key and the optional article level are defined only in `lib/emit.py` and
+`lib/ontology.py`; a second copy of the key is how the Dogane-overwrites-MAE bug returns.
 
 Everything below was measured on the pages. A threshold with no measurement beside
 it is indistinguishable from an arbitrary constant until it is too late.
@@ -98,7 +97,7 @@ another year, so `unknown` is a real answer and is preferred to a fit.
 
 - The PUA **ratio** test (PUA > 15% of alnum) needs a companion: `H1` clears it while *every label* on the page is a PUA run, and the catalog recorded its columns as `pua pua pua`. Three PUA characters in a row (`PUA_RUN_RE`) mean the letters are gone, and such a page is refused as a source of geometry.
 - `garbled` means **partly or wholly** destroyed. Never read it as "this page is empty" and never promote a partly readable table to a fully readable one.
-- The archive has three corruption classes (~1300 pages): *no text layer* (scanned, 2001–2010); *garbled* (subset font, no `ToUnicode` — 2023 I, 2024 I, 2025 I/II, 2018 II, 2020 I); *ciphered* (`/Identity-H`, no `ToUnicode` — 2017 I, 2022 I, 2016 I; worse, because the text reads as plausible). What matters for reading: a table with them splits correctly, appears with `grammar=unknown` and a reason, and yields **zero rows**. That is the ceiling, not a defect.
+- The archive's corruption classes (~1300 pages: no text layer, garbled, ciphered) are measured in ROADMAP.md §3 and the `is_garbled` / `is_ciphered` docstrings in `lib/pageio.py`. What matters for reading: a table with them splits correctly, appears with `grammar=unknown` and a reason, and yields **zero rows**. That is the ceiling, not a defect.
 
 ## 7. Verification — the oracle nobody used
 
