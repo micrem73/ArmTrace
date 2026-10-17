@@ -80,8 +80,9 @@ from lib.volumes import collect_jobs, group_by_year, sibling_index
 
 # Functions an edition module may replace (see the module docstring). A new
 # entry here is a decision: the function is then allowed to differ by year.
-OVERRIDES = ("detect_family", "page_code", "page_code_listed", "scan_headers",
-             "build_manifest", "resolve_repeats", "stitch")
+OVERRIDES = ("read_index", "detect_family", "page_code", "page_code_listed",
+             "scan_headers", "build_manifest", "resolve_repeats", "stitch",
+             "report_index_plan")
 
 def block_at(edges, page):
     """Ministry owning a page per the volume's INDICE, or None.
@@ -205,7 +206,9 @@ def read_index(reader):
 
     Two layouts are recognised: the "Cartella / Pagine / Totale Pagine" table
     of 2020 and 2022, and the plain "Tabella D <title>" listing of 2012.
-    Returns (vocabulary, page_counts).
+    Returns (vocabulary, page_counts, plan). `plan` is the edition's placement
+    plan read from the same listing, handed to build_manifest; this reader has
+    none and returns {} (2024 reads one, editions/y2024.py).
     """
     for page in reader.pages:
         try:
@@ -226,8 +229,8 @@ def read_index(reader):
         # 2014 vol. I surface a single spurious code this way and are rejected
         # by requiring eight.
         if len(codes) >= 8:
-            return codes, counts
-    return set(), {}
+            return codes, counts, {}
+    return set(), {}, {}
 
 
 
@@ -822,7 +825,7 @@ def resolve_placement(pages_seen, provenance, articles=None):
 
 
 
-def build_manifest(reader, vocabulary, counts, sibling=None):
+def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
     """Union every detector into a manifest keyed by (authority, article, code).
 
     The code alone is not a key. The Dogane print "TAB. N" twice in one volume,
@@ -1643,13 +1646,14 @@ def main(argv=None):
             except Exception as exc:
                 print(f"{label}: apertura fallita: {exc}\n")
                 continue
-            vocabulary, counts = read_index(reader)
+            vocabulary, counts, index_plan = read_index(reader)
             # Guarded per volume, for the same reason the report is: one
             # unreadable volume must cost that volume, not the remaining
             # twenty-one.
             try:
                 manifest, facts = build_manifest(reader, vocabulary, counts,
-                                                sibling=sibling_index(report))
+                                                sibling=sibling_index(report),
+                                                plan=index_plan)
             except Exception as exc:
                 print(f"{label}: elaborazione fallita: "
                       f"{type(exc).__name__}: {exc}\n")
@@ -1719,6 +1723,7 @@ def main(argv=None):
 
             try:
                 report_manifest(manifest, f"{volume['label']} (y={year})")
+                report_index_plan(manifest)
             except Exception as exc:
                 print(f"    REPORT FAILED (artefacts are safe): "
                       f"{type(exc).__name__}: {exc}\n")
@@ -1771,6 +1776,10 @@ def main(argv=None):
     if args.dry_run:
         print("(dry-run: nessun PDF scritto)")
 
+
+
+def report_index_plan(manifest):
+    """Print what an edition's placement plan did; nothing without a plan."""
 
 
 def report_manifest(manifest, label):
