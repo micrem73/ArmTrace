@@ -5,13 +5,13 @@ government annual reports published under **Law 185/1990** (Article 5, Law
 9 July 1990 n. 185): the source reports → one PDF per table → a catalog of what
 each table is.
 
-> Working guidance for coding agents lives in [AGENTS.md](./AGENTS.md) for
-> *finding* tables — invariants, detection traps, disproven approaches,
-> per-year coverage — and in
-> [READING-TABLES.md](./READING-TABLES.md) for *reading* them: rotation,
-> bands, record grammars, and what the tables contain. [ROADMAP.md](./ROADMAP.md)
-> is the order the remaining work is done in. This file is for a person who wants
-> to *run* the pipeline and use its output.
+> Working guidance for coding agents lives in [CLAUDE.md](./CLAUDE.md); the
+> detection traps behind *finding* tables are commented beside the code they
+> protect (`lib/`) and pinned by `tests/`.
+> Decisions and their reasons, including how tables are read, are in
+> [DECISIONS.md](./DECISIONS.md); where the work stands is at the end of
+> CLAUDE.md. This file is for a person who wants to *run* the pipeline and use
+> its output.
 
 ---
 
@@ -30,7 +30,7 @@ pip install -r requirements.txt
 reports_185_1990/download_185.sh reports_185_1990 reports_185_1990/manifest.tsv
 
 # 3. step 1 — one PDF per table  ->  Out/PDF/  (+ Out/TRASH/ for the rest)
-./Reports2PDFTables_2025.py
+./Reports2PDFTables.py 2025
 
 # 4. step 2 — what shape is each table?  ->  Out/CATALOG/
 ./CatalogueTables.py --year 2025 --manifest Out/manifest-2025.jsonl
@@ -43,16 +43,12 @@ Step 3 prints a report per volume — tables found per ministry, page counts,
 what was skipped and why — before it writes anything. Add `--dry-run` to see it
 without writing.
 
-**Always pass `--volume both`, never a single volume.** 2025 Tabella F1 is one
-table of 70 pages split across the two volumes (printed 1035–1042, then
-1043–1104), and a per-volume run loses the eight pages of volume I.
-
-For one year only, use the thin per-year entry point, which pins the year and
-refuses a `--year` of its own:
-
-```bash
-./Reports2PDFTables_2025.py            # same as --year 2025 --volume both
-```
+The year is the first argument; which volumes a run reads comes from the
+edition (`editions/y<year>.py`), never from the command line. 2025 reads both:
+Tabella F1 is one table of 70 pages split across the two volumes (printed
+1035–1042, then 1043–1104), and a per-volume run loses the eight pages of volume I.
+The engine (`lib/engine.py`) is shared by every year; an edition file holds only
+what differs, and may replace a function only if `engine.OVERRIDES` lists it.
 
 ---
 
@@ -161,8 +157,7 @@ vol. II, well inside the Dogane block.
 
 A volume is not always one family: 2024 vol. II is family 1 for its first 600
 pages and then carries the Dogane annex. Per-family detection rules and the
-traps behind them are in
-[AGENTS.md](./AGENTS.md#5-traps).
+traps behind them are commented in `lib/patterns.py` and the year modules.
 
 ---
 
@@ -173,24 +168,22 @@ shape each table is; step 3 audits step 1's output. They are independent — ste
 re-reads the PDFs and step 3 re-reads the volumes, and both reach their own
 conclusions rather than trusting step 1's manifest.
 
-### 1. `Reports2PDFTables_<anno>.py` — volumes → `Out/PDF/`
+### 1. `Reports2PDFTables.py <anno>` — volumes → `Out/PDF/`
 
 Splits a report volume into one PDF per table, written to
 `Out/PDF/<authority>/[<article>/]<table><year>.PDF`.
 
 ```bash
-./Reports2PDFTables_2025.py
-./Reports2PDFTables_2025.py --all              # every in-scope volume
-./Reports2PDFTables_2025.py --dry-run          # report only, write nothing
-./Reports2PDFTables_2025.py --report reports_185_1990/2023/2023_LXVII_n2_VOLUME_II.pdf
+./Reports2PDFTables.py 2025
+./Reports2PDFTables.py 2025 --dry-run          # report only, write nothing
+./Reports2PDFTables.py 2025 --only MEF/UE      # one table, no trash
 ```
 
 | Flag | Meaning |
 |---|---|
-| `--year` | reporting year — **required** when several are present |
-| `--volume` | `1`, `2` or `both` (default `2`); use `both` |
 | `--report` | explicit PDF path, repeatable |
-| `--all` | every in-scope volume (`--all` stops at 2015; earlier years are deferred, not broken) |
+| `--only` | write only this table, e.g. `MEF/UE` (repeatable); no trash |
+| `--tables` | where to write the year's table list (default `Out/.work/<year>/tables.tsv`) |
 | `--base` | root for all paths (default `.`) |
 | `--out` | output root (default `<base>/Out`) |
 | `--dry-run` | print the coverage report, write nothing |
@@ -249,10 +242,9 @@ carries that document's pagination as `Pagina N di X` in the right margin. That
 stamp — not the volume's own continuous folio — is the witness of a table's real
 length, and pages pasted from a different document disagree with it.
 
-**Status:** works on the 22 in-scope volumes (2016+), producing a manifest for
-each. **2024 does not work** — it is the one year never measured properly, and
-the next to be brought up. Per-year figures are in
-[ROADMAP.md](./ROADMAP.md#7-archive-coverage).
+**Status:** 2025 is verified clean. 2024 runs on the shared engine
+(`editions/y2024.py`, 153 tables) and is next to be checked. Other years have
+not been brought onto the engine yet.
 
 ### 2. `CatalogueTables.py` — `Out/PDF/` → `Out/CATALOG/`
 
@@ -297,9 +289,9 @@ every column of every table.
 **Status:** works on 2025 — 110 tables in 141s, and it recovers the columns the
 reports actually print (A1's ten, EE's five, MG10's three). It is a
 *measurement* step: where it says `unknown`, that is recorded with a reason
-rather than guessed at. 19 of 2025's tables yield no text at all and no catalog
-can change that — see the coverage ceiling in
-[READING-TABLES.md](./READING-TABLES.md#6-legibility).
+rather than guessed at. 20 of 2025's MAE tables are printed in fonts with no
+character map; their text is recovered glyph by glyph (DECISIONS.md, glyph
+recovery), which is planned and not yet built.
 
 ### 3. `VerifyTables.py` — audits `Out/PDF/`
 
@@ -421,7 +413,7 @@ seven tab-separated fields per row — `year`, `leg`, `num`, `vol`, `file`,
 
 No PDF, sqlite or other binary is tracked by git, and **nothing is in Git LFS** —
 the repository holds only the scripts, `manifest.tsv`, `download_185.sh`, `lib/`,
-`SOURCES.md`, `AGENTS.md`, [READING-TABLES.md](./READING-TABLES.md), `ROADMAP.md` and this file.
+`SOURCES.md`, `CLAUDE.md`, `DECISIONS.md` and this file.
 Both large sets are regenerable: the reports from `manifest.tsv` and
 `SOURCES.md`, and `Out/` by re-running the pipeline. LFS was never a solution here
 — it does not stop the files being committed, it only moves the bytes into a
@@ -431,11 +423,10 @@ metered quota. **Do not re-add LFS filter rules.**
 
 ## **ToDo**
 
-Engineering work is tracked in [ROADMAP.md](./ROADMAP.md#9-operational-backlog), which is
-authoritative for it — 2024 is at the head of that list. After it, the product
-roadmap:
+Engineering work and open defects are listed at the end of CLAUDE.md. After
+them, the product roadmap:
 
-- Process the remaining years — see [Archive coverage](./ROADMAP.md#7-archive-coverage) for what is deferred and why
+- Process the remaining years (2023 down to 2016)
 - Populate a MySQL db
 - Create an LLM tool that converts natural language requests into SQL queries
 - Create a chatbot enhanced with that tool, allowing the DB to be interrogated in natural language

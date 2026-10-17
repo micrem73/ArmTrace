@@ -1,220 +1,63 @@
-#!/usr/bin/env python3
-"""
-Reports2PDFTables for the 2024 reporting year -- step 1, one PDF per table.
+"""2024 edition: Doc. LXVII n. 3 (leg. XIX), two volumes (lxvii_3 volume 1 and 2).
 
-    python3 Reports2PDFTables_2024.py [--out <root>] [--dry-run] [--manifest <path>]
+What is true of this edition only; everything else is lib/engine.py. The
+functions below replace the engine's under the same name (engine.OVERRIDES);
+the rest are this edition's own helpers. Ported unchanged from the per-year
+copy of commit bb05615, reading pages through the page cache.
 
-WHAT IS HERE AND WHAT IS NOT. This file holds the DETECTORS -- how a page is turned
-into a candidate table code, how spans are built, how two volumes are joined -- and
-the driver that runs them. The printed patterns, the page reader, the writer and the
-volume plumbing are all in lib/:
+  * vol. I: the ELENCO on p70 states an exact page count per table, the only
+    witness to the 21 tables whose 335 pages carry no readable code. They are
+    placed by walking the listing from a detector-anchored start, and checked
+    against the export stamps (place_from_plan, stamp_witness).
+  * vol. II: the Dogane's own code space (bare M/N/O/P, MG1-MG18, MT1/7/13) is
+    outside the MEF vocabulary; fifteen covers print the code under a cut
+    keyword (cover_code); vol. II is family 1, not 3 (detect_family).
 
-    lib/patterns.py   every regex and constant; year-independent
-    lib/pageio.py     reading one page; year-independent
-    lib/emit.py       manifest -> files, plus the trash; year-independent
-    lib/volumes.py    finding and ordering the source PDFs; year-independent
-    lib/ontology.py   the ministries, the article tokens, the Out/ path shape
-    lib/indice.py     ministry page ranges out of a volume's INDICE
-
-WHY EACH YEAR IS ITS OWN SCRIPT. On 2026-10-11 the per-year scripts stopped
-sharing one engine. The objective is tables produced with no errors, not one elegant
-program; a detector that is right for 2025 is not right for 2024, and merging them
-means re-testing every year on every change. So each year owns its detectors and is
-never edited once its year verifies clean -- the rule is in AGENTS.md section 2.
-
-WHAT MAY CHANGE HERE. Anything above the primitives, and only here: page_code,
-page_code_listed, scan_headers, detect_family, build_manifest, resolve_repeats,
-stitch, and the volume policy main() pins. A 2016 script will need a new header style;
-a 2024 script will need a different detect_family. Neither belongs in the frozen 2025
-file, and neither belongs in lib/.
-
-WHAT MUST NOT CHANGE. A primitive in lib/ is wrong for every year at once. To override
-one locally -- a year that needs its own MIN_RUN or code shape -- import it here and
-shadow it; do not edit lib/ to suit one year.
-
-Both volumes, always -- and for 2024 "both" costs nothing to assert but must be checked:
-the volumes are separate documents (lxvii_3 volume 1 and volume 2) whose folios run
-continuously and whose tables all stop before printed 1000, so NO 2024 table straddles the
-join and stitch() is expected to leave `continued` empty. A run that fires it here is a
-defect, not a rescue. 2025 is the year that must be run in one go for the opposite reason:
-Tabella F1 is printed 1035-1042 in volume I and 1043-1104 in volume II. See AGENTS.md
-section 1a.
+The volumes are separate documents whose folios run continuously, and every
+2024 table stops before printed 1000: no table straddles the join, so stitch()
+must leave `continued` empty. A run that fires it is a defect.
 """
 
-import argparse
-import json
 import re
-import sys
-from collections import Counter
-from pathlib import Path
 
-from pypdf import PdfReader
-
-from lib import indice, ontology
-from lib.emit import TRASH_DIR, dump_trash, report as render_report, split_pdf, table_plan
-from lib.pageio import (
-    appendix_code,
-    scan_bookmarks,
+from lib import engine, indice, ontology
+from lib.engine import (
+    block_at,
+    body_starts,
+    FAMILY2_CODES,
+    fill_provenance,
     header_fingerprint,
+    INDEX_ROW,
+    INLINE_CODE,
     is_allegato_page,
     is_blank,
     is_ciphered,
     is_garbled,
     is_index_page,
+    LEADING_CODE,
+    listed_pages,
     listing_codes,
+    MIN_RUN,
     normalise_digit_one,
+    page_text,
     printed_numbers,
+    provenance_from_indice,
     read_page,
+    record_boundary,
     rel_code,
     rel_headings,
-    same_table,
-    trim_trailing,
-    trim_trailing_blanks,
-)
-from lib.patterns import (
-    ANNEXO_RE,
-    APPENDIX_SUFFIX,
-    BARE_CODE_MAX_LINE,
-    CODE_RE,
-    CODE_TAIL,
-    ELENCO_TITLE,
-    FAMILY2_CODES,
-    INLINE_CODE,
-    INDEX_ROW,
-    LEADING_CODE,
-    MIN_RUN,
-    OUT_DIR,
-    PDF_EXT,
-    PROSE_STOPLIST,
     REL_STYLE,
     REL_TABELLA,
     REPRINT_GAP,
-    SECTION_OPEN_MAX_LINE,
-    SOURCE_RANK,
-    TAIL_PAGES,
-    TITLE_LINES,
-    _WS,
+    resolve_placement,
+    same_table,
+    scan_bookmarks,
+    trim_trailing,
+    trim_trailing_blanks,
 )
-from lib.volumes import collect_jobs, group_by_year, sibling_index
+from lib.patterns import APPENDIX_SUFFIX, CODE_TAIL
 
-YEAR = "2024"
 VOLUME = "both"
-
-def block_at(edges, page):
-    """Ministry owning a page per the volume's INDICE, or None.
-
-    None where the index does not reach: before its first block, or in a volume
-    it only partly covers. A missing boundary is not a boundary, so callers
-    treat it as "nothing to enforce here" rather than "belongs to nobody".
-    """
-    if not edges:
-        return None
-    return indice.block_for_page(edges, page)
-
-
-
-def is_section_open(lines, promised, banner=False):
-    """True for a page that opens a new body's section rather than a table.
-
-    Four conditions, and all four are needed:
-
-      * a body named in the first few lines, where a running header sits. The
-        window is small because the archive puts the volume furniture above it.
-        The head is matched with its whitespace SQUEEZED, because pypdf shreds
-        these names wherever the font was subsetted: 2025 vol. II p457 arrives as
-        'DIR' / 'EZIONE DOG' / 'ANE', and a line-by-line test never sees
-        "direzione" in it. Same lesson as ontology.is_mef_section, and the same
-        reason the word cannot simply be matched per line;
-      * NO code on the page -- not one the volume's ELENCO promised, and not one
-        of any other shape. A table page always names its table, even when the
-        name is the bare "AA" of the MEF annex;
-      * no table title either. "Tabella <code> - <title>" is the annex's own
-        opening and must not be read as a new section;
-      * and NOT the MEF art. 27 banner. Squeezing the head is what makes the name
-        test fire, and it fires on the MEF's own inline relation pages too
-        (2025 vol. II pp 264, 266, 267 -- 'Mi' / "nistero dell'Economia e delle
-        Finanze"), which are tables. The banner is the discriminator, and it is
-        already computed for these pages by the caller. It is a coarse test,
-        though: the MEF prints that banner on its section cover as well as on its
-        table pages, so this witness no longer reports 2025 vol. II p260. Nothing
-        is lost by it -- p260 is exactly the MEF block edge in the INDICE
-        (edges 194/259/260/457), so the boundary clamp already treats that page as
-        a ministry change and the two witnesses agree. What is bought is that
-        three table pages are no longer mistaken for section openings, which is
-        what would have handed a table a page of somebody else's section.
-
-    Measured over all 1048 pages of 2025 vol. II: fires on 17 pages, the same 17
-    the previous version did bar p260, plus p457. p457 is the Dogane relation
-    cover -- 'DIR' / 'EZIONE DOG' / 'ANE' / 'Ufficio co' / 'ntrolli dogane' --
-    which the previous version could not see at all, and which is the page UE was
-    shipping.
-    """
-    head = lines[:SECTION_OPEN_MAX_LINE]
-    squeezed = _WS.sub("", "\n".join(head)).lower()
-    if not any(word in squeezed
-               for word in ("ministero", "direzione", "agenzia")):
-        return None
-    for line in lines:
-        bare = line.strip().rstrip(".")
-        if CODE_RE.match(bare) and any(same_table(bare, c) for c in promised):
-            return None
-    # No table title either. "Tabella <code> - <title>" is the annex's own
-    # opening and must not be read as a new section.
-    for line in lines[:SECTION_OPEN_MAX_LINE + 2]:
-        if ELENCO_TITLE.match(line) or LEADING_CODE.match(line.strip()):
-            return None
-    if banner:
-        return None
-    return _body_label(lines, promised)
-
-
-
-def _body_label(lines, promised):
-    """The body's name on a section-opening page, for the report to print.
-
-    Read from the raw line when one of them carries the whole word, and from the
-    whitespace-squeezed head otherwise -- because on a shredded page NO line
-    carries it, and returning None there would discard a page this function has
-    already decided is a section opening. That is not hypothetical: it is how
-    p457 was lost while the name test above was being loosened to catch it.
-
-    The label is the leading run of capitals in the squeezed head, which is what
-    the typesetting puts there: "DIREZIONEDOGANE" from 'DIR' / 'EZIONE DOG' /
-    'ANE', "MINISTERODELLADIFESA" from the page that prints it whole. Readable
-    rather than faithful, which is all a note in the trash TSV has to be.
-    """
-    head = lines[:SECTION_OPEN_MAX_LINE]
-    for line in head:
-        low = line.lower()
-        if any(word in low for word in ("direzione", "agenzia", "ministero")):
-            return line.strip()
-    squeezed = _WS.sub("", "\n".join(head)).lstrip("0123456789 .-")
-    run = ""
-    for ch in squeezed:
-        if not ch.isalpha():
-            break
-        if ch.islower():
-            break
-        run += ch
-    return run or None
-
-
-
-def record_boundary(outside, where, page, authority, count):
-    """Note in `outside` that `where` stops at `page`, accumulating the count.
-
-    A table can hit both boundaries at once -- on 2025 vol. II the DIFESA
-    annesso 4 is cut by the INDICE at the INTERNO leaf and by the listing further
-    on -- and the report wants one line per table naming every witness that
-    fired, not one line per witness.
-    """
-    entry = outside.setdefault(where, {"pages": [], "authority": None,
-                                       "total": 0})
-    if page not in entry["pages"]:
-        entry["pages"].append(page)
-    entry["authority"] = entry["authority"] or authority
-    entry["total"] += count
-
 
 
 # A row of the "Cartella / Pagine / Totale Pagine" listing, read without the
@@ -244,8 +87,10 @@ def record_boundary(outside, where, page, authority, count):
 # after it by exactly that page -- which is how F1 came out one page early, on
 # p845, a page that is not F1 at all.
 ELENCO_ROW_2024 = re.compile(
-    rf"^\s*(\d+)\s+(\d+)\s+(TAB\.?\s+)?([A-Z][A-Z0-9]{{0,7}})(?![A-Za-z0-9])(.*)$"
+    r"^\s*(\d+)\s+(\d+)\s+(TAB\.?\s+)?([A-Z][A-Z0-9]{0,7})(?![A-Za-z0-9])(.*)$"
 )
+
+
 # The running total that ends the row, wherever the row happens to end.
 ELENCO_TOTAL_2024 = re.compile(r"(\d+)\s*$")
 
@@ -266,7 +111,7 @@ def read_index(reader):
     """
     for page_no, page in enumerate(reader.pages, start=1):
         try:
-            text = page.extract_text() or ""
+            text = page_text(page)
         except Exception:
             continue
         lines = text.split("\n")
@@ -346,7 +191,6 @@ def read_index(reader):
     return set(), {}, {"page": None, "rows": []}
 
 
-
 # A line the export header cut between the keyword and the code, and the code
 # that follows it.
 #
@@ -367,12 +211,17 @@ def read_index(reader):
 # are named, so without this the Dogane's whole art. 11 comma 5-bis series is
 # invisible and the table before it swallows the lot.
 COVER_KEYWORD_2024 = re.compile(r"(?i:T\s*a\s*b\s*e\s*l\s*l\s*a|TAB)\s*\.\s*$")
+
+
 COVER_CODE_2024 = re.compile(
     rf"^({CODE_TAIL})(?![A-Za-z0-9])(?:\s*[-–—]\s*APPENDICE)?$")
+
 
 # Styles this year adds. Their own numbers, because every existing style is a
 # shape that could be a law table and neither of these is.
 COVER_STYLE_2024 = 8      # the shredded cover above
+
+
 DOGANE_STYLE_2024 = 9     # a code from the Dogane's own scheme, below
 
 
@@ -387,7 +236,6 @@ def cover_code(lines):
                 else ""
             return f"{m.group(1).upper()}{suffix}"
     return None
-
 
 
 def detect_family(reader, vocabulary):
@@ -432,7 +280,7 @@ def detect_family(reader, vocabulary):
     step = max(1, len(reader.pages) // 25)
     for i in range(0, len(reader.pages), step):
         try:
-            text = reader.pages[i].extract_text() or ""
+            text = page_text(reader.pages[i])
         except Exception:
             continue
         for m in INLINE_CODE.finditer(text):
@@ -448,96 +296,9 @@ def detect_family(reader, vocabulary):
     return 1
 
 
-def page_code(lines, text, vocabulary, family):
-    """Detect the table code printed on one page. Returns (code, style).
-
-    style 1  bare code on the line after "Operazioni disciplinate" (the MEF
-             block header, families 1 and 3 from 2016 vol. II onwards)
-    style 2  a line that is exactly "Tabella AA"
-    style 3  inline "TAB A1" in a running header (families 2, and 1/3 too)
-    style 4  leading "Tabella D" against the index vocabulary (family 3)
-    style 5  the DIFESA annesso, "MINISTERO DELLA DIFESA - Annesso 3A"
-
-    Plus one shape that is deliberately not a style of its own: the Dogane
-    appendix "TAB. M - APPENDICE" returns style 3 with a suffixed code.
-
-    Returns a single code because a law table occupies a whole page to itself.
-    The one space where that is false -- the ministry relation's own numbered
-    exhibits, several of which share a page -- is handled by scan_headers, which
-    is the only place that can yield more than one code per page.
-    """
-    # Style 5: checked first and without a vocabulary, because these tables sit
-    # outside all three code families and print no table code at all -- the
-    # annesso number is the only handle, and it repeats on every page of the
-    # run. A code-shaped reading of the surrounding title would otherwise be
-    # invented from "TABELLA RIEPILOGATIVA ...".
-    m = ANNEXO_RE.search(text)
-    if m:
-        return m.group(1).upper(), 5
-
-    # The appendix, ahead of every other style. Style 3 would read the bare base
-    # code off the very same line and hand the appendix back to the table it
-    # belongs to, which is the defect this shape exists to fix.
-    #
-    # Deliberately NOT gated on classify_page() saying DOG. The page that
-    # carries the appendix's own title has the keyword shredded into 'T' /
-    # 'AB. M - APPENDICE', so the ontology cannot classify that page either, and
-    # gating on it loses the cover page -- which the end derivation then hands
-    # straight back to the base table, since one table's end is the next
-    # table's start minus one.
-    #
-    # Style 3 is returned rather than a new number so that MIN_RUN keeps
-    # governing it, which is what carries the one-page appendices: the Dogane
-    # waive that threshold, and any other ministry still drops a single-page hit
-    # as a prose cross-reference. A style of its own would exempt these pages
-    # from the rule everywhere.
-    appendix = appendix_code(lines)
-    if appendix:
-        return appendix, 3
-
-    # Style 4: family 3 only, where the index is the sole reliable source
-    # because those codes appear on the index page and nowhere in the body.
-    if family == 3 and vocabulary:
-        for line in lines[:6]:
-            m = LEADING_CODE.match(line)
-            if m:
-                return normalise_digit_one(m.group(1).upper()), 4
-
-    if family != 2:
-        for j, line in enumerate(lines[:14]):
-            if "Operazioni disciplinate" in line:
-                for k in range(j + 1, min(j + 4, len(lines))):
-                    if CODE_RE.match(lines[k]):
-                        return lines[k], 1
-                break
-
-        for line in lines[:8]:
-            m = LEADING_CODE.match(line)
-            if m:
-                return m.group(1).upper(), 2
-
-    # Style 3: deliberately unbounded. A positional window cannot separate a
-    # running header from a prose cross-reference -- 8 lines lost 24 of 28
-    # tables in 2019 vol. I, 24 lines invented KK1 on 2025 vol. II p263 ("come
-    # da elencazione sintetica della tabella KK1"), and every threshold in
-    # between was wrong somewhere. Callers disambiguate by frequency instead.
-    for line in lines:
-        for m in INLINE_CODE.finditer(line):
-            cand = m.group(1).upper()
-            if cand not in FAMILY2_CODES:
-                if family == 2:
-                    continue
-                if vocabulary and cand not in vocabulary:
-                    continue
-                if not vocabulary and cand in PROSE_STOPLIST:
-                    continue
-            return cand, 3
-    return None, None
-
-
 # The shared detector, kept under its own name so the wrapper below can call it.
 # A year that shadows page_code must not re-implement it.
-_page_code_shared = page_code
+_page_code_shared = engine.page_code
 
 
 def page_code(lines, text, vocabulary, family, dogane=False):
@@ -550,7 +311,7 @@ def page_code(lines, text, vocabulary, family, dogane=False):
     prints TAB. M / N / O / P, the bare bases of the M1..P2 series, then
     MG1..MG18 and MT1/MT7/MT13 under art. 11 comma 5-bis. None of that is in
     the MEF vocabulary, and style 3's test -- "a code the volume's own listing
-    promised" -- throws every one of them away. That is what made the ROADMAP's
+    promised" -- throws every one of them away. That is what made the 2026-10-05 baseline's
     "five phantoms" out of real tables, and what left P2 running to the end of
     the volume over MG1, MG3, MG4 and MT1.
 
@@ -585,139 +346,6 @@ def page_code(lines, text, vocabulary, family, dogane=False):
             if cand not in FAMILY2_CODES and cand not in vocabulary:
                 return cand, DOGANE_STYLE_2024
     return None, None
-
-
-
-
-def page_code_listed(lines, listed, banner):
-    """The code of a table the volume's own ELENCO promised, opening this page.
-
-    A detector of its own rather than another style inside page_code(), because
-    the witness is different in kind: the volume lists the table, and the page
-    opens it. Neither means much alone -- a code can be listed and never printed,
-    and "Tabella" appears in prose -- but together they cannot lie about a table
-    that does not exist.
-
-    This is what finds the MEF tables the relation prints inline on 2025 vol. II,
-    pp 263-267: UE, LGP, IAA, FG and KK1, each titled "Tabella <code> - <title>"
-    and each invisible to every other detector, because pypdf returns the title
-    shredded into fragments ("Ta" / "bella FG - Finanziamenti-Garanzie per
-    intermediari") so INLINE_CODE never sees the keyword whole, and no outline
-    names the inline print. They are the pages the DIFESA annesso was swallowing
-    whole, and two of them (p263, p267) style 3 was reading as the wrong table
-    from a prose mention further up the page.
-
-    Requires all three of: a code the listing named, the art. 27 banner the MEF
-    puts on the page, and a real title after the code, which is what separates
-    this from "come da elencazione sintetica della tabella KK1" on p263. No
-    listing, no detection -- a code nobody promised cannot be manufactured here.
-    """
-    if not listed or not banner:
-        return None
-    # The title follows the banner, so the search starts where the banner does
-    # rather than at the top of the page. That is what finds IAA on 2025 vol. II
-    # p265, where the page carries the tail of LGP's rows first and the new
-    # section block -- banner, title and body -- starts two thirds down: read
-    # from the top, the title is invisible; read from the banner, it is the
-    # first thing after it.
-    start = 0
-    for i, line in enumerate(lines):
-        # Both halves of the banner are matched, because pypdf cuts between them:
-        # "Dip" / "artimento del Tesoro Direzione V", and the law line arrives as
-        # "Operazio" / "ni disciplinate dall'art. 27".
-        if "disciplinate" in line or "ipartimento" in line:
-            start = i
-            break
-    for i in range(start, min(start + TITLE_LINES + 2, len(lines))):
-        line = lines[i]
-        probes = [line + " " + " ".join(lines[i + 1:i + 3])]
-        if i + 1 < len(lines):
-            probes.append(line + " " + lines[i + 1])
-        for probe in probes:
-            m = ELENCO_TITLE.match(probe)
-            if m:
-                code = m.group(1).upper()
-                if any(same_table(code, known) for known in listed):
-                    return code
-
-    # The third shape, and the reason the four MEF charts needed a bookmark tree
-    # to be found at all. In the annex the code is printed BARE on its own line
-    # -- "AA", then "Esportazioni definitive per Istituti di credito", then
-    # "Ta€ella" where the euro sign has been substituted for the letter b of
-    # Tabella. So the keyword is unusable and only the code is legible:
-    #
-    #     Ministero dell'Economia e delle Finanze
-    #     Dipartimento del Tesoro Direzione V - Ufficio VIII
-    #     ELENCO TABELLE
-    #     Operazioni disciplinate dall'art. 27, legge 09/07/1990, n. 185 -Smi
-    #     AA                          <- the code, alone
-    #     Esportazioni definitive per Istituti di credito - Riepilogo generale
-    #     Ta€ella                     <- "Tabella", corrupted
-    #
-    # Gated three ways, all of which are needed. The code must be one the ELENCO
-    # promised; the page must carry the MEF banner; and the code must sit in the
-    # header region, above the body -- AGENTS.md section 4 records the bare "I" in
-    # a Dogane table list, 108 lines down a page, which is exactly this shape
-    # without the position. The first table row below the code is never eligible.
-    for i, line in enumerate(lines):
-        if i >= start + BARE_CODE_MAX_LINE:
-            break
-        if not CODE_RE.match(line):
-            continue
-        code = line.upper()
-        if any(same_table(code, known) for known in listed):
-            return code
-    return None
-
-
-
-def listed_pages(candidates, listings):
-    """({page: code}, {page: ministry}) from the volume's own ELENCO.
-
-    The first is what it says: the tables the listing promised and a page opens.
-    The second is what the same pass finds around them -- the pages where a new
-    body's section begins. Both come out of the same held pages, and both need
-    the listing: a code is only trusted because the listing promised it, and a
-    section only counts as the end of the annex because the listing said what
-    that annex contains.
-
-    Run over the held pages once the whole volume has been read, because the
-    listing names the tables that follow it while a ministry may print one of
-    them inline *before* it. So the listing cannot be applied as the scan goes
-    past, and the pages it applies to have to be held -- see the comment on
-    `candidates` in scan_headers.
-
-    A code found this way REPLACES whatever style 3 read on the page. Style 3 is
-    the weakest witness in the pipeline and this is a stronger one, so where they
-    disagree the listing wins: on 2025 vol. II p267 style 3 returns FG, read from
-    a cross-reference in the prose above the page's own title, while the page
-    opens Tabella KK1 and the listing promises KK1.
-    """
-    if not listings or not candidates:
-        return {}, {}
-    promised = set()
-    for codes in listings.values():
-        promised.update(codes)
-    found, sections = {}, {}
-    for page in sorted(candidates):
-        lines, banner = candidates[page]
-        code = page_code_listed(lines, promised, banner)
-        if code:
-            found[page] = code
-            continue
-        # Not a table, and not the header of one. If it opens another body's
-        # section, that is the end of the annex this listing introduced. The
-        # banner rides along because is_section_open needs it: the MEF's own
-        # pages open with a ministry name too, and only the art. 27 banner
-        # separates them from a real section opening.
-        opening = is_section_open(lines, promised, banner)
-        if opening:
-            sections[page] = opening
-    return found, sections
-
-
-
-
 
 
 def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
@@ -887,44 +515,6 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
             listings, candidates, shared_pages or [], rel_pages or [])
 
 
-
-def body_starts(reader, vocabulary):
-    """First page per table, from the table title printed in the body.
-
-    Last-resort detector. Keys on the title rather than the code because in
-    2012 vol. I the single-letter codes appear only on the index page, while
-    the title repeats on every page of the table.
-    """
-    starts = {}
-    if not vocabulary:
-        return starts
-    norm = {normalise_digit_one(c) for c in vocabulary}
-    for i, page in enumerate(reader.pages):
-        try:
-            text = page.extract_text() or ""
-        except Exception:
-            continue
-        if is_garbled(text) or is_ciphered(text):
-            continue
-        lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
-        if not lines or is_index_page(lines):
-            continue
-        for j, line in enumerate(lines[:6]):
-            m = LEADING_CODE.match(line)
-            if not m:
-                continue
-            code = normalise_digit_one(m.group(1).upper())
-            nxt = lines[j + 1] if j + 1 < len(lines) else ""
-            # Require a title on the next line, so a bare "Tabella" column
-            # header inside a table body is not taken for a table start.
-            if nxt and not LEADING_CODE.match(nxt) and len(nxt) > 12 \
-                    and code in norm:
-                starts.setdefault(code, i + 1)
-            break
-    return starts
-
-
-
 def place_from_plan(tables, plan, provenance, articles):
     """Place the tables no page could be found for, from the index's own counts.
 
@@ -1073,7 +663,6 @@ def place_from_plan(tables, plan, provenance, articles):
     return placed, notes, omitted
 
 
-
 def stamp_witness(tables, lengths, stamps):
     """Check every index-placed table against the export stamps, and report.
 
@@ -1120,149 +709,6 @@ def stamp_witness(tables, lengths, stamps):
         else:
             agree.append((where, start, end))
     return agree, disagree
-
-
-def provenance_from_indice(reader, sibling=None):
-    """({page: authority}, source, block_edges) from the volume's own INDICE.
-
-    The INDICE states which ministry produced which folio range. That is the
-    document's own account of its structure, so it beats inferring ownership from
-    a running header: no guess about which string is exclusive to whom, and no
-    inheritance across pages that print no marker. Cross-checked against the
-    header markers on 2025 vol. II (966 pages) and 2023 vol. II (576 pages):
-    agreement on every page where both speak.
-
-    It cannot be the only source, for two reasons that are properties of the
-    archive rather than of this parser:
-
-      * it is absent. There is no index of any kind -- not INDICE, not SOMMARIO,
-        not INDEX -- in 2013, 2015 vol. I, 2017 (both volumes), 2019 (both
-        volumes), 2021 tom. II, 2021 vol. II, 2024 (both volumes) or 2003, 2005,
-        2007. Those include the highest-yield volumes in the archive (2021 gives
-        31 + 27 + 8 tables, 2019 gives 23 + 10), so an index-only pipeline would
-        leave around a hundred tables unplaced.
-      * it carries no article. The index bounds ministries, but the Dogane's four
-        allegati -- art. 1 comma 2, art. 1 commi 8/9, art. 11 comma 5-bis, art.
-        10 quater -- all sit inside one ministry block, so the article can only
-        come from the table's own page.
-
-    Hence this returns the authority where it can be had and the caller falls
-    back to the markers where it cannot. `validate()` rejects a parse that is
-    wrong rather than absent, which is the failure mode that matters: on 2018
-    vol. I the parser reads the "Volume I" heading as a ministry and produces
-    "MEF block@1", out of document order and entirely plausible.
-
-    `block_edges` is the same parse kept *unfiltered* -- every ministry the
-    index names, including those that file no tables -- because it answers a
-    different question: where a table's span has to stop. It is None when the
-    parse is rejected, and so is every clamp built on it.
-    """
-    offset, coverage = indice.folio_map(reader)
-    _page, blocks = indice.find_indice(reader)
-    if blocks is None and sibling is not None:
-        # The index normally prints in the first volume and covers the whole
-        # document, so a second volume has to borrow its sibling's.
-        try:
-            sib = PdfReader(sibling, strict=False)
-            _page, blocks = indice.find_indice(sib)
-        except Exception:
-            blocks = None
-    ok, reason = indice.validate(blocks, offset, coverage, len(reader.pages))
-    if not ok:
-        return None, reason, None
-    ranges = indice.authority_ranges(blocks, offset)
-    if not ranges:
-        return None, "INDICE names no ministry that produces tables", None
-    edges = indice.block_edges(blocks, offset, len(reader.pages))
-    return ({page: indice.authority_for_page(ranges, page, offset)
-             for page in range(1, len(reader.pages) + 1)},
-            f"INDICE, {len(ranges)} ministry block(s), folio=page{offset:+d}, "
-            f"{coverage:.0%} legible",
-            edges)
-
-
-
-def fill_provenance(raw, page_count):
-    """{page: (authority, article)}, filling the gaps from the neighbours.
-
-    Not every page of a ministry's block carries the marker that identifies it.
-    In 2025 vol. II only 27 of the 126 MAE pages print the export band, so most
-    MAE table pages have to inherit. Sections are contiguous, which is what makes
-    that safe.
-
-    Inheritance stops at a real boundary. For each maximal run of unplaced pages
-    the placement immediately before and immediately after are compared: if they
-    agree the run takes that placement, and if they differ the run is a genuine
-    section edge that the page furniture cannot resolve, so it is left unplaced
-    rather than guessed into one of the two. Blindly forward-filling would hand
-    a whole ministry to whichever ministry happened to precede it.
-    """
-    resolved = {}
-    page = 1
-    while page <= page_count:
-        if page in raw:
-            resolved[page] = raw[page]
-            page += 1
-            continue
-        run_end = page
-        while run_end + 1 <= page_count and (run_end + 1) not in raw:
-            run_end += 1
-        before = resolved.get(page - 1)
-        after = raw.get(run_end + 1)
-        if before and (before == after or after is None):
-            placement = before
-        elif after and before is None:
-            placement = after
-        else:
-            placement = None          # a boundary between two authorities
-        if placement:
-            for p in range(page, run_end + 1):
-                resolved[p] = placement
-        page = run_end + 1
-    return resolved
-
-
-
-def resolve_placement(pages_seen, provenance, articles=None):
-    """(authority, article) for one table.
-
-    The authority is a majority over the table's own pages: a table's pages are
-    all in one ministry, so the ministry owning the most of them owns the table.
-
-    The article is taken from the pages that name one -- the Dogane qualifier
-    travels with every page of a table -- and is ignored for MAE and MEF, whose
-    tables are not subdivided. It is deliberately *not* inherited from the
-    ministry: one ministry block holds all four Dogane allegati, so a block-level
-    answer would be useless.
-    """
-    tally = {}
-    for page in pages_seen:
-        authority = provenance.get(page)
-        if authority:
-            tally[authority] = tally.get(authority, 0) + 1
-    if not tally:
-        return (ontology.UNKNOWN, None)
-    # max() over a key list sorted by name, so a tie is broken the same way on
-    # every run and the manifest is reproducible.
-    authority = max(sorted(tally), key=lambda name: tally[name])
-
-    article = None
-    if articles:
-        seen = {}
-        for page in pages_seen:
-            candidate = articles.get(page)
-            if candidate:
-                seen[candidate] = seen.get(candidate, 0) + 1
-        if seen:
-            article = max(sorted(seen), key=lambda name: seen[name])
-    if article and authority not in (ontology.DOG, ontology.DIFESA):
-        # Only the Dogane and the Difesa subdivide by article. Any other
-        # authority naming one is a stray mention -- an MEF narrative page
-        # discussing art. 11 comma 5-bis must not gain a path level -- so the
-        # article is dropped rather than invented.
-        article = None
-    return (authority, article)
-
 
 
 def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
@@ -1832,427 +1278,6 @@ def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
     }, facts
 
 
-# ==========================================================================
-# tables that cross a volume boundary
-# ==========================================================================
-
-def last_numbered_page(facts):
-    """The last page of a volume that carries a printed page number.
-
-    Blanks and the cover/index pages have none, so this is where the real
-    content stops: 1046 on 2025 vol. I (1048 physical pages), 1046 on
-    2023 vol. I. It is also what "the table runs to the end of the volume"
-    means, as opposed to running to the last physical page.
-    """
-    numbered = [p for p, nums in facts["numbers"].items() if nums]
-    return max(numbered) if numbered else None
-
-
-
-def first_numbered_page(facts):
-    """The first page of a volume that carries a printed page number."""
-    numbered = [p for p, nums in facts["numbers"].items() if nums]
-    return min(numbered) if numbered else None
-
-
-
-def number_joins(here, there):
-    """True if some printed number in `there` follows one in `here` by one.
-
-    Volume N ends at printed page 1042 and volume N+1 opens at 1043, so the
-    two volumes are one document and a table cut at the join continues. When
-    a volume restarts its numbering (2019: vol. I ends at 824, vol. II opens at
-    1) nothing joins and no continuation is claimed.
-
-    A page may offer several candidates -- 2021 tom. II prints the volume
-    local number and the volume-wide one -- so any pairing is accepted rather
-    than a single guess.
-    """
-    return any(b == a + 1 for a in here for b in there)
-
-
-
-def runs_to_the_end(volume, info):
-    """True if a span reaches the last numbered page of its own volume."""
-    end = last_numbered_page(volume["facts"])
-    return bool(end and info["end"] >= end)
-
-
-
-def continuation_pages(prev_manifest, prev_facts, nxt_manifest, nxt_facts):
-    """Pages of `nxt` that carry on a table cut at the end of `prev`.
-
-    Returns (tkey, first_page, last_page) or None, where `tkey` is the
-    (authority, article, code) key of the table that runs off the end.
-
-    A table is treated as cut when it reaches the last numbered page of its
-    volume: nothing else claims those pages, so the run is not complete and
-    the next volume must be holding the rest. The claim is then made
-    conservative, because gluing the wrong pages in is worse than missing a
-    join, and the next volume opening on something else is the normal case --
-    2023 vol. III starts the Agenzia delle Dogane relations, where vol. II
-    ended on Tabella UE. Three tests have to agree:
-
-      * the next volume must open with numbered pages of its own, before its
-        first table, so there is somewhere to continue into;
-      * those pages must carry the printed numbers the join implies, each the
-        next integer of the last (number_joins, then consecutive to the end of
-        the run). The volumes are one document, numbered continuously, so a
-        run that continues shows it;
-      * their running header must be the one the cut table ended on, read
-        from the previous volume. This is the test that says "same table" and
-        it is what rejects 2023: Dogane pages do not carry the MEF header
-        that UE's tail carries.
-
-    The last few pages of a table are allowed to look different -- the
-    "Totale autorizzazioni" sheet of 2025 F1, printed 1104, opens with its
-    own line and is still F1, its margin reading "Tabella F1 / Pagina 70 di
-    70". Hence TAIL_PAGES rather than a strict run of equal headers.
-    """
-    tables = prev_manifest["tables"]
-    if not tables:
-        return None
-    tkey, info = max(tables.items(), key=lambda kv: kv[1]["start"])
-    prev_last = last_numbered_page(prev_facts)
-    if prev_last is None or info["end"] < prev_last:
-        return None
-
-    first = first_numbered_page(nxt_facts)
-    if first is None or not nxt_manifest["tables"]:
-        return None
-    nxt_start = min(i["start"] for i in nxt_manifest["tables"].values())
-    if first >= nxt_start:
-        return None
-
-    # The running header the cut table ends on, read from the previous volume
-    # so that a header repeated by an unrelated page cannot pose as the match.
-    tail = Counter(
-        prev_facts["fingerprints"][p]
-        for p in range(max(info["start"], info["end"] - 7), info["end"] + 1)
-        if prev_facts["fingerprints"][p]
-    ).most_common(1)
-    if not tail:
-        # No readable header on the tail pages, so the header test cannot
-        # vouch for anything and nothing is glued.
-        return None
-    expected = tail[0][0]
-
-    # Printed numbers, in two steps. First the join: the next volume's first
-    # numbered page must be the successor of the previous volume's last one
-    # (on 2025, printed 1042 then 1043 -- the two volumes are one document).
-    # Then, within the next volume, the numbers must run consecutively, which
-    # is what a continuation looks like and what a new section cannot fake: a
-    # page whose footer is unreadable ends the run rather than letting it
-    # bridge a gap. A page that prints two numbers (2021 tom. II carries the
-    # volume-local one alongside) advances if either of them does.
-    prev_numbers = prev_facts["numbers"][prev_last]
-    if not number_joins(prev_numbers, nxt_facts["numbers"][first]):
-        return None
-
-    run, seen = [], None
-    for p in range(first, nxt_start):
-        numbers = nxt_facts["numbers"].get(p) or set()
-        if not numbers or (seen and not numbers & {n + 1 for n in seen}):
-            break
-        seen = numbers
-        run.append(p)
-    if not run or nxt_facts["fingerprints"].get(run[0]) != expected:
-        return None
-
-    # The run may stop early on a header change; the last TAIL_PAGES pages of
-    # it are kept regardless, since a table often ends differently shaped.
-    matched = 0
-    for idx, p in enumerate(run):
-        if nxt_facts["fingerprints"].get(p) != expected:
-            break
-        matched = idx
-    last = run[min(matched + TAIL_PAGES, len(run) - 1)]
-    return tkey, first, last
-
-
-
-def stitch(prev_manifest, prev_facts, nxt_manifest, nxt_facts,
-           prev_name, nxt_name):
-    """Record, on `nxt_manifest`, the pages it inherits from `prev_manifest`.
-
-    Volumes of a year are consecutive parts of one document, and a table may
-    straddle the join: 2025 Tabella F1 is printed pages 1035-1042 in volume I
-    and 1043-1104 in volume II, seventy pages in all, its margin carrying
-    "Tabella F1 / Pagina 70 di 70" on the last one.
-
-    Because the split is per volume, the volume holding the tail used to write
-    its file over the one holding the head, and only the tail survived. Both
-    halves now go into a single Out/PDF/<authority>/[<article>/]<code><year>.PDF.
-
-    The tail pages are keyed to the head's (authority, article, code): a
-    continuation inherits its placement, since it is the same table, and the
-    Dogane annex codes show why -- the same code string can name two different
-    tables in one volume, so the tail must be filed with the head's authority
-    and not with whatever ministry happens to own the next volume's first
-    pages.
-    """
-    found = continuation_pages(prev_manifest, prev_facts, nxt_manifest, nxt_facts)
-    if not found:
-        return None
-    tkey, start, end = found
-    head = prev_manifest["tables"][tkey]
-    nxt_manifest.setdefault("continued", {})[tkey] = {
-        "from_volume": prev_name,
-        "from_start": head["start"],
-        "from_end": head["end"],
-        "start": start,
-        "end": end,
-        "pages": end - start + 1,
-        "total_pages": head["pages"] + (end - start + 1),
-    }
-    return tkey
-
-
-
-def halves_join(volumes, earlier, later):
-    """True if one detected span continues straight into the next.
-
-    Consecutive means exactly that: the volumes are neighbours, the earlier
-    copy runs to the last numbered page of its own volume, and the later one
-    starts no later than the first numbered page of its own.
-    """
-    i, info = earlier
-    j, other = later
-    if j != i + 1:
-        return False
-    end = last_numbered_page(volumes[i]["facts"])
-    start = first_numbered_page(volumes[j]["facts"])
-    return bool(end and start
-                and info["end"] >= end and other["start"] <= start)
-
-
-
-def resolve_repeats(volumes):
-    """Settle a table code that was detected in more than one volume.
-
-    One code means one file, so a repeat has to be resolved rather than
-    concatenated. Three cases are real in the archive and only the third is a
-    split:
-
-      * **the same table printed twice.** 2021 tom. I and tom. II both carry
-        the MAE tables: A1 spans 295 pages in each, down to the page, and the
-        opening pages are identical. One copy belongs in the output.
-      * **two different tables sharing a code.** 2021 tom. II and VOL. II both
-        detect an M1, 8 and 13 pages of different content. Neither is the
-        other's continuation and concatenating them would invent a table, so
-        the better-attested copy is kept and the other reported.
-      * **one table split across the join, both halves readable.** The halves
-        are consecutive by construction, and only then are both kept.
-
-    The key is the full (authority, article, code), so two tables that merely
-    share a code string in different ministries are never candidates for one
-    another -- that is the whole point of the authority level, and keying on
-    the bare code would undo it.
-
-    The losers are marked `kept = False` for the writer to skip.
-    """
-    by_key = {}
-    for idx, volume in enumerate(volumes):
-        for tkey in volume["manifest"]["tables"]:
-            by_key.setdefault(tkey, []).append(idx)
-
-    for tkey, holders in by_key.items():
-        if len(holders) < 2:
-            continue
-        copies = [(i, volumes[i]["manifest"]["tables"][tkey]) for i in holders]
-        if all(halves_join(volumes, a, b) for a, b in zip(copies, copies[1:])):
-            continue
-        # Keep the best-attested copy. A human-authored bookmark outranks anything
-        # the header scan inferred, the same principle the per-volume detectors
-        # already follow. Between two header-scan copies, prefer the one that
-        # does not run to the end of its volume: that is the shape an
-        # over-extension takes (2016 and 2019 vol. I each read a body line as
-        # "M1" and swallowed the rest of the volume with it, while vol. II
-        # holds the real 10-page M1). Then the index cross-check, then reading
-        # order.
-        best = max(copies, key=lambda pair: (
-            SOURCE_RANK.get(pair[1]["source"], 0),
-            not runs_to_the_end(volumes[pair[0]], pair[1]),
-            bool(pair[1].get("index_agrees")),
-            -pair[0],
-        ))
-        for idx, info in copies:
-            if idx == best[0]:
-                info["kept"] = True
-                continue
-            info["kept"] = False
-            volumes[idx]["manifest"].setdefault("dropped", {})[tkey] = {
-                "volume": volumes[idx]["label"],
-                "start": info["start"],
-                "end": info["end"],
-                "pages": info["pages"],
-                "kept_from": volumes[best[0]]["label"],
-                "reason": "stesso codice in più volumi, non uno spezzamento",
-            }
-
-
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Estrae una tabella per PDF dalla relazione L.185/1990.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    parser.add_argument("--year", help="anno di riferimento, es. 2024")
-    parser.add_argument("--volume", default="2", choices=["1", "2", "both"],
-                        help="quale volume processare (default: 2)")
-    parser.add_argument("--report", action="append", default=[],
-                        help="percorso esplicito del PDF (ripetibile)")
-    parser.add_argument("--all", action="store_true",
-                        help="processa ogni volume in reports_185_1990/")
-    parser.add_argument("--base", default="", help="radice dei percorsi (default: .)")
-    parser.add_argument("--out", default="",
-                        help=f"radice di output (default: <base>/{OUT_DIR})")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="stampa il report senza scrivere i PDF")
-    parser.add_argument("--manifest", default="",
-                        help="scrivi anche il manifest JSON in questo percorso")
-    parser.add_argument("--no-trash", action="store_true",
-                        help="non scrivere Out/TRASH/ (le pagine non attribuite "
-                             "restano solo nel report)")
-    args = parser.parse_args(argv)
-
-    jobs = group_by_year(collect_jobs(args))
-    n_volumes = sum(len(v) for v in jobs.values())
-    print("=" * 70)
-    print(f"Reports2PDFTables — {n_volumes} volume/i, {len(jobs)} anno/i")
-    print("=" * 70)
-
-    total = 0
-    for year, reports in jobs.items():
-        # Every volume of the year is opened before any of them is written:
-        # a table that runs past a volume boundary is only visible once the
-        # next volume's first table is known, and the PDF is written once from
-        # both halves. One entry per volume that opened, so the labels stay
-        # aligned with their manifests if one of them does not.
-        volumes = []
-        for report in reports:
-            label = Path(report).stem
-            try:
-                reader = PdfReader(report, strict=False)
-            except Exception as exc:
-                print(f"{label}: apertura fallita: {exc}\n")
-                continue
-            vocabulary, counts, plan = read_index(reader)
-            # Guarded per volume, for the same reason the report is: one
-            # unreadable volume must cost that volume, not the remaining
-            # twenty-one.
-            try:
-                manifest, facts = build_manifest(reader, vocabulary, counts,
-                                                sibling=sibling_index(report),
-                                                plan=plan)
-            except Exception as exc:
-                print(f"{label}: elaborazione fallita: "
-                      f"{type(exc).__name__}: {exc}\n")
-                del reader
-                continue
-            volumes.append({"label": label, "path": report, "reader": reader,
-                            "manifest": manifest, "facts": facts})
-
-        # The joins are claimed before the reports are printed, so the
-        # "continued" line a reader sees is the one the writer acted on.
-        if year == "?":
-            if len(volumes) > 1:
-                print("    (anno non determinato: nessun join fra i volumi)")
-        else:
-            for idx in range(len(volumes) - 1):
-                stitch(volumes[idx]["manifest"], volumes[idx]["facts"],
-                       volumes[idx + 1]["manifest"], volumes[idx + 1]["facts"],
-                       volumes[idx]["label"], volumes[idx + 1]["label"])
-
-        resolve_repeats(volumes)
-
-        for volume in volumes:
-            manifest = volume["manifest"]
-            total += len(manifest["tables"])
-
-            # The artefacts are written before the summary, and the summary is
-            # guarded. A formatting bug in a human-readable report once raised
-            # a TypeError here and took the run with it: volumes 21 to 43 were
-            # never attempted, and the volume that raised lost both its manifest
-            # row and its PDFs. Nothing cosmetic may sit upstream of the data.
-            if args.manifest:
-                target = Path(args.manifest)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                # json has no tuple keys, so the tables are emitted as a list of
-                # records carrying the three key parts as fields. The key stays
-                # a tuple in memory because it is what makes a code unique.
-                serialisable = dict(manifest)
-                serialisable["tables"] = [
-                    {"authority": authority, "article": article, "code": code,
-                     **info}
-                    for (authority, article, code), info
-                    in manifest["tables"].items()
-                ]
-                serialisable.pop("continued", None)
-                serialisable["continued"] = [
-                    {"authority": k[0], "article": k[1], "code": k[2], **info}
-                    for k, info in manifest.get("continued", {}).items()
-                ]
-                serialisable.pop("dropped", None)
-                serialisable["dropped"] = [
-                    {"authority": k[0], "article": k[1], "code": k[2], **info}
-                    for k, info in manifest.get("dropped", {}).items()
-                ]
-                with open(target, "a", encoding="utf-8") as fh:
-                    fh.write(json.dumps({"report": volume["path"], "year": year,
-                                        **serialisable},
-                                        ensure_ascii=False) + "\n")
-
-            try:
-                report_manifest(manifest, f"{volume['label']} (y={year})")
-                report_index_plan(manifest)
-            except Exception as exc:
-                print(f"    REPORT FAILED (artefacts are safe): "
-                      f"{type(exc).__name__}: {exc}\n")
-
-        out_root = args.out or args.base or "."
-        readers = [v["reader"] for v in volumes]
-        paths = [v["path"] for v in volumes]
-        manifests = [v["manifest"] for v in volumes]
-        plan = table_plan(readers, manifests)
-        if not args.dry_run and plan:
-            written = split_pdf(readers, manifests, out_root, year, paths)
-            print(f"    wrote      : {len(written)} PDF in "
-                  f"{Path(out_root, OUT_DIR, 'PDF')}/<authority>/"
-                  f"[<articolo>/]<tabella>{year}.PDF")
-
-        # The pages no table owns, written beside them. The accounting is printed
-        # on every run -- including --dry-run -- because coverage is the number a
-        # reader most wants from a run whose output cannot yet be trusted; only
-        # the files are conditional.
-        if args.no_trash:
-            print("    trash       : skipped (--no-trash)")
-        else:
-            trashed = dump_trash(volumes, plan, out_root, year,
-                                 write=not args.dry_run)
-            if trashed and not args.dry_run:
-                pdfs = sum(1 for p in trashed if p.endswith(PDF_EXT))
-                print(f"    trashed    : {pdfs} PDF + {len(trashed) - pdfs} TSV in "
-                      f"{Path(out_root, OUT_DIR, TRASH_DIR, year)}/")
-        print()
-        del volumes
-
-    print("=" * 70)
-    print(f"Totale: {total} tabelle in {n_volumes} volume/i")
-    if args.dry_run:
-        print("(dry-run: nessun PDF scritto)")
-
-
-
-def report_manifest(manifest, label):
-    """The per-volume summary, printed before the writer runs.
-
-    A wrapper only because `report` is shadowed inside main() by the loop variable
-    of the same name; the alias above keeps the two apart.
-    """
-    render_report(manifest, label)
-
 def report_index_plan(manifest):
     """Print the index-placement pass, if this volume ran one.
 
@@ -2300,27 +1325,3 @@ def report_index_plan(manifest):
               f"wholly in an unstamped stretch")
         for where, start, end, why in bad[:8]:
             print(f"        STAMP MISMATCH {where} p{start}-{end}: {why}")
-
-def _refuse_foreign_year(argv):
-    """This script is pinned to its year; a --year on the command line is an error.
-
-    Silently honouring it would leave the output looking like a different year's
-    result, which is the one failure the per-year script exists to prevent.
-    """
-    for arg in argv:
-        if arg.startswith("--year"):
-            raise SystemExit(
-                f"Reports2PDFTables_{YEAR}.py is pinned to {YEAR}; use the script "
-                f"for the year you want, or "
-                f"Reports2PDFTables_{YEAR}.py --help."
-            )
-
-
-def cli(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    _refuse_foreign_year(argv)
-    return main(["--year", YEAR, "--volume", VOLUME] + argv)
-
-
-if __name__ == "__main__":
-    cli()

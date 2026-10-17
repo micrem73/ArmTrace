@@ -6,8 +6,8 @@ printed vocabulary of the archive, which does not change between 2016 and 2025.
 
 This is the highest-blast-radius file in the repository. A wrong pattern here is wrong
 for every year at once, where before it was wrong for one. Every entry carries the
-measurement or the failure that produced it -- see AGENTS.md section 5, the trap list,
-which is not inferrable from the code."""
+measurement or the failure that produced it. Keep those comments: each is a bug that
+shipped, and the code that avoids it looks entirely correct."""
 
 
 import re
@@ -408,7 +408,7 @@ SOURCE_RANK = {"embedded": 3, "header": 2, "title": 1}
 ROMAN = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5}
 
 
-# Estensione dei PDF per-table. reports_185_1990/ contiene i PDF di origine in
+# Estensione dei PDF per-table. In/ contiene i PDF di origine in
 # minuscolo, ma i PDF per-tabella vengono scritti in maiuscolo: su Linux i due
 # casi non si equivalgono e CatalogueTables.py cerca questo nome esatto.
 PDF_EXT = ".PDF"
@@ -425,7 +425,7 @@ FIRST_YEAR = 2016
 
 
 
-REPORTS_DIR = "reports_185_1990"
+REPORTS_DIR = "In"
 
 
 OUT_DIR = "Out"

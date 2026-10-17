@@ -66,7 +66,6 @@ import math
 import re
 from collections import Counter, defaultdict
 
-import pymupdf
 
 # --------------------------------------------------------------------------
 # tolerances
@@ -147,7 +146,7 @@ FOREIGN_FRACTION = 0.20
 CHART_CURVES = 200
 
 # Private Use Area, the residue of a subsetted font whose ToUnicode CMap was
-# destroyed. See lib/patterns.py (PUA_RE) and AGENTS.md section 4.
+# destroyed. See lib/patterns.py (PUA_RE) and lib/pageio.py (is_garbled).
 PUA = re.compile(r"[\ue000-\uf8ff]")
 
 LIGATURES = str.maketrans({
@@ -159,7 +158,7 @@ _ACCENTS = {
     "ë": "e", "ì": "i", "í": "i", "î": "i", "ï": "i", "ò": "o", "ó": "o",
     "ô": "o", "ö": "o", "ù": "u", "ú": "u", "û": "u", "ü": "u", "ç": "c",
     "À": "A", "Á": "A", "Â": "A", "Ä": "A", "È": "E", "É": "E", "Ê": "E",
-    "Ì": "I", "Í": "I", "Î": "I", "Ì": "I", "Ò": "O", "Ó": "O", "Ô": "O",
+    "Ì": "I", "Í": "I", "Î": "I", "Ï": "I", "Ò": "O", "Ó": "O", "Ô": "O",
     "Ö": "O", "Ù": "U", "Ú": "U", "Û": "U", "Ü": "U", "Ç": "C", "'": "",
     "’": "", "`": "", " ": " ", "-": "-",
 }

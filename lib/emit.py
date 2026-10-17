@@ -10,6 +10,7 @@ only when the manifest says the volume has shared pages, and 2025 vol. I is simp
 volume that has them."""
 
 
+import re
 import shutil
 import tempfile
 from collections import Counter
@@ -17,9 +18,8 @@ from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
 
-from lib import ontology
-from lib import patterns as P
-from lib.patterns import OUT_DIR, PDF_EXT, REL_HEADING
+from lib import layout, ontology
+from lib.patterns import PDF_EXT, REL_HEADING
 from lib.pageio import rel_code
 
 
@@ -100,34 +100,15 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
 
         wanted = printed_number(keep_code, manifest, volume_index)
         headings = exhibit_headings(canvas)
-        numbers = [h[1] for h in headings]
-        if wanted is None or wanted not in numbers:
+        band = exhibit_band(canvas, headings, wanted, height)
+        if band is None:
             return False
-        index = numbers.index(wanted)
-
-        # A band runs from its OWN heading down to the next heading, and the last
-        # band runs to the foot of the page. Starting at the previous heading
-        # instead -- which is the obvious thing to write, and what a first
-        # attempt did -- keeps the *previous* exhibit's body, because a body sits
-        # between its heading and the next one.
-        #
-        # Starting at ZERO, which is what this did next, is wrong for the same
-        # reason one step further out: the ministry prints the narrative that
-        # introduces an exhibit onto the same page, above it. p63 carried 17 lines
-        # of section 8.3.2 ahead of Tabella 21, and p45 six ahead of Tabella 9.
-        # The table is what is wanted, so the band starts at the heading.
-        #
-        # Charts are boundaries exactly as tables are, so a chart sharing the page
-        # is cut away rather than left in the file: 12 pages of 2025 vol. I carry
-        # both a table and a chart, and none of the charts is exported.
-        lo = headings[index][2] - CUT_MARGIN
-        hi = (headings[index + 1][2] - 2.0
-              if index + 1 < len(headings) else float(height))
-        for band in (pymupdf.Rect(0, 0, width, lo),
-                     pymupdf.Rect(0, hi, width, height)):
-            if band.is_empty or band.is_infinite:
+        lo, hi = band
+        for cut in (pymupdf.Rect(0, 0, width, lo),
+                    pymupdf.Rect(0, hi, width, height)):
+            if cut.is_empty or cut.is_infinite:
                 continue
-            canvas.add_redact_annot(band, fill=False)
+            canvas.add_redact_annot(cut, fill=False)
 
         # The volume furniture goes with the prose. On a rotated page it runs
         # vertically while the table runs horizontally, so it sits INSIDE the
@@ -171,6 +152,138 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
     finally:
         document.close()
 
+
+
+# A note printed under a table's grid belongs to the table: "(*) Per la presenza
+# di licenze cumulative..." under Tabella 2. It opens with a note marker.
+NOTE_START = re.compile(r"^\s*(?:\(\s*\*+\s*\)|\*+|\(\d+\)|Fonte\b|Note?\b|N\.\s*B\.)",
+                        re.IGNORECASE)
+NOTE_MAX_GAP = 14.0     # pt from the grid to the note, and between note lines
+
+
+def table_foot(page, grid_bottom, limit):
+    """Where a ruled table really ends: its grid, or the notes printed under it.
+
+    Lines are read top-down from the grid. The first must open with a note
+    marker and sit within NOTE_MAX_GAP of the grid; the note then runs while
+    each next line follows within NOTE_MAX_GAP. Prose after the table (which
+    never opens with a marker) is left out, as decided for Tabella 12.
+    """
+    lines = []
+    for block in page.get_text("dict").get("blocks", []):
+        for line in block.get("lines", []):
+            x0, y0, x1, y1 = line["bbox"]
+            if grid_bottom - 1 <= y0 < limit:
+                text = "".join(sp.get("text", "") for sp in line.get("spans", []))
+                if text.strip():
+                    lines.append((y0, y1, text))
+    lines.sort()
+    bottom = grid_bottom
+    if not lines or lines[0][0] - grid_bottom > NOTE_MAX_GAP \
+            or not NOTE_START.match(lines[0][2]):
+        return bottom
+    for y0, y1, _text in lines:
+        if y0 - bottom > NOTE_MAX_GAP:
+            break
+        bottom = max(bottom, y1)
+    return bottom
+
+
+def exhibit_band(canvas, headings, wanted, height):
+    """(lo, hi) of exhibit `wanted` ('8.3') on an UPRIGHT canvas, or None.
+
+    A band runs from its OWN heading down to the next heading; the last band
+    runs to the foot of the page. Starting at the previous heading keeps the
+    previous exhibit's body; starting at zero keeps the narrative the ministry
+    prints above an exhibit (p63: 17 lines of 8.3.2 ahead of Tabella 21).
+    Charts are headings like tables, so a chart sharing the page is a boundary.
+
+    The band starts HEADING_GAP above its own heading, not CUT_MARGIN: the
+    wider margin reached into the exhibit above and put 8.6's "Totale per
+    area" row into the 8.7 file (p42). A ruled exhibit ends at its grid, or at
+    the note printed under it (table_foot): prose after a table -- p48, the
+    paragraph introducing Tabella 13 -- belongs to neither exhibit.
+
+    Shared by cut_exhibit_page (keep the band) and cut_leftover_page (keep
+    everything but the bands), so the two cannot disagree on a boundary.
+    """
+    numbers = [h[1] for h in headings]
+    if wanted is None or wanted not in numbers:
+        return None
+    index = numbers.index(wanted)
+    lo = headings[index][2] - HEADING_GAP
+    hi = (headings[index + 1][2] - HEADING_GAP
+          if index + 1 < len(headings) else float(height))
+    rules = [d["rect"] for d in canvas.get_drawings()
+             if d["rect"].y0 >= lo and d["rect"].y1 <= hi]
+    if rules:
+        hi = min(hi, table_foot(canvas, max(r.y1 for r in rules), hi)
+                 + HEADING_GAP)
+    return lo, hi
+
+
+def cut_leftover_page(volume_path, page_no, codes, out_path, manifest,
+                      volume_index):
+    """Write what is left of a cut page once its exported exhibits are taken.
+
+    Every part of every page lives in exactly one output (decided 2026-10-17):
+    the exhibit bands go to their table files, and this -- the narrative, the
+    charts, the running header -- goes to the volume's trash file. The page is
+    turned upright as for the cut, and each exhibit band is removed only across
+    the exhibit's own width, so the volume furniture printed along the edge of a
+    rotated page stays here. Returns False when nothing is left.
+    """
+    libs = _pymupdf()
+    if libs is None:
+        return False
+    pymupdf, geometry = libs
+    document = pymupdf.open(volume_path)
+    try:
+        source = document[page_no - 1]
+        frame = geometry.Frame.for_page(source)
+        turn = _FRAME_ROTATE.get(frame.name)
+        if turn is None:
+            return False
+        if turn in (90, 270):
+            width, height = source.rect.height, source.rect.width
+        else:
+            width, height = source.rect.width, source.rect.height
+        work = pymupdf.open()
+        canvas = work.new_page(width=width, height=height)
+        canvas.show_pdf_page(pymupdf.Rect(0, 0, width, height), document,
+                             page_no - 1, rotate=turn)
+        headings = exhibit_headings(canvas)
+        drawings = [d["rect"] for d in canvas.get_drawings()]
+        for code in codes:
+            band = exhibit_band(canvas, headings,
+                                printed_number(code, manifest, volume_index),
+                                height)
+            if band is None:
+                continue
+            lo, hi = band
+            inside = [r for r in drawings if r.y0 >= lo and r.y1 <= hi]
+            x0 = min((r.x0 for r in inside), default=0) - CUT_MARGIN
+            x1 = max((r.x1 for r in inside), default=width) + CUT_MARGIN
+            # The heading and any note may run wider than the grid.
+            for block in canvas.get_text("dict").get("blocks", []):
+                for line in block.get("lines", []):
+                    bx0, by0, bx1, by1 = line["bbox"]
+                    if lo <= by0 and by1 <= hi and (bx1 - bx0) < width * 0.9 \
+                            and line.get("dir", (1, 0))[0] > 0.5:
+                        x0, x1 = min(x0, bx0 - 2), max(x1, bx1 + 2)
+            canvas.add_redact_annot(pymupdf.Rect(max(0, x0), lo,
+                                                 min(width, x1), hi), fill=False)
+        canvas.apply_redactions(
+            images=pymupdf.PDF_REDACT_IMAGE_NONE,
+            graphics=pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
+            text=pymupdf.PDF_REDACT_TEXT_REMOVE)
+        if not canvas.get_text("words") and not canvas.get_images():
+            return False
+        work.save(out_path)
+        work.close()
+        return True
+    finally:
+        document.close()
 
 
 def drop_minority_direction(page):
@@ -289,7 +402,189 @@ def table_plan(readers, manifests):
 
 
 
-def split_pdf(readers, manifests, out_root, year, paths=None):
+def table_key(tkey):
+    """'MEF/UE', 'DOG/A1C2/N': the (authority, article, code) key as one string."""
+    authority, article, code = tkey
+    return "/".join(x for x in (authority, article, code) if x)
+
+
+def printed_page(manifest, page):
+    """The page number printed on the paper for PDF page `page` (1-based).
+
+    First the PDF's own page labels (/PageLabels, stored on the manifest by
+    step 1): the publisher's declaration, no guess. Then the volume's folio
+    offset (indice.folio_map, the mode of folio - page) for volumes without
+    numeric labels. Then the PDF index; table_list() notes that case.
+    """
+    labels = manifest.get("page_labels") or []
+    if 0 < page <= len(labels) and str(labels[page - 1]).isdigit():
+        return int(labels[page - 1])
+    offset = manifest.get("folio_offset")
+    return page + offset if offset is not None else page
+
+
+def _segments_text(segments):
+    return "+".join(f"V{idx + 1}:{start}-{end}" for idx, start, end in segments)
+
+
+TABLE_LIST_FIELDS = ("key", "authority", "article", "code", "status", "source",
+                     "segments", "printed", "pages", "file", "notes")
+
+
+def _printed_text(manifests, segments):
+    return "+".join(f"{printed_page(manifests[idx], start)}-"
+                    f"{printed_page(manifests[idx], end)}"
+                    for idx, start, end in segments)
+
+
+def table_list(readers, manifests, year, labels):
+    """One row per table of the year, in the order a person reads the volumes.
+
+    The rows for written tables come from table_plan(), the plan split_pdf()
+    writes from, so the list cannot name a page range the PDF does not have.
+    Around them: copies resolve_repeats settled away (status `reprint`, no
+    file) and codes a listing promised but no page carries (`listed-missing`).
+    `segments` are PDF page indices (1-based, per volume), what a cut reads;
+    `printed` are the page numbers printed on the paper, what the filename
+    carries.
+    """
+    plan = table_plan(readers, manifests)
+    rows = []
+    for tkey, segments in plan.items():
+        idx, start, _end = segments[0]
+        info = manifests[idx]["tables"].get(tkey) or \
+            manifests[segments[-1][0]]["tables"].get(tkey, {})
+        notes = []
+        for m_idx, manifest in enumerate(manifests):
+            b = manifest.get("boundary", {}).get(table_key(tkey))
+            if b:
+                # `total` is how many pages the span was trimmed by at that
+                # boundary, not a page count the table declares.
+                notes.append(f"stopped before V{m_idx + 1}:{b.get('pages')} "
+                             f"({b.get('authority')}), trimmed {b.get('total')}")
+            for cover in manifest.get("covers") or []:
+                if (cover["authority"], cover["article"], cover["code"]) == tkey:
+                    notes.append(f"cover V{m_idx + 1}:{cover['page']} dropped")
+            if tkey[2] in (manifest.get("singletons") or []):
+                notes.append(f"singleton V{m_idx + 1}")
+        if any(manifests[i].get("folio_offset") is None for i, _s, _e in segments):
+            notes.append("no folio: printed = PDF index")
+        rows.append({
+            "key": table_key(tkey), "authority": tkey[0],
+            "article": tkey[1] or "", "code": tkey[2],
+            "status": "provisional" if info.get("provisional") else "ok",
+            "source": info.get("source", ""),
+            "segments": _segments_text(segments),
+            "printed": _printed_text(manifests, segments),
+            "pages": sum(e - s + 1 for _i, s, e in segments),
+            "file": ontology.relative_path(
+                tkey[0], tkey[1], tkey[2], year, idx + 1,
+                printed_page(manifests[idx], start), PDF_EXT),
+            "notes": "; ".join(sorted(set(notes))),
+        })
+    for idx, manifest in enumerate(manifests):
+        for tkey, info in manifest["tables"].items():
+            if info.get("kept") is False:
+                rows.append({
+                    "key": table_key(tkey), "authority": tkey[0],
+                    "article": tkey[1] or "", "code": tkey[2],
+                    "status": "reprint", "source": info.get("source", ""),
+                    "segments": _segments_text([(idx, info["start"], info["end"])]),
+                    "printed": _printed_text(manifests,
+                                             [(idx, info["start"], info["end"])]),
+                    "pages": info["end"] - info["start"] + 1, "file": "",
+                    "notes": "copy settled away by resolve_repeats"})
+        for code in manifest.get("listed_missing") or []:
+            rows.append({
+                "key": code, "authority": "", "article": "", "code": code,
+                "status": "listed-missing", "source": "listing", "segments": "",
+                "printed": "",
+                "pages": 0, "file": "", "notes": f"listed in {labels[idx]}"})
+    return rows
+
+
+def write_table_list(path, rows):
+    """Write table_list() rows as TSV, replacing any previous list."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["\t".join(TABLE_LIST_FIELDS)]
+    for row in rows:
+        lines.append("\t".join(str(row[f]).replace("\t", " ")
+                               for f in TABLE_LIST_FIELDS))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+_SHA256 = {}
+
+
+def _sha256(path):
+    """SHA-256 of a source volume, computed once per run."""
+    if path not in _SHA256:
+        import hashlib
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for block in iter(lambda: fh.read(1 << 20), b""):
+                h.update(block)
+        _SHA256[path] = h.hexdigest()
+    return _SHA256[path]
+
+
+def _bookmarks(reader):
+    """[(pdf page 1-based, title)] for every outline entry with a page."""
+    found = []
+
+    def walk(items):
+        for item in items:
+            if isinstance(item, list):
+                walk(item)
+                continue
+            try:
+                found.append((reader.get_destination_page_number(item) + 1,
+                              str(item.title)))
+            except Exception:
+                continue  # container entries with no page ('araba.pdf')
+    try:
+        walk(reader.outline)
+    except Exception:
+        pass
+    return found
+
+
+def provenance(tkey, segments, readers, manifests, paths, year, cut=False):
+    """Document info for one split PDF: where every page of it came from.
+
+    The split PDFs are a review view; SQL extraction reads the source volumes
+    (DECISIONS.md). This keeps a file traceable on its own, once separated
+    from the table list: /Title is the table key, /Subject a JSON record with
+    each source file, its SHA-256, the PDF pages and their printed numbers,
+    and the bookmark titles that point into the table. Deterministic: no dates.
+    """
+    import json
+    sources, marks = [], []
+    for idx, start, end in segments:
+        path = paths[idx] if paths is not None else None
+        sources.append({
+            "file": Path(path).name if path else None,
+            "sha256": _sha256(path) if path else None,
+            "pdf_pages": [start, end],
+            "printed_pages": [printed_page(manifests[idx], start),
+                              printed_page(manifests[idx], end)],
+            # True when the file holds a cut-out part of these pages, not the
+            # whole pages: the rest of each page is in the volume's trash file.
+            "cut": cut,
+        })
+        marks += [title for page, title in _bookmarks(readers[idx])
+                  if start <= page <= end]
+    record = {"table": table_key(tkey), "authority": tkey[0],
+              "article": tkey[1], "code": tkey[2], "year": str(year),
+              "sources": sources, "bookmarks": marks}
+    return {"/Title": table_key(tkey),
+            "/Subject": json.dumps(record, ensure_ascii=False, sort_keys=True),
+            "/Creator": "ArmTrace step 1 (Reports2PDFTables)"}
+
+
+def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
     """Write one PDF per table under the ministry/article tree.
 
         <out_root>/PDF/MAE/A12023.PDF
@@ -315,8 +610,13 @@ def split_pdf(readers, manifests, out_root, year, paths=None):
     copy settled away by resolve_repeats is skipped: one table, one file.
 
     The plan comes from table_plan(), which dump_trash() reads as well.
+
+    `only`, a set of table_key() strings, writes just those tables: the cut one
+    subagent asks for, from the same plan a full run would use.
     """
     plan = table_plan(readers, manifests)
+    if only is not None:
+        plan = {k: v for k, v in plan.items() if table_key(k) in only}
 
     # Every relation exhibit is cut, not only the ones sharing a page. An exhibit
     # that has a page to itself is no cleaner for it: the ministry writes the
@@ -335,8 +635,10 @@ def split_pdf(readers, manifests, out_root, year, paths=None):
         # F1 is V1 p1039, not the vol. II half it continues into.
         first_idx, first_start, _first_end = segments[0]
         rel = ontology.relative_path(authority, article, code, year,
-                                     first_idx + 1, first_start, PDF_EXT)
-        path = Path(out_root, OUT_DIR, "PDF", rel)
+                                     first_idx + 1,
+                                     printed_page(manifests[first_idx], first_start),
+                                     PDF_EXT)
+        path = layout.pdf_dir(year, out_root) / rel
         path.parent.mkdir(parents=True, exist_ok=True)
 
         # A table whose every page needs cutting is written entirely by the cut,
@@ -375,6 +677,9 @@ def split_pdf(readers, manifests, out_root, year, paths=None):
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
             if ok:
+                merged.add_metadata(provenance((authority, article, code),
+                                               segments, readers, manifests,
+                                               paths, year, cut=True))
                 with open(path, "wb") as fh:
                     merged.write(fh)
                 written.append(str(path))
@@ -393,6 +698,8 @@ def split_pdf(readers, manifests, out_root, year, paths=None):
                     cut_failed.append((code, p))
                     continue
                 writer.add_page(reader.pages[p - 1])
+        writer.add_metadata(provenance((authority, article, code), segments,
+                                       readers, manifests, paths, year))
         with open(path, "wb") as fh:
             writer.write(fh)
         written.append(str(path))
@@ -557,16 +864,16 @@ def trash_reason(manifest, start, end, tables):
 
 
 def dump_trash(volumes, plan, out_root, year, write=True):
-    """Write Out/TRASH/<anno>/<volume>_p<a>-<b>.PDF for every unattributed run.
+    """Write Out/TRASH/<anno>/<volume>_TRASH.PDF: every unattributed page of a volume.
 
-        Out/TRASH/2025/2025_LXVII_n4_VOLUME_II_p001-066.PDF
-        Out/TRASH/2025/2025_LXVII_n4_VOLUME_II.tsv
+        Out/2025/TRASH/2025_LXVII_n4_VOLUME_II_TRASH.PDF
+        Out/.work/2025/trash.tsv          (one row per run, every volume)
 
-    One file per contiguous run, because a run is the unit a person triages: the
-    pages between two tables, or the block of Gazzetta pages bound into the
-    volume, is one thing to look at. The TSV beside them gives every run its page
-    range, size and reason, which is what makes the folder greppable rather than
-    a pile of PDFs.
+    One file per volume, with an outline entry per contiguous run (the pages
+    between two tables, a block of Gazzetta pages): a run is still the unit a
+    person triages, but the folder is two files rather than fifty. The TSV
+    gives every run its source pages, size, reason and its pages inside the
+    trash file; it is published into Out/<year>/tablesindex*.
 
     `write=False` prints the accounting and writes nothing, so --dry-run still
     reports the coverage -- which is the number a reader most wants from a run
@@ -586,6 +893,8 @@ def dump_trash(volumes, plan, out_root, year, write=True):
     overage = span_past_end(plan, len(volumes), page_counts)
 
     written = []
+    for volume in volumes:
+        volume["trash_rows"] = []
     for idx, volume in enumerate(volumes):
         # Guarded per volume, for the reason build_manifest is: the trash is a
         # review artefact and must never be the thing that costs a run its PDFs.
@@ -597,7 +906,22 @@ def dump_trash(volumes, plan, out_root, year, write=True):
         except Exception as exc:
             print(f"    TRASH FAILED for {volume['label']} (artefacts are safe): "
                   f"{type(exc).__name__}: {exc}")
+    if write:
+        rows = [row for volume in volumes for row in volume.get("trash_rows", [])]
+        target = layout.trash_tsv(year, out_root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write("\t".join(TRASH_FIELDS) + "\n")
+            for row in rows:
+                fh.write("\t".join(str(row[f]).replace("\t", " ")
+                                   for f in TRASH_FIELDS) + "\n")
+        written.append(str(target))
     return written
+
+
+TRASH_FIELDS = ("volume", "source_file", "start", "end", "pages", "reason",
+                "note", "printed_from", "printed_to", "trash_file",
+                "trash_from", "trash_to")
 
 
 
@@ -626,6 +950,10 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
     if covered != page_count:
         print(f"    TRASH ACCOUNTING FAILED for {stem}: {covered} pages "
               f"accounted for out of {page_count}")
+    # A page carrying two exhibits is claimed by both, each file holding its own
+    # cut-out part. Any other double claim is a real defect.
+    shared = {e["page"] for e in manifest.get("rel_pages") or []}
+    twice = [p for p in twice if p not in shared]
     if twice:
         print(f"    DOUBLE-CLAIMED: {len(twice)} page(s) claimed by two "
               f"tables in {stem} (first p{twice[0]}) -- not trashed")
@@ -634,18 +962,28 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
           f"{len(runs)} run(s) of {page_count} "
           f"({trashed / page_count:.0%} of the volume)")
     if runs:
-        print(f"                 -> {Path(out_root, OUT_DIR, TRASH_DIR, year)}/"
-              f"{stem}_p<a>-<b>{PDF_EXT} + {stem}.tsv")
+        print(f"                 -> {layout.trash_dir(year, out_root)}/"
+              f"{stem}_TRASH{PDF_EXT}")
 
     rows = []
     for start, end in runs:
         slug, note = trash_reason(manifest, start, end, manifest["tables"])
         rows.append((start, end, end - start + 1, slug, note))
 
-    if not write or not rows:
+    # What is left of each cut page once its exhibits are taken: the prose,
+    # charts and running header around them. Every part of every page lives in
+    # exactly one output; tools/page_check.py proves it at the end of a run.
+    leftovers = []
+    for entry in manifest.get("rel_pages") or []:
+        page = entry["page"]
+        codes = sorted(key[2] for key in claimed.get(page, ()))
+        if codes:
+            leftovers.append((page, codes))
+
+    if not write or not (rows or leftovers):
         return written
 
-    folder = Path(out_root, OUT_DIR, TRASH_DIR, year)
+    folder = layout.trash_dir(year, out_root)
     folder.mkdir(parents=True, exist_ok=True)
     # Clear this volume's own previous trash before writing, so a run that now
     # yields fewer blocks does not leave the old ones behind: a stale file here
@@ -654,40 +992,79 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
     # Out/PDF.
     for stale in folder.glob(f"{stem}_p*{PDF_EXT}"):
         stale.unlink()
-    for stale in folder.glob(f"{stem}*.tsv"):
+    for stale in folder.glob(f"{stem}_TRASH{PDF_EXT}"):
         stale.unlink()
 
-    names = []
+    # One PDF per volume (decided 2026-10-17): every unattributed page of the
+    # volume, in order, with an outline entry per run so the file is navigable
+    # run by run. The TSV maps each run to its pages inside that file.
+    import json
+    writer = PdfWriter()
+    placed = []
     for start, end, size, slug, note in rows:
-        writer = PdfWriter()
+        first = len(writer.pages)
         for p in range(start, end + 1):
             writer.add_page(reader.pages[p - 1])
-        # An outline entry per run, so a folder of 14 PDFs opened in a viewer is
-        # navigable without reading the filenames.
+        placed.append((first + 1, len(writer.pages)))
         try:
             writer.add_outline_item(
                 f"p{start}-{end} ({size}pp) {slug}"
-                + (f" -- {note}" if note else ""), 0)
+                + (f" - {note}" if note else ""), first)
         except Exception:
-            pass              # an outline is a convenience, never a failure
-        path = folder / f"{stem}_p{start:03d}-{end:03d}{PDF_EXT}"
-        with open(path, "wb") as fh:
-            writer.write(fh)
-        written.append(str(path))
-        names.append(path.name)
+            pass
+    source = volume.get("path")
+    scratch = tempfile.mkdtemp(prefix="relazione-leftover-")
+    try:
+        for page, codes in leftovers:
+            tmp = Path(scratch, f"{page}.PDF")
+            if not source or not cut_leftover_page(source, page, codes, str(tmp),
+                                                   manifest, idx):
+                continue
+            first = len(writer.pages)
+            writer.add_page(PdfReader(str(tmp)).pages[0])
+            note = "outside " + " ".join(codes)
+            rows.append((page, page, 1, "cut-leftover", note))
+            placed.append((first + 1, first + 1))
+            try:
+                writer.add_outline_item(f"p{page} leftover ({note})", first)
+            except Exception:
+                pass
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    writer.add_metadata({
+        "/Title": f"{stem} - unattributed pages",
+        "/Subject": json.dumps({
+            "volume": stem, "year": str(year),
+            "file": Path(source).name if source else None,
+            "sha256": _sha256(source) if source else None,
+            "runs": [{"pdf_pages": [start, end],
+                      "printed_pages": [printed_page(manifest, start),
+                                        printed_page(manifest, end)],
+                      "reason": slug}
+                     for start, end, _size, slug, _note in rows],
+        }, ensure_ascii=False, sort_keys=True),
+        "/Creator": "ArmTrace step 1 (Reports2PDFTables)",
+    })
+    path = folder / f"{stem}_TRASH{PDF_EXT}"
+    with open(path, "wb") as fh:
+        writer.write(fh)
+    written.append(str(path))
 
-    tsv = folder / f"{stem}.tsv"
-    with open(tsv, "w", encoding="utf-8") as fh:
-        fh.write("start\tend\tpages\treason\tnote\tfile\n")
-        for (start, end, size, slug, note), name in zip(rows, names):
-            fh.write(f"{start}\t{end}\t{size}\t{slug}\t{note}\t{name}\n")
-    written.append(str(tsv))
+    # The trash index rows go back to dump_trash, which writes one
+    # .work/<year>/trash.tsv for every volume of the year.
+    volume["trash_rows"] = [
+        {"volume": stem, "source_file": Path(source).name if source else "",
+         "start": start, "end": end, "pages": size, "reason": slug, "note": note,
+         "printed_from": printed_page(manifest, start),
+         "printed_to": printed_page(manifest, end),
+         "trash_file": path.name, "trash_from": t0, "trash_to": t1}
+        for (start, end, size, slug, note), (t0, t1) in zip(rows, placed)]
 
     for start, end, size, slug, note in rows[:8]:
         print(f"        p{start}-{end:<6} {size:5}pp  {slug:16}"
               + (f" {note}" if note else ""))
     if len(rows) > 8:
-        print(f"        ... {len(rows) - 8} more run(s) in {tsv.name}")
+        print(f"        ... {len(rows) - 8} more run(s)")
     return written
 
 
@@ -859,3 +1236,6 @@ _FRAME_ROTATE = {"upright": 0, "rot90": 270, "rot180": 180, "rot270": 90}
 # edge and the last column of digits butts against it, so a tight crop clips
 # the figure.
 CUT_MARGIN = 20.0
+# Gap kept between an exhibit band and what borders it: its own heading above,
+# the next heading or its last grid rule below.
+HEADING_GAP = 2.0

@@ -309,10 +309,10 @@ def relative_path(authority, article, code, year, volume, page, extension):
     is fixed-length.
 
     `volume` is 1-based in document order within the reporting year, and `page`
-    is the first page of the table's FIRST segment. A table that straddles the
-    volume join (2025 Tabella F1 runs p1039-1046 of vol. I and p5-66 of vol. II)
-    therefore names vol. I, which is where the table starts and where its
-    bookmark, index row and first data page all point.
+    is the PRINTED page number (the folio on the paper, not the PDF index) of
+    the table's first page -- emit.printed_page(). A table that straddles the
+    volume join (2025 Tabella F1, printed 1035-1042 in vol. I and 1043-1104 in
+    vol. II) therefore names vol. I: MAE/F12025V1P1035.PDF.
     """
     parts = [authority]
     if article:

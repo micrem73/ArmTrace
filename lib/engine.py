@@ -1,60 +1,41 @@
-#!/usr/bin/env python3
 """
-TEMPLATE -- step 1, one PDF per table, for one reporting year.
+Step 1, one PDF per table: the engine every edition shares.
 
-    cp Reports2PDFTables_TEMPLATE.py Reports2PDFTables_<anno>.py
+    python3 Reports2PDFTables.py <year> [--out <root>] [--dry-run] [--only KEY]
 
-THIS FILE IS NEVER EDITED AND NEVER RUN. It exists so that a new year starts
-from a copy of a year that verified clean, rather than from whichever year was
-being worked on when the need arose. Make the copy, rename YEAR, run it, and
-edit only the copy.
+WHAT IS HERE. The DETECTORS -- how a page is turned into a candidate table code,
+how spans are built, how two volumes are joined -- and the driver that runs them.
+The printed patterns, the page reader, the writer and the volume plumbing are the
+other modules of lib/ (patterns, pageio, emit, volumes, ontology, indice).
 
-WHAT IS HERE AND WHAT IS NOT. This file holds the DETECTORS -- how a page is turned
-into a candidate table code, how spans are built, how two volumes are joined -- and
-the driver that runs them. The printed patterns, the page reader, the writer and the
-volume plumbing are all in lib/:
+WHAT AN EDITION MAY CHANGE. editions/y<year>.py holds what is true of one edition
+only: VOLUME (which volumes a run reads) and, when a layout needs it, its own
+version of a function named in OVERRIDES. run() installs those before the run.
+Anything else an edition needs is a change here, for every year, and the golden
+test of every verified year says whether it broke one (tests/test_golden.py).
 
-    lib/patterns.py   every regex and constant; year-independent
-    lib/pageio.py     reading one page; year-independent
-    lib/emit.py       manifest -> files, plus the trash; year-independent
-    lib/volumes.py    finding and ordering the source PDFs; year-independent
-    lib/ontology.py   the ministries, the article tokens, the Out/ path shape
-    lib/indice.py     ministry page ranges out of a volume's INDICE
-
-WHY EACH YEAR IS ITS OWN SCRIPT. On 2026-10-11 the per-year scripts stopped
-sharing one engine. The objective is tables produced with no errors, not one elegant
-program; a detector that is right for 2025 is not right for 2024, and merging them
-means re-testing every year on every change. So each year owns its detectors and is
-never edited once its year verifies clean -- the rule is in AGENTS.md section 2.
-
-WHAT MAY CHANGE HERE. Anything above the primitives, and only here: page_code,
-page_code_listed, scan_headers, detect_family, build_manifest, resolve_repeats,
-stitch, and the volume policy main() pins. A 2016 script will need a new header style;
-a 2024 script will need a different detect_family. Neither belongs in the frozen 2025
-file, and neither belongs in lib/.
-
-WHAT MUST NOT CHANGE. A primitive in lib/ is wrong for every year at once. To override
-one locally -- a year that needs its own MIN_RUN or code shape -- import it here and
-shadow it; do not edit lib/ to suit one year.
-
-Both volumes, always: VOLUME below is pinned per year and is not always "both": 2025 must be,
-because Tabella F1 straddles the join (printed 1035-1042 in volume I, 1043-1104 in
-volume II) and a per-volume run loses the eight pages of volume I. See AGENTS.md
-section 1a.
+WHY ONE ENGINE. Until 2026-10-17 each year was a full copy of this file. Fixes
+then reached only the year they were made in: the cover and Difesa-article rules
+of 2025 review round 1 never reached 2024 (DECISIONS.md).
 """
 
 import argparse
+import importlib
 import json
 import re
-import sys
 from collections import Counter
 from pathlib import Path
 
 from pypdf import PdfReader
 
-from lib import indice, ontology
-from lib.emit import TRASH_DIR, dump_trash, report as render_report, split_pdf, table_plan
+from lib import indice, layout, ontology, pagecache
+from lib.emit import (dump_trash, report as render_report, split_pdf,
+                      table_key, table_list, table_plan, write_table_list)
 from lib.pageio import (
+    cited_article,
+    is_table_cover,
+    page_names_table,
+    page_text,
     appendix_code,
     scan_bookmarks,
     header_fingerprint,
@@ -97,8 +78,11 @@ from lib.patterns import (
 )
 from lib.volumes import collect_jobs, group_by_year, sibling_index
 
-YEAR = "YYYY"
-VOLUME = "both"
+# Functions an edition module may replace (see the module docstring). A new
+# entry here is a decision: the function is then allowed to differ by year.
+OVERRIDES = ("read_index", "detect_family", "page_code", "page_code_listed",
+             "scan_headers", "build_manifest", "resolve_repeats", "stitch",
+             "report_index_plan")
 
 def block_at(edges, page):
     """Ministry owning a page per the volume's INDICE, or None.
@@ -222,11 +206,13 @@ def read_index(reader):
 
     Two layouts are recognised: the "Cartella / Pagine / Totale Pagine" table
     of 2020 and 2022, and the plain "Tabella D <title>" listing of 2012.
-    Returns (vocabulary, page_counts).
+    Returns (vocabulary, page_counts, plan). `plan` is the edition's placement
+    plan read from the same listing, handed to build_manifest; this reader has
+    none and returns {} (2024 reads one, editions/y2024.py).
     """
     for page in reader.pages:
         try:
-            text = page.extract_text() or ""
+            text = page_text(page)
         except Exception:
             continue
         counts, codes = {}, set()
@@ -243,8 +229,8 @@ def read_index(reader):
         # 2014 vol. I surface a single spurious code this way and are rejected
         # by requiring eight.
         if len(codes) >= 8:
-            return codes, counts
-    return set(), {}
+            return codes, counts, {}
+    return set(), {}, {}
 
 
 
@@ -273,7 +259,7 @@ def detect_family(reader, vocabulary):
     step = max(1, len(reader.pages) // 25)
     for i in range(0, len(reader.pages), step):
         try:
-            text = reader.pages[i].extract_text() or ""
+            text = page_text(reader.pages[i])
         except Exception:
             continue
         for m in INLINE_CODE.finditer(text):
@@ -448,7 +434,7 @@ def page_code_listed(lines, listed, banner):
     #
     # Gated three ways, all of which are needed. The code must be one the ELENCO
     # promised; the page must carry the MEF banner; and the code must sit in the
-    # header region, above the body -- AGENTS.md section 4 records the bare "I" in
+    # header region, above the body -- 2025 has a bare "I" in
     # a Dogane table list, 108 lines down a page, which is exactly this shape
     # without the position. The first table row below the code is never eligible.
     for i, line in enumerate(lines):
@@ -672,7 +658,7 @@ def body_starts(reader, vocabulary):
     norm = {normalise_digit_one(c) for c in vocabulary}
     for i, page in enumerate(reader.pages):
         try:
-            text = page.extract_text() or ""
+            text = page_text(page)
         except Exception:
             continue
         if is_garbled(text) or is_ciphered(text):
@@ -839,7 +825,7 @@ def resolve_placement(pages_seen, provenance, articles=None):
 
 
 
-def build_manifest(reader, vocabulary, counts, sibling=None):
+def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
     """Union every detector into a manifest keyed by (authority, article, code).
 
     The code alone is not a key. The Dogane print "TAB. N" twice in one volume,
@@ -1468,6 +1454,69 @@ def halves_join(volumes, earlier, later):
 
 
 
+def difesa_articles(volumes):
+    """File each Difesa annex under the article its own pages cite.
+
+    classify_page() files every annex under A2C6, but 2025's Annesso 2 is the
+    Registro Nazionale delle Imprese, art. 5, and Annesso 4 cites no article at
+    all (decided 2026-10-16, DECISIONS.md). An annex citing none gets no article
+    level: DIFESA/4, never a guessed one. Order of the tables is kept.
+    """
+    for volume in volumes:
+        manifest, reader = volume["manifest"], volume["reader"]
+        rekeyed = {}
+        for (authority, article, code), info in manifest["tables"].items():
+            if authority == ontology.DIFESA:
+                cited = None
+                for p in range(info["start"], info["end"] + 1):
+                    try:
+                        cited = cited_article(page_text(reader.pages[p - 1]))
+                    except Exception:
+                        cited = None
+                    if cited:
+                        break
+                if cited != article:
+                    old = "/".join(x for x in (authority, article, code) if x)
+                    new = "/".join(x for x in (authority, cited, code) if x)
+                    if old in manifest.get("boundary", {}):
+                        manifest["boundary"][new] = manifest["boundary"].pop(old)
+                    article = cited
+            rekeyed[(authority, article, code)] = info
+        manifest["tables"] = rekeyed
+
+
+def drop_covers(volumes):
+    """Start each table after its own cover sheet, so the file holds only the
+    pages the table numbers (decided 2026-10-16, DECISIONS.md) -- but only
+    when the first data page prints the table's caption itself. The Dogane
+    summaries ("Riepilogo per ...") print it on the cover alone; dropping
+    their cover would leave a file that names no table, so they keep it.
+
+    Runs after detection: the cover is still what names an appendix
+    (appendix_code reads it), it just is not exported. The page falls to
+    TRASH, the complement of the plan. Recorded in manifest["covers"].
+    """
+    for volume in volumes:
+        manifest, reader = volume["manifest"], volume["reader"]
+        covers = manifest.setdefault("covers", [])
+        for (authority, article, code), info in manifest["tables"].items():
+            if info.get("kept") is False or info["end"] <= info["start"]:
+                continue
+            try:
+                text = page_text(reader.pages[info["start"] - 1])
+            except Exception:
+                continue
+            try:
+                after = page_text(reader.pages[info["start"]])
+            except Exception:
+                continue
+            if is_table_cover(text, code) and page_names_table(after, code):
+                covers.append({"authority": authority, "article": article,
+                               "code": code, "page": info["start"]})
+                info["start"] += 1
+                info["pages"] = info["end"] - info["start"] + 1
+
+
 def resolve_repeats(volumes):
     """Settle a table code that was detected in more than one volume.
 
@@ -1545,7 +1594,7 @@ def main(argv=None):
     parser.add_argument("--report", action="append", default=[],
                         help="percorso esplicito del PDF (ripetibile)")
     parser.add_argument("--all", action="store_true",
-                        help="processa ogni volume in reports_185_1990/")
+                        help="processa ogni volume in In/")
     parser.add_argument("--base", default="", help="radice dei percorsi (default: .)")
     parser.add_argument("--out", default="",
                         help=f"radice di output (default: <base>/{OUT_DIR})")
@@ -1556,7 +1605,24 @@ def main(argv=None):
     parser.add_argument("--no-trash", action="store_true",
                         help="non scrivere Out/TRASH/ (le pagine non attribuite "
                              "restano solo nel report)")
+    parser.add_argument("--tables", default="",
+                        help="scrivi l'elenco delle tabelle dell'anno (TSV) in "
+                             "questo percorso")
+    parser.add_argument("--only", action="append", default=[],
+                        help="scrivi solo questa tabella, es. MEF/UE o "
+                             "DOG/A1C2/N (ripetibile); niente TRASH")
     args = parser.parse_args(argv)
+    out_root = args.out or args.base or "."
+    # The manifest and the table list are internals: written to
+    # Out/.work/<year>/ unless a path is given (layout.py).
+    if not args.manifest:
+        args.manifest = str(layout.manifest_path(args.year, out_root))
+    if not args.tables and not args.only:
+        args.tables = str(layout.tables_tsv(args.year, out_root))
+    if args.manifest:
+        # One file per run: appending across runs piled every run's volumes
+        # into the same JSONL, and a reader took the first copy it met.
+        Path(args.manifest).unlink(missing_ok=True)
 
     jobs = group_by_year(collect_jobs(args))
     n_volumes = sum(len(v) for v in jobs.values())
@@ -1576,21 +1642,30 @@ def main(argv=None):
             label = Path(report).stem
             try:
                 reader = PdfReader(report, strict=False)
+                pagecache.attach(reader, report)
             except Exception as exc:
                 print(f"{label}: apertura fallita: {exc}\n")
                 continue
-            vocabulary, counts = read_index(reader)
+            vocabulary, counts, index_plan = read_index(reader)
             # Guarded per volume, for the same reason the report is: one
             # unreadable volume must cost that volume, not the remaining
             # twenty-one.
             try:
                 manifest, facts = build_manifest(reader, vocabulary, counts,
-                                                sibling=sibling_index(report))
+                                                sibling=sibling_index(report),
+                                                plan=index_plan)
             except Exception as exc:
                 print(f"{label}: elaborazione fallita: "
                       f"{type(exc).__name__}: {exc}\n")
                 del reader
                 continue
+            # The printed page number goes into every filename, so the offset
+            # is measured for every volume, not only those with an INDICE.
+            manifest["folio_offset"] = indice.folio_map(reader)[0]
+            try:
+                manifest["page_labels"] = list(reader.page_labels)
+            except Exception:
+                manifest["page_labels"] = []
             volumes.append({"label": label, "path": report, "reader": reader,
                             "manifest": manifest, "facts": facts})
 
@@ -1606,6 +1681,8 @@ def main(argv=None):
                        volumes[idx]["label"], volumes[idx + 1]["label"])
 
         resolve_repeats(volumes)
+        drop_covers(volumes)
+        difesa_articles(volumes)
 
         for volume in volumes:
             manifest = volume["manifest"]
@@ -1646,6 +1723,7 @@ def main(argv=None):
 
             try:
                 report_manifest(manifest, f"{volume['label']} (y={year})")
+                report_index_plan(manifest)
             except Exception as exc:
                 print(f"    REPORT FAILED (artefacts are safe): "
                       f"{type(exc).__name__}: {exc}\n")
@@ -1655,33 +1733,53 @@ def main(argv=None):
         paths = [v["path"] for v in volumes]
         manifests = [v["manifest"] for v in volumes]
         plan = table_plan(readers, manifests)
+        if args.tables:
+            rows = table_list(readers, manifests, year,
+                              [v["label"] for v in volumes])
+            target = write_table_list(args.tables, rows)
+            print(f"    table list : {len(rows)} row(s) in {target}")
+        only = set(args.only) or None
+        if only:
+            known = {table_key(k) for k in plan}
+            unknown = sorted(only - known)
+            if unknown:
+                print(f"    --only     : not in the plan: {', '.join(unknown)}")
         if not args.dry_run and plan:
-            written = split_pdf(readers, manifests, out_root, year, paths)
+            written = split_pdf(readers, manifests, out_root, year, paths,
+                                only=only)
             print(f"    wrote      : {len(written)} PDF in "
-                  f"{Path(out_root, OUT_DIR, 'PDF')}/<authority>/"
-                  f"[<articolo>/]<tabella>{year}.PDF")
+                  f"{layout.pdf_dir(year, out_root)}/<authority>/"
+                  f"[<articolo>/]<tabella>{year}V<vol>P<pagina>.PDF")
 
         # The pages no table owns, written beside them. The accounting is printed
         # on every run -- including --dry-run -- because coverage is the number a
         # reader most wants from a run whose output cannot yet be trusted; only
         # the files are conditional.
-        if args.no_trash:
-            print("    trash       : skipped (--no-trash)")
+        if args.no_trash or only:
+            print("    trash       : skipped (--no-trash / --only)")
         else:
             trashed = dump_trash(volumes, plan, out_root, year,
                                  write=not args.dry_run)
             if trashed and not args.dry_run:
                 pdfs = sum(1 for p in trashed if p.endswith(PDF_EXT))
-                print(f"    trashed    : {pdfs} PDF + {len(trashed) - pdfs} TSV in "
-                      f"{Path(out_root, OUT_DIR, TRASH_DIR, year)}/")
+                print(f"    trashed    : {pdfs} PDF in "
+                      f"{layout.trash_dir(year, out_root)}/")
         print()
         del volumes
 
     print("=" * 70)
     print(f"Totale: {total} tabelle in {n_volumes} volume/i")
+    # The final check of every full run: every source page in exactly one place
+    # (a table file, a table's cut-out part, or the trash). Skipped when the run
+    # wrote nothing or only part of the output.
+
     if args.dry_run:
         print("(dry-run: nessun PDF scritto)")
 
+
+
+def report_index_plan(manifest):
+    """Print what an edition's placement plan did; nothing without a plan."""
 
 
 def report_manifest(manifest, label):
@@ -1692,25 +1790,27 @@ def report_manifest(manifest, label):
     """
     render_report(manifest, label)
 
-def _refuse_foreign_year(argv):
-    """This script is pinned to its year; a --year on the command line is an error.
-
-    Silently honouring it would leave the output looking like a different year's
-    result, which is the one failure the per-year script exists to prevent.
-    """
-    for arg in argv:
-        if arg.startswith("--year"):
-            raise SystemExit(
-                f"This script is pinned to {YEAR}; use the script for the year "
-                f"you want."
-            )
-
-
-def cli(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    _refuse_foreign_year(argv)
-    return main(["--year", YEAR, "--volume", VOLUME] + argv)
+def load_edition(year):
+    """editions/y<year>.py, or a clear refusal: a year without one has not
+    been looked at, and running it on another year's settings would look
+    like a result."""
+    try:
+        return importlib.import_module(f"editions.y{year}")
+    except ModuleNotFoundError as exc:
+        if exc.name != f"editions.y{year}":
+            raise
+        raise SystemExit(f"no edition for {year}: add editions/y{year}.py "
+                         f"(start from editions/y2025.py)")
 
 
-if __name__ == "__main__":
-    cli()
+def run(year, argv=()):
+    """Run step 1 for one edition. --year and --volume come from the edition."""
+    argv = list(argv)
+    if any(a.startswith(("--year", "--volume")) for a in argv):
+        raise SystemExit("--year/--volume come from editions/y<year>.py; "
+                         "pass the year as the first argument")
+    edition = load_edition(year)
+    for name in OVERRIDES:
+        if hasattr(edition, name):
+            globals()[name] = getattr(edition, name)
+    return main(["--year", year, "--volume", edition.VOLUME] + argv)

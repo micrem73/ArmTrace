@@ -92,9 +92,8 @@ except ImportError:
     sys.exit("Errore: pypdf non installato. Esegui: pip install -r requirements.txt")
 
 # The printed patterns, the page reader and the stamp reader are imported from
-# lib/ rather than reimplemented: every one of them encodes a trap that shipped
-# (see AGENTS.md section 5) and a second copy would be a second thing to get
-# wrong.
+# lib/ rather than reimplemented: every one of them encodes a trap that shipped,
+# and a second copy would be a second thing to get wrong.
 #
 # They are imported from lib/ and NOT from a per-year script, and that is the
 # rule this file exists to keep. Since 2026-10-11 each year owns its own
@@ -105,13 +104,19 @@ except ImportError:
 # cannot report.
 from lib.patterns import (
     APPENDIX_SUFFIX,
+    BARE_CODE_MAX_LINE,
     CODE_RE,
     CODE_TAIL,
     FAMILY2_CODES,
     INDEX_ROW,
     INLINE_CODE,
     LEADING_CODE,
+    MAX_TRAILING_PAGES,
     MIN_RUN,
+    OUT_DIR,
+    PDF_EXT,
+    REL_CODE,
+    REPORTS_DIR,
     STAMP_BAND,
     STAMP_NUM,
     STAMP_SIZE,
@@ -133,11 +138,7 @@ from lib.pageio import (
 # parse_stem() is the only thing that takes it apart again. CatalogueTables
 # imports the same function for the same reason -- three parsers for one shape
 # is how a rename quietly stops being checked.
-from lib import ontology
-
-REPORTS_DIR = "reports_185_1990"
-OUT_DIR = "Out"
-PDF_EXT = ".PDF"
+from lib import layout, ontology
 
 # Where the report of each verdict goes. Kept out of PDF/ and CATALOG/ so that
 # nothing this script writes can be mistaken for pipeline output.
@@ -192,8 +193,7 @@ STAMP_WORD = re.compile(r"(?i)(?:pagina|pag|page)[\s.]*")
 # No local code-shape patterns: CODE_RE, CODE_TAIL, INLINE_CODE and LEADING_CODE
 # are imported from step 1 and used as they are. This block used to redeclare all
 # four, and one copy outlived the reason it was made. Do not add one back -- use
-# the imported name. Why that matters: AGENTS.md section 4, "A private copy of a
-# trap", and section 2.
+# the imported name; tests/test_traps.py enforces this.
 
 # The Dogane appendix code, as the filename spells it: the suffix is glued, so
 # that layout.code_shape and volume_vocabulary() admit the code. Built from the
@@ -237,18 +237,13 @@ BARE_KEYWORD = re.compile(r"(?i)tabella|tab\.|tab")
 # one: these tables carry no law reference at all, they are absent from the
 # INDICE, and they are absent from every bookmark tree. Judged against the
 # art. 27 shape, every one of them would FAIL, exactly as the five Difesa
-# annessi did before ANNEXO_CODE existed.
-REL_CODE = re.compile(r"^T\d{1,3}$")
+# annessi did before ANNEXO_CODE existed. REL_CODE is imported from lib.patterns.
 
 # The same code as it is PRINTED, so the verifier can look for it on the page: a
 # file called T812025.PDF carries a heading reading "Tabella 8.1", and a check
 # that searched for "T81" there would find nothing and call a correct file empty.
-REL_HEADING = re.compile(
-    r"(?i:^|\s)Tabella\s+(\d+(?:\.\d+)?)"
-    r"(?:\s*\(\s*parte\s+\d+\s+di\s+\d+\s*\))?\s*$")
-
-# The same, anchored to the whole line, which is the form the exhibit heading
-# actually takes and the form that rejects the 17 prose cross-references in 2025
+# Anchored to the whole line, which is the form the exhibit heading actually
+# takes and the form that rejects the 17 prose cross-references in 2025
 # vol. I -- including "(Tabella 1)." at the end of a sentence and "Tabella 5 e
 # Grafico 6" naming two exhibits at once.
 REL_LINE = re.compile(
@@ -262,20 +257,10 @@ REL_LINE = re.compile(
 # scanning deep. Kept in step with REL_HEADING_SCAN in step 1.
 REL_SCAN_LINES = 40
 
-# How far down a page a bare code line may sit and still be read as the page's
-# own stamp. The 2025 charts print theirs in the fourth line; a table cell
-# that happens to read as a code sits much further down.
-BARE_CODE_MAX_LINE = 8
-
 # A page that carries nothing but the running header and the folio: the
 # section's opening page, and the shape a stray front page takes. Four lines
 # is the observed floor for a real page with content in it.
 HEADER_ONLY_LINES = 4
-
-# Step 1's own cap on how much a table may lose to a trim. A file with more
-# unstamped pages at its tail than this is a detection failure, not a pasted
-# document, and is reported at that size rather than silently excused.
-MAX_TRAILING_PAGES = 25
 
 
 # ==========================================================================
@@ -403,7 +388,35 @@ def page_fingerprint(page):
         box = []
     digest = hashlib.sha1(data)
     digest.update(repr(box).encode())
+    # A cut exhibit page is one "Do" of a form XObject, so its own content
+    # stream is the same line for every exhibit: two crops of equal size
+    # (8.3 and 8.7 of 2025) hashed alike. The forms' streams are the content.
+    for xobject in _form_xobjects(page):
+        try:
+            digest.update(xobject.get_data())
+        except Exception:
+            pass
     return digest.hexdigest()
+
+
+def _form_xobjects(page, depth=0):
+    """The form XObjects a page draws, nested ones included, in name order."""
+    found = []
+    try:
+        xobjects = page["/Resources"].get_object().get("/XObject")
+        xobjects = xobjects.get_object() if xobjects is not None else {}
+    except Exception:
+        return found
+    for name in sorted(xobjects):
+        try:
+            xobject = xobjects[name].get_object()
+        except Exception:
+            continue
+        if xobject.get("/Subtype") == "/Form":
+            found.append(xobject)
+            if depth < 3:
+                found.extend(_form_xobjects(xobject, depth + 1))
+    return found
 
 
 def read_page_stamped(page):
@@ -604,7 +617,7 @@ def page_code(lines, vocabulary):
     # top of the page; a bare capital in the body is a table cell, and 2025
     # has one that reads as a code -- the "I" in a list of MG-table numbers
     # inside the Dogane annexes, 108 lines down a page. The positional gate
-    # here is not the discovery gate AGENTS.md warns about: the code is
+    # here is not a discovery gate: the code is
     # already known to the volume, and the position only decides whether a
     # known code is being *confirmed* as this page's own.
     for line in lines[:BARE_CODE_MAX_LINE]:
@@ -642,9 +655,8 @@ def seen_family(codes):
 def volume_vocabulary(hits, index_codes, bookmark_codes, manifest_codes):
     """Every table code the volume shows any sign of.
 
-    Deliberately not restricted to the codes that repeat. The frequency rule
-    in AGENTS.md -- a real table repeats its code, a prose mention appears
-    once -- is a rule about *concluding* that something is a table, and it is
+    Deliberately not restricted to the codes that repeat. The frequency
+    rule -- a real table repeats its code, a prose mention appears once -- is a rule about *concluding* that something is a table, and it is
     applied where that conclusion is drawn, in check_uniqueness. Applying it
     here instead would mean a code seen twice anywhere in the volume is
     admitted and everything else is invisible, which loses exactly the
@@ -1172,9 +1184,8 @@ VOLUME_SPLIT = re.compile(r"^\s*Volume\s+(I{1,3}V?|IV)\s*$", re.IGNORECASE)
 # CODE_TAIL, not a local [A-Z]{1,3}\d?. This was the one place the one-digit
 # defect was still alive: the generator's ELENCO_ROW and ELENCO_TITLE had been
 # widened to \d{0,2} and this had not, so harvest_elenco returned nothing for
-# "Tabella MT13" or "Tabella MG10" -- the codes AGENTS.md section 4 records as
-# named by no index and no bookmark tree, where the listing is the only other
-# witness. A cross-check that quietly stops seeing half the family is worse than
+# "Tabella MT13" or "Tabella MG10" -- codes named by no index and no bookmark
+# tree, where the listing is the only other witness. A cross-check that quietly stops seeing half the family is worse than
 # one that is visibly absent, because it still reports agreement.
 ELENCO_CODE = re.compile(
     rf"^(?:Tabella|Tab\.?)\s+(?P<code>{CODE_TAIL})(?![A-Za-z0-9])"
@@ -1296,9 +1307,8 @@ def harvest_elenco(texts):
     start page per code, which is the only place the archive states how long
     a table is, independently of the stamp.
 
-    The marker is looked for in the top lines only, for the reason recorded
-    in AGENTS.md section 4: on 2025 vol. II the table pages themselves print
-    SEGNALAZIONI in a trailing header block.
+    The marker is looked for in the top lines only, because on 2025 vol. II
+    the table pages themselves print SEGNALAZIONI in a trailing header block.
     """
     found = defaultdict(list)
     for page in sorted(texts):
@@ -1718,20 +1728,18 @@ def collect_out_files(out_root):
     V/P tail is skipped rather than guessed at -- that is what find_stray() is
     for, and it reports them.
     """
-    root = Path(out_root, OUT_DIR, "PDF")
-    if not root.is_dir():
-        return []
     found = []
-    for path in sorted(root.rglob(f"*{PDF_EXT}")):
-        if not path.is_file():
-            continue
-        parts = split_out_path(root, path)
-        if parts is None:
-            continue
-        authority, article, code, year, volume, page = parts
-        found.append({"code": code, "year": year, "volume": volume,
-                      "page": page, "path": path,
-                      "authority": authority, "article": article})
+    for _year, root in layout.year_pdf_roots(out_root):
+        for path in sorted(root.rglob(f"*{PDF_EXT}")):
+            if not path.is_file():
+                continue
+            parts = split_out_path(root, path)
+            if parts is None:
+                continue
+            authority, article, code, year, volume, page = parts
+            found.append({"code": code, "year": year, "volume": volume,
+                          "page": page, "path": path,
+                          "authority": authority, "article": article})
     return found
 
 
@@ -1744,19 +1752,17 @@ def find_stray(out_root):
     listing by name rather than counting, because "there is a stray file" is
     only actionable if it says which one.
     """
-    root = Path(out_root, OUT_DIR, "PDF")
-    if not root.is_dir():
-        return []
     strays = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        if path.suffix != PDF_EXT:
-            strays.append(str(path.relative_to(root)))
-            continue
-        parts = split_out_path(root, path)
-        if parts is None or not parts[2] or not parts[3]:
-            strays.append(str(path.relative_to(root)))
+    for _year, root in layout.year_pdf_roots(out_root):
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            if path.suffix != PDF_EXT:
+                strays.append(str(path.relative_to(root.parent.parent)))
+                continue
+            parts = split_out_path(root, path)
+            if parts is None or not parts[2] or not parts[3]:
+                strays.append(str(path.relative_to(root.parent.parent)))
     return strays
 
 
@@ -2234,7 +2240,7 @@ def html_report(payload, path):
             out.append("</ul>")
         # Atteso, non un difetto: i Dogane e i Difesa non hanno indice. Serve
         # elencarlo perche' il numero e' impressionante, e chiamarlo problema
-        # sarebbe falso. Vedi AGENTS.md sezione 6.
+        # sarebbe falso.
         if index.get("unattested_files"):
             codes = index["unattested_files"]
             out.append(
@@ -2608,7 +2614,7 @@ def main(argv=None):
 
     tables = collect_out_files(out_root)
     if not tables:
-        print(f"Nessun PDF per-tabella in {Path(out_root, OUT_DIR, 'PDF')}/. "
+        print(f"Nessun PDF per-tabella in {layout.out_dir(out_root)}/<anno>/PDF/. "
               f"Esegui prima Reports2PDFTables.")
         return 2
 
@@ -2621,24 +2627,29 @@ def main(argv=None):
         known_years = set(present)
 
     manifests, manifest_note = {}, ""
-    if args.manifest:
-        manifests, manifest_note = load_manifest(args.manifest)
-        if not manifests:
-            manifest_note = (f"manifest '{args.manifest}' non trovato o vuoto: "
-                             f"la provenienza non sara' verificata")
+    # Step 1's manifest: the one given, else each year's Out/.work/<anno>/.
+    manifest_paths = ([args.manifest] if args.manifest else
+                      [str(layout.manifest_path(y, out_root)) for y in years])
+    for manifest_path in manifest_paths:
+        loaded, note = load_manifest(manifest_path)
+        manifests.update(loaded)
+        manifest_note = manifest_note or note
+    if not manifests:
+        manifest_note = (f"manifest {', '.join(manifest_paths)} non trovato o "
+                         f"vuoto: la provenienza non sara' verificata")
 
-    cache = Cache(Path(out_root, OUT_DIR, VERIFY_SUBDIR, ".cache"))
+    cache = Cache(layout.verify_dir(out_root) / ".cache")
     fingerprint_tag = f"s{args.sample}f{0 if args.no_fingerprint else 1}"
 
     # One log per year, beside its JSON: Out/VERIFY/verify-<anno>.log. Same
     # gate as the JSON -- --dry-run writes nothing at all, so a read-only run
     # leaves no trace to be mistaken for a result.
-    verify_root = Path(out_root, OUT_DIR, VERIFY_SUBDIR)
+    verify_root = layout.verify_dir(out_root)
     logs_written = []
 
     print("=" * 78)
     print(f"VerifyTables — {len(years)} anno/i, {len(tables)} file in "
-          f"{Path(out_root, OUT_DIR, 'PDF')}")
+          f"{layout.out_dir(out_root)}/<anno>/PDF")
     print(f"  rapporti: {reports_dir}")
     print("  verdetto: PASS/FAIL/WARN/SKIP — WARN non fallisce un run")
     print("=" * 78)
@@ -2726,7 +2737,10 @@ def main(argv=None):
             for t in m_tables:
                 if t.get("code") and t.get("kept") is not False and t.get("start"):
                     key = (t.get("authority"), t.get("article") or "", t["code"])
-                    origin.setdefault(key, (volume_no, t["start"]))
+                    # The filename carries the PRINTED page: start + the
+                    # volume's folio offset, as emit.printed_page() writes it.
+                    offset = manifest.get("folio_offset") or 0
+                    origin.setdefault(key, (volume_no, t["start"] + offset))
             vocab = volume_vocabulary(hits, set(elenco), set(marks),
                                       manifest_codes)
 

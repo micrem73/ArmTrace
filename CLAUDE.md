@@ -10,23 +10,40 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 
 ## Commands
 
-Fill these in as they exist. Do not guess them.
+- Install: `pip install --user -r requirements.txt` (`python3 -m venv` fails on this host: no `ensurepip`)
+- Download sources: `bash In/download_185.sh In In/manifest.tsv` (checks page counts against the manifest; exits 1 on any problem). Skill: `download-sources`
+- **Run a year:** `python3 run_year.py 2025` — step 1 (tables, trash), verifier, publish (`tablesindex`, `review.html`), final page check. Stops at the first failure; the page check must pass.
+- Table list only (~10 s warm): `python3 Reports2PDFTables.py 2025 --dry-run --no-trash` → `Out/.work/2025/tables.tsv`
+- Cut one table: `python3 Reports2PDFTables.py 2025 --only MEF/UE` (repeatable; key = `authority/[article/]code`)
+- Check one table (subagent): `.claude/agents/table-checker.md`; renders with `python3 tools/review_pages.py 2025 <key>`, writes `Out/.work/2025/checks/<key>/verdict.json`
+- After a code change or a round of checks: `python3 tools/recheck.py 2025` (what each table needs next: check, recheck, second-check, fix, human), then republish: `python3 tools/build_index.py 2025` (also deletes the PNGs of PASS tables; `--keep-png` to keep)
+- **Done = `make check`** (ruff, then the full test suite; exits non-zero on any failure). Healthy output: `All checks passed!`, then `N passed in ~50s` with no `failed` or `error` (about 1 min warm). The first run after editing `lib/pageio.py` or upgrading pypdf rebuilds the page cache, which takes much longer.
+- Fast loop: `make test-fast` (traps, recheck, table list); lint only: `make lint` (`ruff.toml`: correctness rules only)
+- The golden tests need the sources: a test that says `sources for <year>: missing …` means download them, not a regression.
+- A `code` FAIL is fixed test-first: add the failing assertion (trap test or golden row), then change the code, not the test. Regenerate `tests/golden/` (`python3 tests/snapshot.py <year>`) only for tables re-checked after the change.
+- Checker eval: `make eval` (`tools/eval_checker.py 2025`: 26 cases, about $4 and 3 min). It runs the table-checker on known-good and deliberately broken cuts (`tests/evals/checker-2025.tsv`). Run it after changing `.claude/agents/table-checker.md`, the `check-year` skill or a convention, after a model change, and before a new year. A wrong cut that gets PASS is a failure. Add a case for every miss a person finds.
+- Hooks (`.claude/hooks/guard.py`): Edit/Write is blocked on `In/<year>/` and on `Out/` outside `Out/.work/`. Each edited `.py` file is linted.
+- Debug into a scratch tree with `--out <dir>`, so the last run's `Out/` is not overwritten.
 
-- Install: TBD
-- Test: TBD
-- Lint: TBD
-- Extract one edition: TBD
-- Validate: TBD
+## Output (`lib/layout.py`)
+
+- `Out/<year>/PDF/…` tables · `Out/<year>/TRASH/<volume>_TRASH.PDF` unclaimed pages
+- `Out/<year>/review.html` — the one page a person opens
+- `Out/<year>/tablesindex.sqlite` (+ `tablesindex.tsv`, `tablesindex-trash.tsv`, same rows as text) — the handover to SQL extraction
+- `Out/.work/` — cache, manifest, table list, trash runs, verifier report, checker verdicts. Regenerable; never read by people.
 
 ## Requirements
 
-- Keep each original report file untouched in `In/<year>/`. Generated output goes in `Out/<authority>/[<lawcode>/]<TableCode><Year>V<Volume>P<PageNumber>` and is never hand-edited.
-- Extract a list of existing tables of each year, looking into every volumes for that year. For each table, report if existing start-end page number, authority, table name. Tables can be listed in "indice", or in other summaries leading the tables. Some listed tables cannot exist. Tables can exist even if ot explicitly listed in tables, expecially in introduciton of volume 1. 
-- Using subagents, extract every table into a single PDF per table.
-- Using subagents, validate every extraction: the PDF name corresponds to the table name, authority, and law code it refers to. The page number of the PDF corresponds to the number of pages that the table says it has. Table name in captions, footer or header corresponds to the file name. 
-- Tables that fail validation after 5 review cycles are explicitly asked for human review. Never drop or silently correct a value. Never invent one.
-- Layout differences between editions live in a per-edition code. A new edition should share mostly of the codebase, plus specific code needed for that year. 
+- Keep each original report file untouched in `In/<year>/`. Generated output goes in `Out/PDF/<authority>/[<lawcode>/]<TableCode><Year>V<Volume>P<PageNumber>.PDF` and is never hand-edited. `TableCode` is the printed code (`UE`, `F1`), not the table's title. `PageNumber` is the page number printed on the document at the table's first page, not the PDF page index (2025 F1: `MAE/F12025V1P1035.PDF`).
+- Extract a list of existing tables of each year, looking into every volumes for that year. For each table, report if existing start-end page number, authority, table code. Tables can be listed in "indice", or in other summaries leading the tables. Some listed tables cannot exist. Tables can exist even if ot explicitly listed in tables, expecially in introduciton of volume 1. 
+- Build the year's table list once (`Out/tables-<year>.tsv`). Using subagents, cut every table into a single PDF with the deterministic splitter, one table per subagent, and check it as soon as it is cut. Subagents report failures with page evidence; one agent fixes the splitting code, rebuilds the list and re-sends only the rows that changed. Do not run years in parallel.
+- Using subagents, validate every extraction: the file name corresponds to the table code, authority, law code and printed start page it refers to. The page count of the PDF corresponds to the number of pages that the table says it has. The table code in captions, footer or header corresponds to the file name. 
+- SQL extraction reads the original volumes in `In/` through `Out/<year>/tablesindex.sqlite`, never the split PDFs: those drop the tagged table structure, page labels, bookmarks and metadata of the source. The split PDFs are for review, and each carries its provenance (source file, SHA-256, pages) in its metadata.
+- Every part of every source page ends up in exactly one place: a table file, a table's cut-out part, or the trash. Never in two, never in none. The page check enforces it at the end of every extraction.
+- Escalation is by kind of failure, not by count (`tools/recheck.py`). The checker states the kind of every FAIL/UNSURE: a **convention** question (what counts as part of a table, where it is filed, where it ends) goes to the human at once; a **code** defect is fixed, and goes to the human if it still fails after 2 fixes; a **checker** doubt gets a second, independent checker, and goes to the human if the two disagree. Tables that had passed and change after a fix are re-checked and listed for the human before the commit. Items for the human are in `Out/<year>/HUMAN-REVIEW.md` and on `review.html`. Never drop or silently correct a value. Never invent one.
+- Layout differences between editions live in a per-edition code. A new edition should share mostly of the codebase, plus specific code needed for that year. The engine is `lib/engine.py`; an edition is `editions/y<year>.py` (`VOLUME`, plus only the functions `engine.OVERRIDES` lists). A fix that holds for every year goes in the engine, and the golden tests of the verified years say whether it broke one.
 - The run is reproducible: same input and configuration give the same PDF files.
+
 
 
 ## Order of work
@@ -38,6 +55,21 @@ Fill these in as they exist. Do not guess them.
 5. Stop and ask for a review: show the validation report next to the original pages.
 7. Only then add further editions for subsequent years (decreasing, till 2016). 
 
+## Where the work stands (2026-10-17)
+
+Decisions and their reasons are in `DECISIONS.md`; measurements live beside the code; history is in git.
+
+- 2025: verified clean (tag `2025-clean`), 150 tables.
+- 2024: detectors ported to `editions/y2024.py`; dry run gives 153 tables. Next: `run_year.py 2024`, then the `check-year` skill.
+- Glyph recovery (garbled MAE fonts, 2020–2025): method decided and measured (DECISIONS.md), not yet built. Build it as tested code before SQL extraction of the MAE tables.
+- Open defects, each needs an engine change and a re-run of every verified year:
+  - 2016 vol. II: the bare `TAB. M` series (278 pages) is not detected.
+  - Volumes with no legible stamp (2019 vol. II, 2023 vol. III, family 3) get no trailing-page check; they need another witness.
+  - 2016 and 2018 indices: ministry rows lack page numbers, so the index is rejected.
+  - `MEF/II` key collision in 2020 vol. II and 2024 vol. II (p461 kept, p462 dropped): duplicate or placement error, undecided.
+  - 2021: `TOMO_II.pdf` and `VOLUME_II.pdf` both claim volume II (844 and 1070 pp).
+- Unsupported, to be listed rather than split: 2001–2010 (no text layer), 2014 vol. I and 2015 (one table found).
+
 ## Ask, do not decide
 - Language, tooling and database engine, if not already chosen.
 
@@ -47,6 +79,7 @@ If you must proceed, pick the simplest reversible option and record it with the 
 
 - Keep dependencies few. Justify each new one in the commit message.
 - Work in small steps and stop for review at the end of each numbered step above that asks for it.
+- Keep it simple! Minimize produced files, do not duplicate informations.
 
 ## Things Claude gets wrong
 

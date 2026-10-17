@@ -52,7 +52,7 @@ What is stored per (authority, article, code, year)
 Ordering is deliberate and follows the same shape as the rest of the pipeline:
 `lib/geometry.py` knows about glyphs, `lib/grammar.py` knows about printed
 values and bands, this script knows about files and ministries, and nothing below
-knows about `reports_185_1990/` paths.
+knows about `In/` paths.
 
 Usage:
     ./CatalogueTables.py --year 2025
@@ -82,7 +82,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import geometry as geo            # noqa: E402
 from lib import grammar as gra             # noqa: E402
-from lib import ontology                   # noqa: E402
+from lib import layout, ontology                   # noqa: E402
 
 PDF_EXT = ".PDF"
 CATALOG_DIR = "CATALOG"
@@ -1414,7 +1414,6 @@ def write_census(conn, year, path, elapsed):
     # ministry read back as `PDF/...` and the census grouped them under an
     # authority called `PDF`. Keying the lookup on the same tuple the primary
     # key uses is what keeps the report's counts equal to the table's.
-    by_key = {(r[0], r[1], r[2]): r for r in rows}
     extras = {}
     for r in rows:
         extras[r[:3]] = conn.execute(
@@ -1516,9 +1515,9 @@ def main(argv=None):
     parser.add_argument("--year", required=True,
                         help="reporting year to catalogue")
     parser.add_argument("--input-dir", default=None,
-                        help=f"per-table PDFs (default: Out/PDF)")
+                        help="per-table PDFs (default: Out/PDF)")
     parser.add_argument("--out-root", default=None,
-                        help=f"output root (default: Out)")
+                        help="output root (default: Out)")
     parser.add_argument("--catalog", default=None,
                         help="catalog path (default: <out>/{CATALOG_DIR}/catalog.sqlite)")
     parser.add_argument("--manifest", default=None,
@@ -1531,8 +1530,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     year = args.year
-    input_dir = Path(args.input_dir) if args.input_dir else Path("Out", "PDF")
-    out_root = Path(args.out_root) if args.out_root else Path("Out")
+    # Defaults follow lib/layout.py: tables from Out/<year>/PDF, step 1's
+    # manifest from Out/.work/<year>/, and the catalog -- an intermediate for
+    # SQL extraction, not something a person reads -- under Out/.work/.
+    input_dir = Path(args.input_dir) if args.input_dir else layout.pdf_dir(year)
+    out_root = Path(args.out_root) if args.out_root else layout.work_dir()
+    if not args.manifest and layout.manifest_path(year).exists():
+        args.manifest = str(layout.manifest_path(year))
     catalog_dir = out_root / CATALOG_DIR
     catalog_path = Path(args.catalog) if args.catalog \
         else catalog_dir / "catalog.sqlite"
@@ -1554,7 +1558,7 @@ def main(argv=None):
 
     if not files:
         print(f"No per-table PDFs for {year} under {input_dir}. "
-              f"Run Reports2PDFTables_{year}.py first.")
+              f"Run Reports2PDFTables.py {year} first.")
         return 1
 
     started = time.time()

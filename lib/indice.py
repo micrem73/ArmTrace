@@ -17,6 +17,8 @@ Handles the four things that broke earlier attempts:
 """
 import re
 
+from lib.pageio import page_text
+
 LABELS = [
     (re.compile(r"AFFARI\s+ESTERI", re.I), "MAE"),
     (re.compile(r"ECONOMIA", re.I), "MEF"),
@@ -119,7 +121,7 @@ def find_indice(reader, max_pages=40):
     """(page_number, blocks) for the first readable INDICE page."""
     for i in range(min(max_pages, len(reader.pages))):
         try:
-            text = reader.pages[i].extract_text() or ""
+            text = page_text(reader.pages[i])
         except Exception:
             continue
         if not HEADING_RE.search(_SPACES.sub("", text)):
@@ -173,7 +175,7 @@ def folio_map(reader):
     legible = 0
     for i, page in enumerate(reader.pages):
         try:
-            text = page.extract_text() or ""
+            text = page_text(page)
         except Exception:
             continue
         vals = [int(m.group(1)) for m in FOLIO_RE.finditer(text)]

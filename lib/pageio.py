@@ -9,13 +9,82 @@ detectors."""
 
 import re
 
-from lib import patterns as P
 from lib.patterns import (
     ALLEGATO_HEAD, APPENDIX_CODE, APPENDIX_SUFFIX, ELENCO_HEAD, ELENCO_MIN_CODES,
     ELENCO_ROW, MAX_TRAILING_PAGES, PAGE_NUMBER_RE, PUA_RE, REL_HEADING,
     REL_HEADING_SCAN, REL_PREFIX, STAMP_BAND, STAMP_NUM, STAMP_SIZE, STAMP_WORD,
     SUBSET_SPACE, TITLE_RE, _WS,
 )
+
+
+# The running header every page of the printed act carries, which is not part
+# of any table: the two chambers, the legislature line and the folio.
+RUNNING_HEADER = re.compile(r"Senato della Repubblica|Camera dei Deputati|LEGISLATURA")
+COVER_MAX_LINES = 8
+COVER_MAX_CHARS = 160
+
+
+def is_table_cover(text, code):
+    """True when the page is `code`'s own cover sheet, not a page of data.
+
+    The Dogane open every table with a page that names it and holds nothing
+    else -- "Riesportazione (RE) / TAB. M - APPENDICE", then the data stamped
+    "Pag. 1 di 17". Once the header is stripped such a page is a few short
+    lines ending in the table's own TAB. caption. pypdf shreds the caption
+    ("T" / "AB. M - APPENDICE"), so the test squeezes whitespace out first.
+    """
+    body = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    body = [ln for ln in body
+            if not RUNNING_HEADER.search(ln) and not PAGE_NUMBER_RE.match(ln)]
+    if not body or len(body) > COVER_MAX_LINES:
+        return False
+    if sum(len(ln) for ln in body) > COVER_MAX_CHARS:
+        return False
+    squeezed = _WS.sub("", "".join(body)).upper()
+    return squeezed.endswith(_tab_caption(code))
+
+
+def _tab_caption(code):
+    """'M' -> 'TAB.M', 'MAPPENDICE' -> 'TAB.M-APPENDICE', whitespace squeezed."""
+    if code.endswith(APPENDIX_SUFFIX) and code != APPENDIX_SUFFIX:
+        return f"TAB.{code[:-len(APPENDIX_SUFFIX)]}-{APPENDIX_SUFFIX}".upper()
+    return f"TAB.{code}".upper()
+
+
+def page_names_table(text, code):
+    """True when the page prints `code`'s own TAB. caption on a data page.
+
+    Not a prefix match: TAB.M must not be read off TAB.M1 or TAB.M-APPENDICE.
+    The Dogane summary tables ("Riepilogo per operatore") print no caption on
+    their data pages at all -- only the cover names them.
+    """
+    # Whitespace allowed between any two characters (pypdf shreds the caption),
+    # but not squeezed away: the caption must end where a word ends.
+    spaced = r"\s*".join(re.escape(ch) for ch in _tab_caption(code))
+    tail = r"(?![A-Z0-9])"
+    if not code.endswith(APPENDIX_SUFFIX):
+        tail += r"(?!\s*-\s*" + r"\s*".join(APPENDIX_SUFFIX) + ")"
+    return re.search(spaced + tail, text.upper()) is not None
+
+
+# A citation of an article of L. 185/90, in the spellings the Difesa annexes
+# print: "art. 5. Legge n.185/90", "Art.2 co.6 L. 185", "ART.2 comma 6 L.185",
+# "L. 185/90 art_2co6". The law number must sit within a short reach of the
+# article, so a stray "art." in prose does not count.
+ARTICLE_CITE = re.compile(
+    r"art[\s._]*(\d+)(?:[\s._]*(?:comma|co|c)[\s._]*(\d+))?[^\n]{0,25}?185"
+    r"|185\s*/\s*90[^\n]{0,15}?art[\s._]*(\d+)(?:[\s._]*(?:comma|co|c)[\s._]*(\d+))?",
+    re.IGNORECASE)
+
+
+def cited_article(text):
+    """'A5', 'A2C6' for the first L. 185/90 article the text cites, else None."""
+    m = ARTICLE_CITE.search(text)
+    if not m:
+        return None
+    article = m.group(1) or m.group(3)
+    comma = m.group(2) or m.group(4)
+    return f"A{article}" + (f"C{comma}" if comma else "")
 
 
 def is_allegato_page(text):
@@ -84,8 +153,8 @@ def same_table(printed, detected):
     A missing *digit* is deliberately NOT forgiven, because in this archive a
     digit is a different table: "Tabella II" and "Tabella II1" are two tables,
     as are AA and AA1, and every family-2 pair A1/A2, B1..B7. Folding them
-    together here would hide exactly the confusion AGENTS.md section 4 warns
-    about. So the rule is: one extra capital, nothing else.
+    together here would hide exactly that confusion. So the rule is: one extra
+    capital, nothing else.
 
     This only widens a comparison. It never decides that a code exists, so
     nothing is created by being generous here.
@@ -194,7 +263,7 @@ def rel_headings(lines):
     between them -- p40 prints 8.3 and 8.4 side by side, p42 prints 8.6 and 8.7,
     p60 stacks 18 above 19 -- and a detector that returned one code per page
     would silently drop three tables while looking like it had found them. That
-    is the same shape as the Dogane appendix defect in AGENTS.md section 4, where
+    is the same shape as the Dogane appendix defect (appendix_code), where
     losing one unclassifiable opening page was enough to invent a table of one.
 
     Duplicates collapse, so an exhibit whose heading repeats on a continuation
@@ -287,12 +356,35 @@ def stamp_tokens(chunk):
 
 
 
+def _cached(page):
+    """The lib.pagecache entry for `page`, or None when its reader has none."""
+    ref = getattr(page, "indirect_reference", None)
+    cache = getattr(getattr(ref, "pdf", None), "_page_cache", None)
+    if not cache:
+        return None
+    entry = cache.get((ref.idnum, ref.generation))
+    if entry is not None and entry["error"]:
+        raise RuntimeError(entry["error"])
+    return entry
+
+
+def page_text(page):
+    """page.extract_text(), from the page cache when one is attached."""
+    entry = _cached(page)
+    if entry is not None:
+        return entry["text"]
+    return page.extract_text() or ""
+
+
 def read_page(page):
     """(text, stamp) for one page, from a single extraction pass.
 
     scan_headers needs the page text anyway and the visitor costs nothing
     measurable against it (90.6s against 91.8s for 2025 vol. I, 1048 pages).
     """
+    entry = _cached(page)
+    if entry is not None:
+        return entry["text"], (tuple(entry["stamp"]) if entry["stamp"] else None)
     found = []
     try:
         height = float(page.mediabox.height)
