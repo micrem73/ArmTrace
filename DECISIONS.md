@@ -22,6 +22,7 @@ One line of decision, one line of reason. Newest last.
 - **AGENTS.md is retired; its traps live as comments beside the code they protect, and as tests.**
   Each trap is a bug that shipped; a test keeps it fixed, prose does not. A separate trap list drifts.
 - **OCR is out of scope.** The unreadable pages (ROADMAP.md §3) are the ceiling, not a defect.
+  Narrowed 2026-10-17: glyph recovery (below) is not OCR and is in scope.
 - **Table list is built once per year; subagents cut and check one table each; one agent fixes the code.**
   Boundaries depend on the whole volume (listings, joins, reprints), so a table cannot be cut in
   isolation; parallel code edits would collide. After a fix the list is rebuilt from cached page text
@@ -133,3 +134,36 @@ One line of decision, one line of reason. Newest last.
   mutating good cuts (a page dropped or added, wrong code, printed page, article, authority) in a
   throwaway copy of the repo, where step 1 is a stub so the checker judges the cut it is given.
   Costs tokens, so it is run on change, not in `make check`.
+
+## 2026-10-17 — garbled pages: recover the glyphs, never guess
+
+- **The garbled pages are a per-font substitution, not damage.** Their fonts carry no /Encoding
+  and no /ToUnicode; codes run 1..N in the order of the original codes, glyphs are named `uniE000…`, so text
+  extraction returns Private Use Area code points. The outlines are intact and the substitution is
+  constant within a font object. Same signature in 2020, 2023, 2024 and 2025 vol. I and 2025
+  vol. II, under four different final producers, so it comes from the MAE annex as supplied, not
+  from the volume's assembly. 2025: 17 MAE tables wholly, 3 partly unreadable (497 pp); 2024
+  vol. I: 335 pp, vol. II none.
+- **Recover the text by identifying each glyph outline, not by reading the page image.**
+- **Rule: no guess.** A glyph is decoded only when its identity is certain: its outline matches
+  exactly one character of the reference font, and nothing else in the reference font has that
+  outline. Anything else (`l`/`I`/`1`, `O`/`0`, a shape matching nothing) stays undecoded and is
+  carried as such into SQL, flagged; no context, dictionary or statistics may resolve it. A wrong
+  character is worse than a missing one. The glyph map is a versioned data file, so a run is
+  reproducible and every decoded character traces to an outline and a match.
+- **An empty `uniE000` is the space (decided 2026-10-17).** Shape cannot name a glyph with no
+  outline. In 220 of the 288 garbled fonts `uniE000` is empty, has that face's space width (Times
+  250, Arial 278, Courier 600, MS Sans Serif 278: 220 of 220) and the lowest code in the font's
+  order (Mac Roman, which all 288 follow). The other 68 subsets have no space and an outline at
+  `uniE000`, decoded by shape like any glyph. The one decode by width and order, not by shape.
+- **Human review of the glyphs shape cannot settle (2026-10-17, page "Garbled Glyph Proofs").**
+  Lookalikes: an outline Windows shares between a Latin letter and a Greek/Cyrillic/Armenian twin
+  is the Latin letter, because these fonts' one-byte Mac Roman code space holds only that one;
+  confirmed by a person on all 12 outlines (1,219 occurrences). Open glyphs named by a person
+  from the rendered glyph and its line: 2023 `b`, `_`, `€`, `p` (×2); 2025 `b`, `m`. The 2025
+  Times `uniE000` is the Windows `.notdef` box, identical point for point: no character, stored
+  flagged, never mapped to one. The 2025 Times `uniE001` (empty, width 250, first after the box)
+  is the space, accepted by the user on the space rule's evidence.
+- **Encoding errors printed in the source are kept as printed.** Six sequences (45 occurrences,
+  2023–2025, MAE tables): `Â°`, and `Â€™ Â€“ Â„¢ Â€Œ Â€` from UTF-8 read as cp1252 and then
+  upper-cased. A person confirmed each matches the page. The suggested reading is a hint only.

@@ -14,6 +14,7 @@ fit or gets forced. Hence: catalog first, diff second, schema by the diff.## 1. 
 |---|---|---|
 | 0 substrate | `lib/`, manifest, ministry tree | **done** |
 | 1 catalog | shapes, grammars, legibility | **done for 2025** (110 tables, 19 unreadable) |
+| 1b glyph recovery | decode garbled fonts by outline, no guess (DECISIONS.md 2026-10-17) | **planned** — §3 |
 | 2 evolution diff | what changed, appeared, vanished | **built, not yet run** — needs a second catalogued year |
 | 3 canonical schema | EAV plus curated projections | **schema decided, not built** |
 | 4 extractor | record assembly, typed values, `.sql` | **not started** |
@@ -21,8 +22,8 @@ fit or gets forced. Hence: catalog first, diff second, schema by the diff.## 1. 
 | 5 tool bake-off | PyMuPDF vs pdfplumber/Camelot/tabula | **not started** |
 
 Decisions already closed: `IndividualTables2SQL.py` is deleted in favour of
-`CatalogueTables.py` (READING-TABLES.md §1), and **OCR is out of scope by decision**, so the
-dead pages in §3 are a ceiling to state, not a gap to engineer around.
+`CatalogueTables.py` (READING-TABLES.md §1), and **OCR is out of scope by decision**. Glyph
+recovery is not OCR: §3 says what it can lift and what stays a ceiling.
 **Schema (Phase 3), decided not built.** One lossless EAV — `stg_cell(authority, article,
 code, year, page, row_ord, col_ord, row_kind, col_key, raw_text, num_value, text_value,
 unit, is_total)` — plus curated projections from a lineage map, so nothing is lost and an
@@ -35,7 +36,7 @@ row order, explicit column lists, 2-dp decimals, LF, **UTF-8 without BOM** (a BO
 ## 2. The order of work, and why it is this order
 
 ```
-Phase 1 catalog 2025 (done) → step 1 for 2024 → catalog 2024
+Phase 1 catalog 2025 (done) → step 1 for 2024 → Phase 1b glyph recovery 2025+2024 → catalog 2024
     ↓
 Phase 2 the diff → Phase 3 schema → Phase 4 extractor + verify → Phase 5 bake-off
 ```
@@ -53,13 +54,37 @@ a reason, and yields **zero rows**. On 2025 that is 19 tables and 498 pages — 
 `E` (221pp) and `C1` (97pp) among them — plus 2001–2010, which has no text layer at all.
 This is not a defect and must never be coloured as one. The consequence to respect: **no
 coverage claim is honest unless it states the extractable fraction alongside the total.**
+
+**Phase 1b lifts most of it.** The PUA pages (`is_garbled`) keep intact glyph outlines under a
+per-font substitution (DECISIONS.md 2026-10-17), and they are the whole MAE annex: 2025 17
+tables wholly and A1, A4, H1 partly; 2024 vol. I 335 pages, from about `B5` on. Steps:
+
+1. Inventory: every font object without /ToUnicode on a garbled page, its glyphs, and an
+   outline hash per glyph (2024 vol. I: 70 subset fonts of 5 base faces, 2931 glyphs).
+2. Match each outline against the same face as embedded *readably* elsewhere in the
+   archive (e.g. 2024 vol. I p560 `TimesNewRomanPS-BoldMT`, WinAnsi, named glyphs), so the
+   reference is official source too; a system font only where no readable copy exists.
+   Normalised for the subset's scale. Decoded only on a unique exact
+   match; otherwise undecoded. Output: one versioned glyph-map file.
+3. Text with an undecoded glyph keeps a marker in place; the SQL step stores the cell raw and
+   flagged, never repaired.
+4. Proof, all independent of the map: decoded captions equal the ELENCO titles; decoded
+   columns add up to the printed totals; decoded readable-font pages (control) reproduce
+   their own text layer exactly.
+5. Report per table: decoded, undecoded glyph count, and which totals verified.
+
+The ciphered pages (`is_ciphered`, 2016/2017/2022) are a second substitution of the same kind
+and come after; pages with no text layer (2001–2010) remain the ceiling.
 ## 4. Open questions
 
 - **2024's repair** — §6. The README's worked example and the first thing a reader runs.
 - **The weak cluster** — 15 of 28 volumes yield ≤10 tables; 2014 vol. I and 2015 yield 1. They need a family-specific detector or an honest partial-coverage marker, not a 1-table split presented as an answer.
 - **`DIFESA/A2C6/2`** is a company list with no header band, catalogued `unknown` at 5 legible pages. The honest answer may be a *new grammar* rather than a better header detector.
 - **Two undiagnosed misses**: MEF `IBB` reports 3 columns named `LEGISLATURA – DISEGNI DI LEGGE E…` (page furniture, not a header), and DOG `O1`/`O2` report names like `e | , 3`. Both visible in the census, which is the argument for keeping the census.
-- **`H1`'s 22 legible pages of 32** — labels destroyed, digits intact. Worth OCR, or part of the ceiling?
+- **`H1`'s 22 legible pages of 32** — labels destroyed, digits intact. Phase 1b, §3.
+- **Step 4's proof needs an exact-match test that holds across subsets** — the reference face
+  version (Windows Times New Roman has had several) can differ from the one embedded; measure
+  how many outlines match exactly before trusting "unique exact match" as the criterion.
 - **The bake-off benchmark** — A1 p1 (rotated, ruled, nested), `EE` p1, `MG10` p2, Annesso 4 p1, one garbled page (expected: nothing). *To be checked rather than assumed:* tabula has no rotation normalisation and cannot express a group header, so it is expected to fail on the 48 rotated tables.
 
 ---
