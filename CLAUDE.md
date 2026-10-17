@@ -55,6 +55,21 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 5. Stop and ask for a review: show the validation report next to the original pages.
 7. Only then add further editions for subsequent years (decreasing, till 2016). 
 
+## Where the work stands (2026-10-17)
+
+Decisions and their reasons are in `DECISIONS.md`; measurements live beside the code; history is in git.
+
+- 2025: verified clean (tag `2025-clean`), 150 tables.
+- 2024: detectors ported to `editions/y2024.py`; dry run gives 153 tables. Next: `run_year.py 2024`, then the `check-year` skill.
+- Glyph recovery (garbled MAE fonts, 2020–2025): method decided and measured (DECISIONS.md), not yet built. Build it as tested code before SQL extraction of the MAE tables.
+- Open defects, each needs an engine change and a re-run of every verified year:
+  - 2016 vol. II: the bare `TAB. M` series (278 pages) is not detected.
+  - Volumes with no legible stamp (2019 vol. II, 2023 vol. III, family 3) get no trailing-page check; they need another witness.
+  - 2016 and 2018 indices: ministry rows lack page numbers, so the index is rejected.
+  - `MEF/II` key collision in 2020 vol. II and 2024 vol. II (p461 kept, p462 dropped): duplicate or placement error, undecided.
+  - 2021: `TOMO_II.pdf` and `VOLUME_II.pdf` both claim volume II (844 and 1070 pp).
+- Unsupported, to be listed rather than split: 2001–2010 (no text layer), 2014 vol. I and 2015 (one table found).
+
 ## Ask, do not decide
 - Language, tooling and database engine, if not already chosen.
 

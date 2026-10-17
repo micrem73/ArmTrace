@@ -30,5 +30,5 @@ Division of authority: `patterns.py`, `pageio.py`, `emit.py` and `volumes.py`
 know what the archive PRINTS; `geometry.py` and `grammar.py` know what a printed
 table MEANS. Neither half knows what a ministry is -- what a table means, which
 is what `grammar.py` labels, is a per-ministry question and belongs above this
-package. See READING-TABLES.md.
+package. The reading decisions are in DECISIONS.md.
 """

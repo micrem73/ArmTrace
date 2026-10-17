@@ -21,7 +21,7 @@ One line of decision, one line of reason. Newest last.
   Python stays deterministic and reproducible.
 - **AGENTS.md is retired; its traps live as comments beside the code they protect, and as tests.**
   Each trap is a bug that shipped; a test keeps it fixed, prose does not. A separate trap list drifts.
-- **OCR is out of scope.** The unreadable pages (ROADMAP.md §3) are the ceiling, not a defect.
+- **OCR is out of scope.** Pages with no usable text are the ceiling, not a defect.
   Narrowed 2026-10-17: glyph recovery (below) is not OCR and is in scope.
 - **Table list is built once per year; subagents cut and check one table each; one agent fixes the code.**
   Boundaries depend on the whole volume (listings, joins, reprints), so a table cannot be cut in
@@ -167,3 +167,46 @@ One line of decision, one line of reason. Newest last.
 - **Encoding errors printed in the source are kept as printed.** Six sequences (45 occurrences,
   2023–2025, MAE tables): `Â°`, and `Â€™ Â€“ Â„¢ Â€Œ Â€` from UTF-8 read as cp1252 and then
   upper-cased. A person confirmed each matches the page. The suggested reading is a hint only.
+
+## 2026-10-17 — what was kept from ROADMAP.md and READING-TABLES.md (both retired)
+
+Measurements and thresholds stay beside the code that uses them (`lib/geometry.py`,
+`lib/grammar.py`, `CatalogueTables.py`); history is in git. What remains are decisions.
+
+- **Order after step 1: catalog, then diff, then schema, then extractor with verification;
+  the tool bake-off last.** A schema written before a second year is catalogued encodes one
+  year's layout as the ontology; choosing a reader before ground truth exists picks it for its
+  documentation.
+- **Step 2 measures shapes before it extracts (`CatalogueTables.py`); tabula-based CSV export
+  is deleted.** It could not rotate (48 tables of 2025 print rotated content), could not see
+  one-point rules, and had no record grammar (MAE: group header, wrapped record, subtotal).
+- **Rotation is per content block, never per page; never inferred from box aspect ratios.**
+  One page carries a rotated table and an upright running banner.
+- **Printed edges beat printed labels; the body is the witness when the drawing is
+  incomplete.** Labels are left-aligned and values right-aligned, so labels misplace values.
+- **A stacked header is one header; a column name is a path** (`Anno 2023 / Valore in €`),
+  or two years' values land in one column.
+- **Printed values are parsed to `Decimal`, Italian convention, or `None`; never `float()`.**
+  `1.234,56` → 1234.56; `—` is NULL, never zero; `016` is a Military List category, an
+  identity, not 16; `1,234.56` is refused. Dash versus zero is a column-level policy.
+- **`unknown` is a real grammar, preferred to a fit**, recorded with a reason.
+- **The tables print their own totals; they are the extraction's oracle.** Per additive
+  column, the sum of the rows against the printed total, plus row counts against the index
+  page counts and text coverage against the source page; FAIL at zero.
+- **Schema (decided, not built): one lossless EAV `stg_cell`** (authority, article, code,
+  year, page, row_ord, col_ord, row_kind, col_key, raw_text, num_value, text_value, unit,
+  is_total) plus curated projections from a lineage map. `DECIMAL`, units in `column_def`,
+  `snake_case` names with the printed Italian in `column_def.label_it`; deterministic output:
+  fixed order, explicit columns, 2-dp decimals, LF, UTF-8 without BOM, `BEGIN`/`COMMIT` per
+  file, `--replace` opt-in for `DROP`.
+- **No coverage claim without the extractable fraction beside the total.**
+- **Glyph recovery, as measured (2026-10-17), for whoever builds it.** The garbled fonts are
+  Windows 10/11 TrueType (versions 6.90–7.01; Times New Roman regular and bold, Arial Bold,
+  Courier New Bold, Microsoft Sans Serif) converted to Type 1 by a fixed formula: each
+  quadratic segment P0–Q–P2 becomes the cubic c1 = Q, c2 = P2 + (Q − P2)/3, at 1000/2048
+  scale, glyphs numbered in Mac Roman order. Every decoded glyph with a non-negative left
+  side bearing is identical to Windows (10,989 of 10,989); glyphs reaching left of the origin
+  are shifted in x by the converter (+1 or +4 units, Times `p` non-uniformly). Archive copies
+  decode 99.3% of the 11,535 distinct garbled glyphs; Windows files and human review settle
+  the rest (above). PyMuPDF truncates span font names to 24 characters: resolve fonts per
+  page, not by name.

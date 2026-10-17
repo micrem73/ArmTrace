@@ -311,7 +311,7 @@ def page_code(lines, text, vocabulary, family, dogane=False):
     prints TAB. M / N / O / P, the bare bases of the M1..P2 series, then
     MG1..MG18 and MT1/MT7/MT13 under art. 11 comma 5-bis. None of that is in
     the MEF vocabulary, and style 3's test -- "a code the volume's own listing
-    promised" -- throws every one of them away. That is what made the ROADMAP's
+    promised" -- throws every one of them away. That is what made the 2026-10-05 baseline's
     "five phantoms" out of real tables, and what left P2 running to the end of
     the volume over MG1, MG3, MG4 and MT1.
 

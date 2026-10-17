@@ -8,10 +8,10 @@ each table is.
 > Working guidance for coding agents lives in [CLAUDE.md](./CLAUDE.md); the
 > detection traps behind *finding* tables are commented beside the code they
 > protect (`lib/`) and pinned by `tests/`.
-> [READING-TABLES.md](./READING-TABLES.md) covers *reading* them: rotation,
-> bands, record grammars, and what the tables contain. [ROADMAP.md](./ROADMAP.md)
-> is the order the remaining work is done in. This file is for a person who wants
-> to *run* the pipeline and use its output.
+> Decisions and their reasons, including how tables are read, are in
+> [DECISIONS.md](./DECISIONS.md); where the work stands is at the end of
+> CLAUDE.md. This file is for a person who wants to *run* the pipeline and use
+> its output.
 
 ---
 
@@ -242,10 +242,9 @@ carries that document's pagination as `Pagina N di X` in the right margin. That
 stamp — not the volume's own continuous folio — is the witness of a table's real
 length, and pages pasted from a different document disagree with it.
 
-**Status:** works on the 22 in-scope volumes (2016+), producing a manifest for
-each. **2024 does not work** — it is the one year never measured properly, and
-the next to be brought up. Per-year figures are in
-[ROADMAP.md](./ROADMAP.md#7-archive-coverage).
+**Status:** 2025 is verified clean. 2024 runs on the shared engine
+(`editions/y2024.py`, 153 tables) and is next to be checked. Other years have
+not been brought onto the engine yet.
 
 ### 2. `CatalogueTables.py` — `Out/PDF/` → `Out/CATALOG/`
 
@@ -290,9 +289,9 @@ every column of every table.
 **Status:** works on 2025 — 110 tables in 141s, and it recovers the columns the
 reports actually print (A1's ten, EE's five, MG10's three). It is a
 *measurement* step: where it says `unknown`, that is recorded with a reason
-rather than guessed at. 19 of 2025's tables yield no text at all and no catalog
-can change that — see the coverage ceiling in
-[READING-TABLES.md](./READING-TABLES.md#6-legibility).
+rather than guessed at. 20 of 2025's MAE tables are printed in fonts with no
+character map; their text is recovered glyph by glyph (DECISIONS.md, glyph
+recovery), which is planned and not yet built.
 
 ### 3. `VerifyTables.py` — audits `Out/PDF/`
 
@@ -414,7 +413,7 @@ seven tab-separated fields per row — `year`, `leg`, `num`, `vol`, `file`,
 
 No PDF, sqlite or other binary is tracked by git, and **nothing is in Git LFS** —
 the repository holds only the scripts, `manifest.tsv`, `download_185.sh`, `lib/`,
-`SOURCES.md`, `CLAUDE.md`, [READING-TABLES.md](./READING-TABLES.md), `ROADMAP.md` and this file.
+`SOURCES.md`, `CLAUDE.md`, `DECISIONS.md` and this file.
 Both large sets are regenerable: the reports from `manifest.tsv` and
 `SOURCES.md`, and `Out/` by re-running the pipeline. LFS was never a solution here
 — it does not stop the files being committed, it only moves the bytes into a
@@ -424,11 +423,10 @@ metered quota. **Do not re-add LFS filter rules.**
 
 ## **ToDo**
 
-Engineering work is tracked in [ROADMAP.md](./ROADMAP.md#9-operational-backlog), which is
-authoritative for it — 2024 is at the head of that list. After it, the product
-roadmap:
+Engineering work and open defects are listed at the end of CLAUDE.md. After
+them, the product roadmap:
 
-- Process the remaining years — see [Archive coverage](./ROADMAP.md#7-archive-coverage) for what is deferred and why
+- Process the remaining years (2023 down to 2016)
 - Populate a MySQL db
 - Create an LLM tool that converts natural language requests into SQL queries
 - Create a chatbot enhanced with that tool, allowing the DB to be interrogated in natural language
