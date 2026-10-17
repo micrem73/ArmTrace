@@ -61,7 +61,7 @@ Decisions and their reasons are in `DECISIONS.md`; measurements live beside the 
 
 - 2025: verified clean (tag `2025-clean`), 150 tables.
 - 2024: detectors ported to `editions/y2024.py`; dry run gives 153 tables. Next: `run_year.py 2024`, then the `check-year` skill.
-- Glyph recovery (garbled MAE fonts, 2020–2025): method decided and measured (DECISIONS.md), not yet built. Build it as tested code before SQL extraction of the MAE tables.
+- Glyph recovery (garbled MAE fonts, 2020–2025): built. SQL extraction reads MAE text through `lib/glyphs.py` (`page_text`, `decode_spans`). A new edition: run `tools/build_glyphmap.py` and commit the map; an outline it cannot name stays undecoded and goes to a person (`lib/data/glyph-decisions.tsv`).
 - Open defects, each needs an engine change and a re-run of every verified year:
   - 2016 vol. II: the bare `TAB. M` series (278 pages) is not detected.
   - Volumes with no legible stamp (2019 vol. II, 2023 vol. III, family 3) get no trailing-page check; they need another witness.

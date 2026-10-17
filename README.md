@@ -290,8 +290,8 @@ every column of every table.
 reports actually print (A1's ten, EE's five, MG10's three). It is a
 *measurement* step: where it says `unknown`, that is recorded with a reason
 rather than guessed at. 20 of 2025's MAE tables are printed in fonts with no
-character map; their text is recovered glyph by glyph (DECISIONS.md, glyph
-recovery), which is planned and not yet built.
+character map; their text is recovered glyph by glyph by `lib/glyphs.py`
+(DECISIONS.md, glyph recovery). Step 2 does not read through it yet.
 
 ### 3. `VerifyTables.py` — audits `Out/PDF/`
 

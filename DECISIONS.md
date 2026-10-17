@@ -164,6 +164,15 @@ One line of decision, one line of reason. Newest last.
   Times `uniE000` is the Windows `.notdef` box, identical point for point: no character, stored
   flagged, never mapped to one. The 2025 Times `uniE001` (empty, width 250, first after the box)
   is the space, accepted by the user on the space rule's evidence.
+- **Built (2026-10-17).** `tools/build_glyphmap.py` writes `lib/data/glyphmap.tsv` (348
+  distinct outlines: 319 by the archive, 315 of them confirmed by Windows, 10 by Windows
+  alone, 19 by a person); `lib/glyphs.py` decodes with it. 2020, 2023–2025: 1,658,207
+  garbled characters, all decoded but the three 2025 `.notdef` boxes; the 1,400 hand-classified
+  occurrences agree. Two cases found while building: a font repaired by a later tool (2023
+  vol. I, callas) whose CMap names every glyph but sends one hyphen to U+E000, decoded
+  only where the CMap sends the code to the glyph's own name; and a Wingdings font
+  (2020), whose PUA code points are its real symbols, left as printed. The Windows files
+  are inputs to the builder only and are not committed.
 - **Encoding errors printed in the source are kept as printed.** Six sequences (45 occurrences,
   2023–2025, MAE tables): `Â°`, and `Â€™ Â€“ Â„¢ Â€Œ Â€` from UTF-8 read as cp1252 and then
   upper-cased. A person confirmed each matches the page. The suggested reading is a hint only.
@@ -200,7 +209,7 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   fixed order, explicit columns, 2-dp decimals, LF, UTF-8 without BOM, `BEGIN`/`COMMIT` per
   file, `--replace` opt-in for `DROP`.
 - **No coverage claim without the extractable fraction beside the total.**
-- **Glyph recovery, as measured (2026-10-17), for whoever builds it.** The garbled fonts are
+- **Glyph recovery, as measured (2026-10-17); built in `lib/glyphs.py`.** The garbled fonts are
   Windows 10/11 TrueType (versions 6.90–7.01; Times New Roman regular and bold, Arial Bold,
   Courier New Bold, Microsoft Sans Serif) converted to Type 1 by a fixed formula: each
   quadratic segment P0–Q–P2 becomes the cubic c1 = Q, c2 = P2 + (Q − P2)/3, at 1000/2048

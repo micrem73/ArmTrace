@@ -1,0 +1,23 @@
+# Glyph decisions by a person (review page "Garbled Glyph Proofs", 2026-10-17; DECISIONS.md).
+# lookalike: Latin letter confirmed over its Greek/Cyrillic twins; open: glyph named from the page.
+# face	fingerprint	character (U+XXXX or notdef)	review item	seen at
+microsoftsansserif	96e193c74217fcda	U+0041	lk-microsoftsansserif-96e193c742	2023/2023_LXVII_n2_VOLUME_I.pdf p541
+couriernewbold	fa59e48b6df182b7	U+0041	lk-couriernewbold-fa59e48b6d	2023/2023_LXVII_n2_VOLUME_I.pdf p723
+couriernewbold	5cf5f850d691e7e1	U+004E	lk-couriernewbold-5cf5f850d6	2023/2023_LXVII_n2_VOLUME_I.pdf p723
+couriernewbold	598058c486da8ec6	U+004D	lk-couriernewbold-598058c486	2023/2023_LXVII_n2_VOLUME_I.pdf p725
+couriernewbold	1254c4b430f11bd2	U+004A	lk-couriernewbold-1254c4b430	2025/2025_LXVII_n4_VOLUME_I.pdf p893
+timesnewroman	d070682457c3deca	U+00A2	lk-timesnewroman-d070682457	2024/lxvii_3_volume 1_442452.pdf p777
+couriernewbold	89fd7150c21cbf2b	U+0068	lk-couriernewbold-89fd7150c2	2023/2023_LXVII_n2_VOLUME_I.pdf p727
+couriernewbold	d38ba98e2f62c386	U+0078	lk-couriernewbold-b3efd05d49	2023/2023_LXVII_n2_VOLUME_I.pdf p727
+couriernewbold	3e1d12836650ef79	U+0057	lk-couriernewbold-3e1d128366	2023/2023_LXVII_n2_VOLUME_I.pdf p744
+microsoftsansserif	10803d119a90ee8b	U+004A	lk-microsoftsansserif-10803d119a	2023/2023_LXVII_n2_VOLUME_I.pdf p541
+couriernewbold	dedf998a155917bc	U+0075	lk-couriernewbold-dedf998a15	2025/2025_LXVII_n4_VOLUME_I.pdf p865
+couriernewbold	6ee7ae029f6e4a99	U+0051	lk-couriernewbold-6ee7ae029f	2025/2025_LXVII_n4_VOLUME_II.pdf p151
+timesnewroman	296051f568369348	U+0062	op-2023-AJCJJJYkqqwfTimesNew-uniE02E	2023/2023_LXVII_n2_VOLUME_I.pdf p500
+couriernewbold	43e143065c2a2b6b	U+0070	op-2023-OUKJFFQpvxdmCourierN-uniE01C	2023/2023_LXVII_n2_VOLUME_I.pdf p723
+couriernewbold	43e143065c2a2b6b	U+0070	op-2023-OYCHILSqktsqCourierN-uniE018	2023/2023_LXVII_n2_VOLUME_I.pdf p851
+timesnewroman	1b50d45131448c41	U+005F	op-2023-TBBTFMJcckhfTimesNew-uniE031	2023/2023_LXVII_n2_VOLUME_I.pdf p581
+timesnewroman	b2cdf61abccf578c	U+20AC	op-2023-TBBTFMJcckhfTimesNew-uniE048	2023/2023_LXVII_n2_VOLUME_I.pdf p584
+timesnewroman	08c93bf72407c062	notdef	op-2025-RCRPRNWgfdfjWxjljsTi-uniE000	2025/2025_LXVII_n4_VOLUME_I.pdf p797
+couriernewbold	4f9306f44bfedf05	U+0062	op-2025-SVGJESMjdkfmMjbwfyCo-uniE022	2025/2025_LXVII_n4_VOLUME_I.pdf p865
+couriernewbold	5ff74bbde1690811	U+006D	op-2025-SVGJESMjdkfmMjbwfyCo-uniE028	2025/2025_LXVII_n4_VOLUME_I.pdf p865
