@@ -60,7 +60,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 Decisions and their reasons are in `DECISIONS.md`; measurements live beside the code; history is in git.
 
 - 2025: verified clean (tag `2025-clean`), 150 tables.
-- 2024: detectors ported to `editions/y2024.py`; dry run gives 153 tables. Next: `run_year.py 2024`, then the `check-year` skill.
+- 2024: `run_year.py 2024` passes (153 tables, verifier clean, page check OK). Next: the `check-year` skill.
 - Glyph recovery (garbled MAE fonts, 2020–2025): built. SQL extraction reads MAE text through `lib/glyphs.py` (`page_text`, `decode_spans`). A new edition: run `tools/build_glyphmap.py` and commit the map; an outline it cannot name stays undecoded and goes to a person (`lib/data/glyph-decisions.tsv`).
 - Open defects, each needs an engine change and a re-run of every verified year:
   - 2016 vol. II: the bare `TAB. M` series (278 pages) is not detected.

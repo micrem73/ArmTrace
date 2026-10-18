@@ -72,6 +72,16 @@ One line of decision, one line of reason. Newest last.
   crops drop marked content too. Reading the sources loses none of it.
 - **Printed page numbers come from the PDF's /PageLabels first**, the folio-offset guess second, the
   PDF index last. For 2025 the labels agree with the folio offset on all 150 tables.
+  *Amended 2026-10-17:* a volume's labels are dropped when most of its numeric labels contradict
+  the folio offset. 2024 vol. II restarts its labels at 1 while the paper continues vol. I's
+  numbering (PDF p55: label 51, printed 1061), which named all 89 vol. II tables 1010 pages low.
+- **A full run removes table PDFs it did not write** (`--only` keeps the rest), so `Out/<year>/PDF`
+  does not depend on earlier runs: the 2024 rename above left 91 stale files beside the new ones.
+- **The verifier matches a file to its index row and manifest span on authority and article, not
+  the code alone**: 2024 MAE and Dogane both print N2, O1, P2. `identity.title` reads garbled MAE
+  pages through `lib/glyphs`, compares words on 6 letters (2024 MAE prints "ESPORTAZIONI
+  DEFINITIVE" for "Esportazione definitiva"), and when a page prints no title only the stamp
+  `Pagina 1 di <pages> TAB <code>` is accepted, as SKIP, never PASS.
 - **Every split PDF carries its provenance** in its document info: /Title = table key, /Subject =
   JSON with each source file, its SHA-256, PDF and printed page range, and the bookmark titles
   pointing into the table. No dates, so output stays byte-reproducible.

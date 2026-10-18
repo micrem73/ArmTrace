@@ -159,6 +159,7 @@ FIRST_CODE_LOOKUP = 3
 # ("Esportazioni definitive per Paesi - Riepilogo"), high enough not to pass
 # on a shared word like "Riepilogo".
 TITLE_OVERLAP = 0.6
+TITLE_STEM = 6  # letters compared per word: "definitiv-a/-e", "esporta-zione/-zioni"
 
 # There is deliberately no minimum fraction here any more. See check_uniqueness:
 # a low ratio is the ordinary shape of a real table, not a finding, so the
@@ -1052,23 +1053,30 @@ def check_folio(pages, checks):
                      f"{len(breaks)} interruzioni: {detail}")
 
 
-def check_title(pages, entry, checks):
+def check_title(pages, entry, checks, code="", total=0):
     """The index's title for this code, found on the file's first page.
 
     A cheap but sharp check: the index is human-authored and gives every code
     a title, so a file named AA whose first page carries AA1's title is
     misfiled even though AA appears somewhere inside it.
+
+    Words are compared on their first TITLE_STEM letters: 2024 MAE prints
+    "ESPORTAZIONI DEFINITIVE" where its ELENCO says "Esportazione definitiva".
+    Some 2024 MAE tables print no title at all, only "Pagina 1 di 5 TAB N1";
+    a first-page stamp naming this code and this file's page count is then the
+    witness, and the title is not judged (SKIP), never passed.
     """
     if not entry or not entry.get("title"):
         checks.skip("identity.title", "nessun titolo nell'indice")
         return
-    title = re.findall(r"[A-Za-zÀ-ÿ0-9]{3,}", entry["title"].lower())
+    title = [t[:TITLE_STEM] for t in
+             re.findall(r"[A-Za-zÀ-ÿ0-9]{3,}", entry["title"].lower())]
     if not title:
         checks.skip("identity.title", "titolo non confrontabile")
         return
     head = " ".join(pages[no]["text"] for no in sorted(pages)
                     [:FIRST_CODE_LOOKUP + 2]).lower()
-    head_tokens = set(re.findall(r"[a-zà-ÿ0-9]{3,}", head))
+    head_tokens = {t[:TITLE_STEM] for t in re.findall(r"[a-zà-ÿ0-9]{3,}", head)}
     if not head_tokens:
         checks.skip("identity.title", "testo della prima pagina illeggibile")
         return
@@ -1077,10 +1085,29 @@ def check_title(pages, entry, checks):
         checks.ok("identity.title",
                   f"titolo dall'indice presente in prima pagina "
                   f"({overlap:.0%})")
+    elif code and total and stamps_first_page(head, code, total):
+        checks.skip("identity.title",
+                    f"titolo non stampato; la prima pagina porta "
+                    f"'Pagina 1 di {total} TAB {code}'")
     else:
         checks.bad("identity.title",
                    f"il titolo dell'indice non compare in prima pagina "
                    f"({overlap:.0%}): atteso '{entry['title']}'")
+
+
+def decoded_text(path):
+    """First-page text with the garbled MAE glyphs given back (lib/glyphs)."""
+    import pymupdf
+    from lib import glyphs
+    with pymupdf.open(str(path)) as doc:
+        return glyphs.page_text(doc, doc[0])
+
+
+def stamps_first_page(text, code, total):
+    """True if `text` carries the stamp 'Pagina 1 di <total> TAB <code>'."""
+    pattern = (rf"\bpagina\s+1\s+di\s+{total}\s+tab\.?\s*"
+               rf"{re.escape(code.lower())}(?![a-z0-9])")
+    return re.search(pattern, text.lower()) is not None
 
 
 def verify_file(path, code, year, vocab, entry, known_years,
@@ -1133,7 +1160,11 @@ def verify_file(path, code, year, vocab, entry, known_years,
     stamp = check_stamp(pages, checks)
     classes = check_edges(pages, checks)
     check_folio(pages, checks)
-    check_title(pages, entry, checks)
+    first = min(pages) if pages else None
+    if first == 1 and pages[1]["garbled"]:
+        # The garbled MAE fonts: read the page as SQL extraction does.
+        pages[1] = {**pages[1], "text": decoded_text(path)}
+    check_title(pages, entry, checks, code=code, total=total)
 
     garbled = sum(1 for f in pages.values() if f["garbled"])
     ciphered = sum(1 for f in pages.values()
@@ -2271,26 +2302,46 @@ def html_report(payload, path):
     return "\n".join(out)
 
 
-def locate_span(volumes, code):
+def locate_span(volumes, code, authority=None, article=None):
     """Where step 1 says a table lives, as (label, start, end, pages, source).
 
     Read from the manifest rather than recomputed, so the table states what
     the pipeline *believed* and the detail below states what the file turned
     out to be. When the two disagree, that disagreement is the finding.
+
+    Matched on authority and article too, when given: MAE and the Dogane both
+    print N2, O1, P2 in 2024, and a code-only match held every Dogane file to
+    MAE's pages.
     """
+    def same(rec):
+        return (rec.get("code") == code
+                and (authority is None or rec.get("authority") == authority)
+                and (article is None
+                     or (rec.get("article") or "") == (article or "")))
+
     for volume in volumes:
         manifest = volume.get("manifest") or {}
         for info in manifest_tables(manifest):
-            if info.get("code") != code:
+            if not same(info):
                 continue
             return (Path(volume["report"]).stem, info["start"], info["end"],
                     info.get("pages"), info.get("source"))
         for cont in manifest_continued(manifest):
-            if cont.get("code") != code:
+            if not same(cont):
                 continue
             return (Path(volume["report"]).stem, cont["start"], cont["end"],
                     cont.get("total_pages"), "continued")
     return None
+
+
+def index_entry(per_authority, code, authority):
+    """The index row for this file's code, or None if the index belongs to
+    another authority. An index lists one ministry's tables; `authorities` is
+    who step 1's manifest gave that code to in the index's own volume."""
+    entry = per_authority.get(code)
+    if entry and entry.get("authorities") and authority not in entry["authorities"]:
+        return None
+    return entry
 
 
 def manifest_tables(manifest):
@@ -2360,7 +2411,8 @@ def build_findings(results, volumes):
     for result in results:
         if result["verdict"] != FAIL:
             continue
-        span = locate_span(volumes, result["code"])
+        span = locate_span(volumes, result["code"], result.get("authority"),
+                           result.get("article"))
         expected = span[3] if span else None
         reason = next((c["detail"] for c in result["checks"]
                        if c["verdict"] == FAIL), "")
@@ -2758,6 +2810,12 @@ def main(argv=None):
                 "manifest": manifest,
                 "index_pages": counts,
             })
+            owners = {}
+            for t in m_tables:
+                if t.get("code"):
+                    owners.setdefault(t["code"], set()).add(t.get("authority"))
+            for code, entry in elenco.items():
+                entry["authorities"] = sorted(owners.get(code, ()))
             per_authority.update(elenco)
             bookmark_codes.update(marks)
             if reader is not None:
@@ -2773,7 +2831,8 @@ def main(argv=None):
                 cached["from_cache"] = True
                 results.append(cached)
                 continue
-            entry = per_authority.get(item["code"])
+            entry = index_entry(per_authority, item["code"],
+                                item.get("authority", ""))
             # Attested = somebody other than this file says the table exists: an
             # index of tables, a human-authored bookmark, or step 1's own
             # manifest. It is what lets a table whose code is printed only on

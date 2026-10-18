@@ -415,12 +415,27 @@ def printed_page(manifest, page):
     step 1): the publisher's declaration, no guess. Then the volume's folio
     offset (indice.folio_map, the mode of folio - page) for volumes without
     numeric labels. Then the PDF index; table_list() notes that case.
+
+    Labels that disagree with the folio on most numeric pages are not trusted:
+    2024 vol. II restarts its labels at 1 while the paper continues vol. I's
+    numbering (PDF p55: label 51, printed 1061).
     """
     labels = manifest.get("page_labels") or []
-    if 0 < page <= len(labels) and str(labels[page - 1]).isdigit():
-        return int(labels[page - 1])
     offset = manifest.get("folio_offset")
+    if 0 < page <= len(labels) and str(labels[page - 1]).isdigit() \
+            and labels_agree(labels, offset):
+        return int(labels[page - 1])
     return page + offset if offset is not None else page
+
+
+def labels_agree(labels, offset):
+    """True unless most numeric /PageLabels contradict the folio offset."""
+    if offset is None:
+        return True
+    numeric = [(i, int(lab)) for i, lab in enumerate(labels, 1)
+               if str(lab).isdigit()]
+    agree = sum(1 for i, n in numeric if n == i + offset)
+    return 2 * agree >= len(numeric)
 
 
 def _segments_text(segments):
@@ -710,7 +725,23 @@ def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
     if cut_failed:
         print(f"    cut WARNING  : {len(cut_failed)} shared page(s) not exported "
               f"whole: {', '.join(f'{c}@p{p}' for c, p in cut_failed[:6])}")
+    if only is None:
+        stale = remove_stale(layout.pdf_dir(year, out_root), written)
+        if stale:
+            print(f"    stale        : {len(stale)} file(s) from an earlier run "
+                  f"removed")
     return written
+
+
+def remove_stale(folder, written):
+    """Delete the table PDFs under `folder` that this run did not write, so the
+    tree is the same whatever ran before (a renamed table left its old file)."""
+    keep = {str(Path(w).resolve()) for w in written}
+    stale = sorted(str(f) for f in Path(folder).rglob(f"*{PDF_EXT}")
+                   if str(f.resolve()) not in keep)
+    for f in stale:
+        Path(f).unlink()
+    return stale
 
 
 
