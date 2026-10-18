@@ -195,18 +195,27 @@ def test_same_name_notes_report_copies_and_differences():
     the annex. Never silently pick one."""
     from tools.build_index import compare_exhibit, compare_saldi
     annex_lgp = "AEREA € 1.059.450,91\nASE € 312.944,23\nTotale Complessivo € 1.372.395,14"
-    note = compare_exhibit("LGP", "AEREA € 1.059.450,91\nTotale Complessivo € 1.372.395,14",
-                           annex_lgp)
+    note = compare_exhibit("LGP", annex_lgp, annex_lgp, ["1.372.395,14"], ["1.372.395,14"])
     assert note.startswith("copy of MEF/LGP")
-    note = compare_exhibit("FG", "X € 1,00\nTotale Complessivo € 4.380.567.163,68",
-                           "X € 1,00\nTotale Complessivo € 4.315.708.982,69")
+    note = compare_exhibit("FG", "X € 1,00", "X € 1,00", ["4.380.567.163,68"],
+                           ["4.315.708.982,69"])
     assert "differs from MEF/FG" in note and "4.380.567.163,68" in note \
         and "4.315.708.982,69" in note
-    saldi = ("AA \nEsportazioni definitive \nper Istituti di credito € 4.553.511.273,94 € 377.783.139,39\n"
-             "BB \nEsportazioni temporanee € 5,00 € 6,00\nTotali € 9,00")
-    notes = compare_saldi(saldi, {
-        "AA": "Totale Complessivo € 4.553.410.664,28 € 388.516.607,30",
-        "BB": "€ 5,00Totale Complessivo € 6,00"})
+    # 2025 UE: a one-row summary whose amount is the annex grand total.
+    note = compare_exhibit("UE", "UE € 345.713.316,98", annex_lgp + "\n€ 345.713.316,98",
+                           [], ["345.713.316,98"])
+    assert note.startswith("summary of MEF/UE") and "matches" in note
+    # 2025 KK1: the relation prints only the grand total, the annex prints a
+    # total per column with the grand total last. That agrees.
+    note = compare_exhibit("KK1", "A € 1,00", "A € 1,00\nB € 2,00\nC € 3,00\nD € 4,00",
+                           ["2.722.028.341,40"], ["44.430.731,06", "2.722.028.341,40"])
+    assert note.startswith("summary of MEF/KK1") and "matches" in note
+    # 2025 SALDI: subtotal rows ("Totale Esportazioni") are not part of BB.
+    saldi = ("AA \nper Istituti di credito € 4.553.511.273,94 € 377.783.139,39\n"
+             "BB \nEsportazioni temporanee € 5,00 € 6,00\n"
+             "Totale Esportazioni € 11,00 € 12,00\nTotali (Imp + Esp.) 9,00")
+    notes = compare_saldi(saldi, {"AA": ["4.553.410.664,28", "388.516.607,30"],
+                                  "BB": ["5,00", "6,00"]})
     assert "AA differs" in notes["AA"] and "4.553.410.664,28" in notes["AA"]
     assert notes["BB"].startswith("BB matches")
 

@@ -152,7 +152,10 @@ def verifier_verdicts(year):
 
 
 AMOUNT = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{2}")
-TOTAL_LINE = re.compile(r"Totale\s+Complessivo|^\s*Totali\b", re.IGNORECASE)
+TOTAL_LABEL = re.compile(r"^\s*(?:Totale\s+Complessivo|Totali)\b", re.IGNORECASE)
+ROW_END = re.compile(r"^\s*Total[ei]\b", re.IGNORECASE)
+ROW_TOLERANCE = 4.0     # pt: one printed row's label and amounts
+COPY_SHARE = 0.5        # a copy repeats at least half of the annex amounts
 
 
 def amounts(text):
@@ -160,41 +163,79 @@ def amounts(text):
     return [a for a in AMOUNT.findall(text) if a != "0,00"]
 
 
-def grand_total(text):
-    """The amounts on the last grand-total line, or [] if none is printed."""
-    lines = [ln for ln in text.splitlines() if TOTAL_LINE.search(ln)]
-    return amounts(lines[-1]) if lines else []
+def grand_total(path):
+    """Amounts on the last grand-total row of a PDF, read by position.
+
+    By position because pypdf returns that row out of order: 2025 MEF/AA
+    extracts "Totale Complessivo" alone on a line, its amounts lines earlier.
+    The row is every line within ROW_TOLERANCE of the label across the writing
+    direction, in reading order. Rotated tables (2024 MEF/KK1) write upwards,
+    so their rows share an x, not a y."""
+    try:
+        import pymupdf
+    except ImportError:
+        return []
+    found = []
+    with pymupdf.open(str(path)) as doc:
+        for page in doc:
+            lines = []
+            for block in page.get_text("dict").get("blocks", []):
+                for line in block.get("lines", []):
+                    text = "".join(sp["text"] for sp in line["spans"]).strip()
+                    if not text:
+                        continue
+                    x0, y0, _x1, y1 = line["bbox"]
+                    dx, dy = line.get("dir", (1.0, 0.0))
+                    if abs(dx) >= abs(dy):
+                        lines.append((y0, x0 if dx > 0 else -x0, text))
+                    else:
+                        lines.append((x0, -y1 if dy < 0 else y0, text))
+            for across, _along, text in lines:
+                if TOTAL_LABEL.match(text):
+                    row = sorted((along, t) for a, along, t in lines
+                                 if abs(a - across) <= ROW_TOLERANCE)
+                    found = amounts(" ".join(t for _along, t in row))
+    return found
 
 
 def euro(values):
     return " / ".join(f"€ {v}" for v in values) or "none printed"
 
 
-def compare_exhibit(code, rel_text, annex_text):
+def compare_exhibit(code, rel_text, annex_text, rel_total, annex_total):
     """Note for a MEF relation exhibit against the annex table of its code."""
-    rel, annex = amounts(rel_text), set(amounts(annex_text))
-    if rel and all(a in annex for a in rel):
-        return f"copy of MEF/{code}: all {len(rel)} amounts match"
-    return (f"differs from MEF/{code}: relation total "
-            f"{euro(grand_total(rel_text) or rel)}; "
-            f"MEF/{code} total {euro(grand_total(annex_text))}")
+    rel, annex = amounts(rel_text), amounts(annex_text)
+    totals = (f"relation total {euro(rel_total or rel)}; "
+              f"MEF/{code} total {euro(annex_total)}")
+    # The totals agree when one row holds the other: a summary may print only
+    # the grand total where the annex prints one per column (2025 KK1).
+    if rel_total and annex_total and not (set(rel_total) <= set(annex_total)
+                                          or set(annex_total) <= set(rel_total)):
+        return f"differs from MEF/{code}: {totals}"
+    if rel and set(rel) <= set(annex):
+        if len(set(rel)) >= COPY_SHARE * len(set(annex)):
+            return f"copy of MEF/{code}: all {len(rel)} amounts match"
+        return (f"summary of MEF/{code}, matches: its {len(rel)} amount(s) all "
+                f"appear in MEF/{code}; {totals}")
+    return f"differs from MEF/{code}: {totals}"
 
 
-def compare_saldi(rel_text, annex_texts):
+def compare_saldi(rel_text, annex_totals):
     """{code: note} for each row of the uncoded 'Riepilogo saldi' whose code
-    names an annex table, comparing the row with that table's grand total."""
+    names an annex table, compared with that table's grand total. A row ends
+    at the next code or at any total line ('Totale Esportazioni', 2025)."""
     rows, current = {}, None
     for line in rel_text.splitlines():
-        if line.strip() in annex_texts:
+        if line.strip() in annex_totals:
             current = line.strip()
             rows[current] = []
-        elif current and TOTAL_LINE.search(line):
+        elif ROW_END.match(line):
             current = None
         elif current:
             rows[current] += amounts(line)
     notes = {}
     for code, values in rows.items():
-        total = grand_total(annex_texts[code])
+        total = annex_totals[code]
         if sorted(values) == sorted(total):
             notes[code] = f"{code} matches MEF/{code} total {euro(total)}"
         else:
@@ -221,7 +262,7 @@ def same_name_notes(year, rows):
             continue
         rel_text = pdf_text(files[row["key"]])
         if row["code"] == REL_SALDI:
-            annex = {r["code"]: pdf_text(files[r["key"]]) for r in rows
+            annex = {r["code"]: grand_total(files[r["key"]]) for r in rows
                      if r["authority"] == row["authority"] and not r["article"]
                      and r["key"] in files}
             for code, note in compare_saldi(rel_text, annex).items():
@@ -233,7 +274,9 @@ def same_name_notes(year, rows):
         if annex_key not in files:
             notes.setdefault(row["key"], []).append(f"no annex table {annex_key}")
             continue
-        note = compare_exhibit(row["code"], rel_text, pdf_text(files[annex_key]))
+        note = compare_exhibit(row["code"], rel_text, pdf_text(files[annex_key]),
+                               grand_total(files[row["key"]]),
+                               grand_total(files[annex_key]))
         notes.setdefault(row["key"], []).append(note)
         notes.setdefault(annex_key, []).append(f"relation exhibit {row['key']}: {note}")
     return notes

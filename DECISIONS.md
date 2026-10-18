@@ -251,9 +251,13 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   reconciled. `REL` sits in the lawcode slot so MEF/REL/UE and MEF/UE stay two tables. By
   review: extract all six; filing and the SALDI code were the reversible default, not asked.
 - **Same-name notes go into `tablesindex.sqlite` (`tables.notes`), on both sides.** Each REL
-  exhibit says "copy of MEF/X" (every amount found in the annex table) or "differs from
+  exhibit says "copy of MEF/X" (every amount found in the annex table, at least half of its
+  amounts), "summary of MEF/X, matches" (a few amounts, all found there), or "differs from
   MEF/X" with both grand totals; each SALDI row is compared with its table's grand total.
-  Computed at publish time from the cut files, which hold only the exhibit.
+  Grand totals are read by position on the cut files (pypdf scrambles the total row; rotated
+  tables keep a row on one x), and two totals agree when one row holds the other (the
+  relation prints only the grand total where the annex prints one per column). 2025: all six
+  agree; 2024: FG, KK1, UE and SALDI rows AA and CC differ.
 - **No table in the trash.** The page check reads every trash page and fails on one that
   prints a table marker (TAB. code, MEF caption, "Tabella N", "Pagina N di M") AND table
   content (3+ euro amounts or more lines than a cover). Dogane covers pass: marker, no content.
