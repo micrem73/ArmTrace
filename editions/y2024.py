@@ -46,6 +46,7 @@ from lib.engine import (
     record_boundary,
     rel_code,
     rel_headings,
+    relation_exhibits,
     REL_STYLE,
     REL_TABELLA,
     REPRINT_GAP,
@@ -55,7 +56,7 @@ from lib.engine import (
     trim_trailing,
     trim_trailing_blanks,
 )
-from lib.patterns import APPENDIX_SUFFIX, CODE_TAIL
+from lib.patterns import APPENDIX_SUFFIX, CODE_TAIL, rel_article
 
 VOLUME = "both"
 
@@ -394,6 +395,7 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
     # extracting every page of the volume a second time -- which, on a
     # 1048-page volume, costs more than the whole rest of the run.
     candidates = {}
+    open_exhibit = None
     sink = [] if pasted is None else pasted
     for i, page in enumerate(reader.pages):
         page_no = i + 1
@@ -462,6 +464,20 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
         # both an art. 27 code and a relation exhibit would be ambiguous, and the
         # law table is the one the rest of the pipeline, the ministry tree and the
         # index all agree about, so it wins by default rather than by argument.
+        # The MEF relation's own exhibits (patterns.MEF_EXHIBIT) win over the
+        # annex code the page also prints: p78's rows name AA..DD inside the
+        # uncoded "Riepilogo saldi", and p79's "Tabella UE" is not the annex UE.
+        # Always cut, even alone on a page: the ministry's prose shares them.
+        mef, open_exhibit = relation_exhibits(text, open_exhibit)
+        if mef:
+            code, style = rel_code(mef[0][1]), REL_STYLE
+            for _kind, number in mef:
+                page_codes.setdefault(page_no, []).append(
+                    (rel_code(number), REL_STYLE))
+            if len(mef) > 1 and shared_pages is not None:
+                shared_pages.append((page_no, mef))
+            if rel_pages is not None:
+                rel_pages.append((page_no, mef))
         rel = [] if code else rel_headings(lines)
         if rel:
             tables_here = [n for kind, n in rel if kind.lower() == REL_TABELLA.lower()]
@@ -503,7 +519,7 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
             unassigned.append(page_no)
             continue
 
-        if not rel:
+        if not rel and not mef:
             page_codes.setdefault(page_no, []).append((code, style))
         # Style 1 also matches summary pages: 2023 vol. II p8 carries a bare
         # "UE" under the same header and would steal the start of the real
@@ -841,6 +857,8 @@ def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
         for code, style in page_codes[page]:
             authority = provenance.get(page, ontology.UNKNOWN)
             article = articles.get(page)
+            if style == REL_STYLE:
+                article = rel_article(code) or article
             tkey = (authority, article, code)
             entry = groups.setdefault(tkey, {"pages": [], "style": style,
                                              "runs": []})
@@ -1012,6 +1030,10 @@ def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
         seen = info.get("seen") or [info["start"]]
         info["authority"], info["article"] = resolve_placement(
             seen, provenance, articles)
+        # A MEF relation exhibit keeps REL: resolve_placement ignores
+        # articles for MEF, and without it MEF/UE would be two tables.
+        if info.get("style") == REL_STYLE:
+            info["article"] = rel_article(code) or info["article"]
         info.pop("seen", None)
         where = "/".join(filter(None, [info["authority"], info["article"], code]))
         # The last page on which a detector actually read this table's code, as

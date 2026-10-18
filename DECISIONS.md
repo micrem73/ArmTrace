@@ -242,3 +242,20 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
 - **The Dogane `TAB.` marker needs a word boundary.** "MALTA" beside "B.M.A." extracts as
   `MALTAB.M.A.` (2024 vol. II p465), which filed four MEF pages under DOG art. 1 comma 2 and
   split Tabella II: 1 page kept, 136 trashed.
+- **The MEF relation's own exhibits are tables, filed `MEF/REL/<code>`.** The relation prints
+  six exhibits before the annex (2024 vol. II p78-82, 2025 p263-267): the uncoded "Riepilogo
+  saldi esportazioni ed importazioni" (code `SALDI`, the one code the document does not
+  print), UE, LGP, IAA, FG, KK1. They were discarded as a "second print" and trashed, but only
+  LGP and IAA copy their annex tables; FG, KK1, UE and two SALDI rows disagree with them (2024
+  FG: €4,380,567,163.68 in the relation, €4,315,708,982.69 in the annex). Both are kept, never
+  reconciled. `REL` sits in the lawcode slot so MEF/REL/UE and MEF/UE stay two tables. By
+  review: extract all six; filing and the SALDI code were the reversible default, not asked.
+- **Same-name notes go into `tablesindex.sqlite` (`tables.notes`), on both sides.** Each REL
+  exhibit says "copy of MEF/X" (every amount found in the annex table) or "differs from
+  MEF/X" with both grand totals; each SALDI row is compared with its table's grand total.
+  Computed at publish time from the cut files, which hold only the exhibit.
+- **No table in the trash.** The page check reads every trash page and fails on one that
+  prints a table marker (TAB. code, MEF caption, "Tabella N", "Pagina N di M") AND table
+  content (3+ euro amounts or more lines than a cover). Dogane covers pass: marker, no content.
+- **A totals row printed just under a grid belongs to the table** (`Totali`, within 24 pt of
+  the last rule; 2024 p78).

@@ -11,8 +11,8 @@ import re
 
 from lib.patterns import (
     ALLEGATO_HEAD, APPENDIX_CODE, APPENDIX_SUFFIX, ELENCO_HEAD, ELENCO_MIN_CODES,
-    ELENCO_ROW, MAX_TRAILING_PAGES, PAGE_NUMBER_RE, PUA_RE, REL_HEADING,
-    REL_HEADING_SCAN, REL_PREFIX, STAMP_BAND, STAMP_NUM, STAMP_SIZE, STAMP_WORD,
+    ELENCO_ROW, EXHIBIT_CLOSED, MAX_TRAILING_PAGES, MEF_EXHIBIT, PAGE_NUMBER_RE,
+    PUA_RE, REL_CONTINUED, REL_HEADING, REL_HEADING_SCAN, REL_PREFIX, REL_SALDI, STAMP_BAND, STAMP_NUM, STAMP_SIZE, STAMP_WORD,
     SUBSET_SPACE, TITLE_RE, _WS,
 )
 
@@ -233,8 +233,38 @@ def printed_numbers(lines):
 
 
 def rel_code(number):
-    """'8.1' -> 'T81', '23' -> 'T23'. See the note above on why not '8.1'."""
+    """'8.1' -> 'T81', '23' -> 'T23'. See the note above on why not '8.1'.
+
+    A MEF exhibit prints a code, not a number ('UE'), and keeps it."""
+    if not number[:1].isdigit():
+        return number
     return REL_PREFIX + number.replace(".", "")
+
+
+def relation_exhibits(text, open_code):
+    """([(kind, code)], open_code) for the MEF relation exhibits on one page.
+
+    `open_code` is the exhibit the previous page left unclosed (no grand total
+    after its caption). Amounts printed before this page's first caption are
+    its continuation, recorded as (REL_CONTINUED, code) so the writer cuts that
+    band too. Returns the exhibit this page leaves open, for the next page.
+    """
+    joined = "".join(text.split("\n"))
+    starts = [(m.start(), m.group(1) or REL_SALDI)
+              for m in MEF_EXHIBIT.finditer(joined)]
+    head = joined[:starts[0][0]] if starts else joined
+    found = []
+    if open_code and "€" in head:
+        found.append((REL_CONTINUED, open_code))
+        if EXHIBIT_CLOSED.search(head):
+            open_code = None
+    elif not starts:
+        return [], None
+    found += [("Tabella", code) for _pos, code in starts]
+    if starts:
+        tail = joined[starts[-1][0]:]
+        open_code = None if EXHIBIT_CLOSED.search(tail) else starts[-1][1]
+    return found, open_code
 
 
 

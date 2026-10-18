@@ -52,6 +52,14 @@ themselves, the cover is dropped and the file must equal the stamp. Judge by whe
 first data page prints the code, not by the word "Riepilogo". Any other table must not
 start with a cover.
 
+**MEF relation exhibits** (article `REL`, decided 2026-10-18): tables the MEF prints inside
+its relation, before its annex, each under the ministry block and a caption `Tabella UE -
+<title>`; the annex table of the same code is a different file. For these rows `lawcode`
+passes when the exhibit sits in the relation (prose around it, not the annex's `ELENCO
+TABELLE` pages); `code` for `SALDI` passes on the title `Riepilogo saldi esportazioni ed
+importazioni`, which prints no code. The file holds the exhibit band only, cut off pages it
+shares with prose or with the next exhibit; an exhibit may continue onto the next page.
+
 Two more shapes of the stamp are a pass (decided 2026-10-18):
 
 - **Clipped total.** The stamp prints fewer digits than the file has pages (`N / 13` on a

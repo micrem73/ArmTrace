@@ -19,8 +19,9 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 
 from lib import layout, ontology
-from lib.patterns import PDF_EXT, REL_HEADING
-from lib.pageio import rel_code
+from lib.patterns import (MEF_EXHIBIT, PDF_EXT, REL_CONTINUED, REL_HEADING,
+                          REL_SALDI)
+from lib.pageio import RUNNING_HEADER, rel_code
 
 
 def _pymupdf():
@@ -99,7 +100,8 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
                              page_no - 1, rotate=turn)
 
         wanted = printed_number(keep_code, manifest, volume_index)
-        headings = exhibit_headings(canvas)
+        headings = continuation_heading(canvas, exhibit_headings(canvas),
+                                        manifest, volume_index, page_no)
         band = exhibit_band(canvas, headings, wanted, height)
         if band is None:
             return False
@@ -159,6 +161,21 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
 NOTE_START = re.compile(r"^\s*(?:\(\s*\*+\s*\)|\*+|\(\d+\)|Fonte\b|Note?\b|N\.\s*B\.)",
                         re.IGNORECASE)
 NOTE_MAX_GAP = 14.0     # pt from the grid to the note, and between note lines
+# A totals row printed just under the grid, outside it, closes the table too:
+# 2024 vol. II p78, "Totali" 20 pt below the last rule of the Riepilogo saldi.
+TOTAL_START = re.compile(r"^\s*Total[ei]\b", re.IGNORECASE)
+TOTAL_MAX_GAP = 24.0
+
+
+ROW_TOLERANCE = 3.0     # pt: lines of one printed row do not share a y exactly
+
+
+def first_row_label(lines):
+    """Text of the first row's leftmost line; `lines` are (y0, y1, text, x0)
+    sorted by y0. A row's label and its amounts can sit a point apart (2025
+    vol. II p263: 'Totali' at 519, its amounts at 518)."""
+    row = [ln for ln in lines if ln[0] - lines[0][0] <= ROW_TOLERANCE]
+    return min(row, key=lambda ln: ln[3])[2]
 
 
 def table_foot(page, grid_bottom, limit):
@@ -176,13 +193,17 @@ def table_foot(page, grid_bottom, limit):
             if grid_bottom - 1 <= y0 < limit:
                 text = "".join(sp.get("text", "") for sp in line.get("spans", []))
                 if text.strip():
-                    lines.append((y0, y1, text))
+                    lines.append((y0, y1, text, x0))
     lines.sort()
     bottom = grid_bottom
-    if not lines or lines[0][0] - grid_bottom > NOTE_MAX_GAP \
-            or not NOTE_START.match(lines[0][2]):
+    if not lines:
         return bottom
-    for y0, y1, _text in lines:
+    gap, first = lines[0][0] - grid_bottom, first_row_label(lines)
+    if not ((gap <= NOTE_MAX_GAP and NOTE_START.match(first))
+            or (gap <= TOTAL_MAX_GAP and TOTAL_START.match(first))):
+        return bottom
+    bottom = max(bottom, lines[0][1])
+    for y0, y1, _text, _x0 in lines:
         if y0 - bottom > NOTE_MAX_GAP:
             break
         bottom = max(bottom, y1)
@@ -252,7 +273,8 @@ def cut_leftover_page(volume_path, page_no, codes, out_path, manifest,
         canvas = work.new_page(width=width, height=height)
         canvas.show_pdf_page(pymupdf.Rect(0, 0, width, height), document,
                              page_no - 1, rotate=turn)
-        headings = exhibit_headings(canvas)
+        headings = continuation_heading(canvas, exhibit_headings(canvas),
+                                        manifest, volume_index, page_no)
         drawings = [d["rect"] for d in canvas.get_drawings()]
         for code in codes:
             band = exhibit_band(canvas, headings,
@@ -340,17 +362,55 @@ def exhibit_headings(page):
     Only valid once the page has been turned, which is why cut_exhibit_page()
     does the turning itself rather than handing a raw volume page here.
     """
-    found = []
+    found, ministry = [], []
     for block in page.get_text("dict").get("blocks", []):
         for line in block.get("lines", []):
             text = "".join(span.get("text", "")
                            for span in line.get("spans", [])).strip()
             m = REL_HEADING.match(text)
+            x0, y0, _x1, y1 = line["bbox"]
             if m:
-                x0, y0, _x1, y1 = line["bbox"]
                 found.append((m.group(1).capitalize(), m.group(2), y0, y1))
+            elif text:
+                mef = MEF_EXHIBIT.match(text)
+                if mef:
+                    found.append(("Tabella", mef.group(1) or REL_SALDI, y0, y1))
+            if MINISTRY_LINE.match(text):
+                ministry.append(y0)
+    # A MEF exhibit's band opens at the ministry block printed above its caption
+    # (three lines, ~34 pt), which is part of the exhibit, not of the prose.
+    found = [(kind, number,
+              min([y for y in ministry if 0 <= top - y <= MINISTRY_ABOVE] or [top]),
+              bottom)
+             for kind, number, top, bottom in found]
     found.sort(key=lambda heading: heading[2])
     return found
+
+
+def continuation_heading(page, headings, manifest, volume_index, page_no):
+    """Prepend the band of an exhibit continued from the previous page.
+
+    relation_exhibits() records it as (REL_CONTINUED, code): LGP runs from
+    p79 onto p80, where its rows sit above IAA's ministry block with no caption
+    of their own. The band opens at the first rule below the running header.
+    """
+    entry = next((e for e in manifest.get("rel_pages") or []
+                  if e["page"] == page_no), None)
+    carried = [n for kind, n in (entry or {}).get("exhibits", [])
+               if kind == REL_CONTINUED]
+    if not carried:
+        return headings
+    furniture = 0.0
+    for block in page.get_text("dict").get("blocks", []):
+        for line in block.get("lines", []):
+            text = "".join(sp.get("text", "") for sp in line.get("spans", []))
+            if RUNNING_HEADER.search(text) or FOLIO_LINE.match(text.strip()):
+                furniture = max(furniture, line["bbox"][3])
+    first = min((h[2] for h in headings), default=float(page.rect.height))
+    rules = [d["rect"].y0 for d in page.get_drawings()
+             if furniture < d["rect"].y0 < first]
+    top = min(rules) if rules else furniture
+    return [(REL_CONTINUED, carried[0], top, top)] + list(headings)
 
 
 
@@ -1270,3 +1330,6 @@ CUT_MARGIN = 20.0
 # Gap kept between an exhibit band and what borders it: its own heading above,
 # the next heading or its last grid rule below.
 HEADING_GAP = 2.0
+MINISTRY_ABOVE = 50.0   # pt from a MEF exhibit's ministry line down to its caption
+MINISTRY_LINE = re.compile(r"^Ministero dell'Economia e delle Finanze$")
+FOLIO_LINE = re.compile(r"^[–—-]\s*\d+\s*[–—-]$")

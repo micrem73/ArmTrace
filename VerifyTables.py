@@ -115,7 +115,9 @@ from lib.patterns import (
     MIN_RUN,
     OUT_DIR,
     PDF_EXT,
+    REL_ARTICLE,
     REL_CODE,
+    REL_SALDI,
     REPORTS_DIR,
     STAMP_BAND,
     STAMP_NUM,
@@ -159,6 +161,7 @@ FIRST_CODE_LOOKUP = 3
 # ("Esportazioni definitive per Paesi - Riepilogo"), high enough not to pass
 # on a shared word like "Riepilogo".
 TITLE_OVERLAP = 0.6
+SALDI_TITLE = re.compile(r"Riepilogo saldi esportazioni ed? importazioni")
 TITLE_STEM = 6  # letters compared per word: "definitiv-a/-e", "esporta-zione/-zioni"
 
 # There is deliberately no minimum fraction here any more. See check_uniqueness:
@@ -732,7 +735,8 @@ def check_layout(path, code, year, known_years, checks, authority="",
     if not (CODE_RE.match(code)
             or ontology.DIFESA_CODE.match(code)
             or APPENDIX_CODE_SHAPE.match(code)
-            or REL_CODE.match(code)):
+            or REL_CODE.match(code)
+            or article == REL_ARTICLE):
         checks.bad("layout.code_shape",
                    f"codice '{code}' non ha forma art. 27, ne di annesso Difesa, "
                    f"ne di appendice Dogane, ne di tabella di relazione")
@@ -801,7 +805,18 @@ def check_uniqueness(pages, code, checks):
         checks.maybe("uniqueness.foreign_table_mention",
                      f"codici estranei nominati una volta sola: {detail}")
 
-    if own == 0:
+    if own == 0 and code == REL_SALDI:
+        # The one code the document does not print (DECISIONS.md 2026-10-18):
+        # the MEF "Riepilogo saldi esportazioni ed importazioni" is identified
+        # by that title instead.
+        if any(SALDI_TITLE.search("".join(f["text"].split("\n")))
+               for f in pages.values()):
+            checks.ok("uniqueness.own_code_absent",
+                      "codice assegnato, non stampato: titolo 'Riepilogo saldi' presente")
+        else:
+            checks.bad("uniqueness.own_code_absent",
+                       "né il codice SALDI né il titolo 'Riepilogo saldi' compaiono")
+    elif own == 0:
         # "The code is not on any page" and "the page that carries the code
         # cannot be read" are different findings, and only the first is a
         # defect. 2025 Tabella H1 prints its code in a subsetted font: 9 of
@@ -2334,10 +2349,14 @@ def locate_span(volumes, code, authority=None, article=None):
     return None
 
 
-def index_entry(per_authority, code, authority):
+def index_entry(per_authority, code, authority, article=""):
     """The index row for this file's code, or None if the index belongs to
     another authority. An index lists one ministry's tables; `authorities` is
-    who step 1's manifest gave that code to in the index's own volume."""
+    who step 1's manifest gave that code to in the index's own volume. A MEF
+    relation exhibit (article REL) is not what the index lists: the annex
+    table of the same code is."""
+    if article == REL_ARTICLE:
+        return None
     entry = per_authority.get(code)
     if entry and entry.get("authorities") and authority not in entry["authorities"]:
         return None
@@ -2832,7 +2851,7 @@ def main(argv=None):
                 results.append(cached)
                 continue
             entry = index_entry(per_authority, item["code"],
-                                item.get("authority", ""))
+                                item.get("authority", ""), item.get("article", ""))
             # Attested = somebody other than this file says the table exists: an
             # index of tables, a human-authored bookmark, or step 1's own
             # manifest. It is what lets a table whose code is printed only on

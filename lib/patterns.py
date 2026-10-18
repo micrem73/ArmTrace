@@ -290,6 +290,29 @@ REL_HEADING_SCAN = 40
 REL_STYLE = 7
 
 
+# The MEF relation's own exhibits (2024 vol. II p78-82, 2025 p263-267): the
+# ministry block, then "Tabella UE - <title>", or the uncoded "Riepilogo saldi
+# esportazioni ed importazioni" (2025: "e importazioni", no ministry block).
+# Matched on the page text with its line breaks removed, because 2025 extracts
+# the captions in fragments ("Ta\nbella LGP - Lic\nenze"). Four of the six
+# disagree with the annex table of the same name, so they are tables of their
+# own, filed under REL beside it (decided 2026-10-18).
+MEF_EXHIBIT = re.compile(
+    r"Tabella\s+([A-Z]{1,3}\d{0,2})\s+[-–]\s"
+    r"|Riepilogo saldi esportazioni ed? importazioni")
+REL_SALDI = "SALDI"
+REL_ARTICLE = "REL"
+REL_CONTINUED = "Segue"
+# What closes an exhibit: its grand total row. A page after an unclosed exhibit
+# that opens with amounts continues it (LGP runs from p79 onto p80).
+EXHIBIT_CLOSED = re.compile(r"Totale Complessivo|Totali\b", re.IGNORECASE)
+
+
+def rel_article(code):
+    """REL for a relation exhibit printing an annex code (UE), None for T83."""
+    return None if REL_CODE.match(code) else REL_ARTICLE
+
+
 # "MINISTERO DELLA DIFESA - Annesso 3A". These tables carry no table code, so
 # the annesso is both the code and the last path segment. The letter must stay
 # adjacent and uppercase, otherwise "Annesso 4 TABELLA RIASSUNTIVA" is read as

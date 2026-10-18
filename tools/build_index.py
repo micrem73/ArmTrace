@@ -21,6 +21,7 @@ import csv
 import html
 import json
 import os
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -31,7 +32,7 @@ sys.path.insert(0, str(ROOT))
 from pypdf import PdfReader  # noqa: E402
 
 from lib import layout  # noqa: E402
-from lib.patterns import REPORTS_DIR  # noqa: E402
+from lib.patterns import REL_ARTICLE, REL_SALDI, REPORTS_DIR  # noqa: E402
 
 ORDER = {"FAIL": 0, "UNSURE": 1, "PENDING": 2, "PASS": 3}
 IMAGE_ORDER = ["source-before", "source-first", "file-first", "file-second",
@@ -150,6 +151,94 @@ def verifier_verdicts(year):
     return out
 
 
+AMOUNT = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{2}")
+TOTAL_LINE = re.compile(r"Totale\s+Complessivo|^\s*Totali\b", re.IGNORECASE)
+
+
+def amounts(text):
+    """Every non-zero euro amount printed in `text`, in order."""
+    return [a for a in AMOUNT.findall(text) if a != "0,00"]
+
+
+def grand_total(text):
+    """The amounts on the last grand-total line, or [] if none is printed."""
+    lines = [ln for ln in text.splitlines() if TOTAL_LINE.search(ln)]
+    return amounts(lines[-1]) if lines else []
+
+
+def euro(values):
+    return " / ".join(f"€ {v}" for v in values) or "none printed"
+
+
+def compare_exhibit(code, rel_text, annex_text):
+    """Note for a MEF relation exhibit against the annex table of its code."""
+    rel, annex = amounts(rel_text), set(amounts(annex_text))
+    if rel and all(a in annex for a in rel):
+        return f"copy of MEF/{code}: all {len(rel)} amounts match"
+    return (f"differs from MEF/{code}: relation total "
+            f"{euro(grand_total(rel_text) or rel)}; "
+            f"MEF/{code} total {euro(grand_total(annex_text))}")
+
+
+def compare_saldi(rel_text, annex_texts):
+    """{code: note} for each row of the uncoded 'Riepilogo saldi' whose code
+    names an annex table, comparing the row with that table's grand total."""
+    rows, current = {}, None
+    for line in rel_text.splitlines():
+        if line.strip() in annex_texts:
+            current = line.strip()
+            rows[current] = []
+        elif current and TOTAL_LINE.search(line):
+            current = None
+        elif current:
+            rows[current] += amounts(line)
+    notes = {}
+    for code, values in rows.items():
+        total = grand_total(annex_texts[code])
+        if sorted(values) == sorted(total):
+            notes[code] = f"{code} matches MEF/{code} total {euro(total)}"
+        else:
+            notes[code] = (f"{code} differs: relation {euro(values)}; "
+                           f"MEF/{code} total {euro(total)}")
+    return notes
+
+
+def pdf_text(path):
+    try:
+        return "\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
+    except Exception:
+        return ""
+
+
+def same_name_notes(year, rows):
+    """{key: [note]}: MEF relation exhibits against the annex tables of the same
+    code, on both sides (decided 2026-10-18). Read from the cut files, which
+    hold only the exhibit; the source page also holds prose and its neighbours."""
+    files = {r["key"]: layout.pdf_dir(year, ROOT) / r["file"] for r in rows if r["file"]}
+    notes = {}
+    for row in rows:
+        if row["article"] != REL_ARTICLE or row["key"] not in files:
+            continue
+        rel_text = pdf_text(files[row["key"]])
+        if row["code"] == REL_SALDI:
+            annex = {r["code"]: pdf_text(files[r["key"]]) for r in rows
+                     if r["authority"] == row["authority"] and not r["article"]
+                     and r["key"] in files}
+            for code, note in compare_saldi(rel_text, annex).items():
+                notes.setdefault(row["key"], []).append(note)
+                notes.setdefault(f"{row['authority']}/{code}", []).append(
+                    f"row of {row['key']}: {note}")
+            continue
+        annex_key = f"{row['authority']}/{row['code']}"
+        if annex_key not in files:
+            notes.setdefault(row["key"], []).append(f"no annex table {annex_key}")
+            continue
+        note = compare_exhibit(row["code"], rel_text, pdf_text(files[annex_key]))
+        notes.setdefault(row["key"], []).append(note)
+        notes.setdefault(annex_key, []).append(f"relation exhibit {row['key']}: {note}")
+    return notes
+
+
 def build(year):
     year = str(year)
     rows = read_tsv(layout.tables_tsv(year, ROOT))
@@ -162,6 +251,7 @@ def build(year):
     tagged = {pdf.name: tagged_table_pages(pdf)
               for pdf in sorted(Path(ROOT, REPORTS_DIR, year).glob("*.pdf"))}
 
+    extra = same_name_notes(year, rows)
     tables, segments = [], []
     for row in rows:
         key = row["key"]
@@ -200,7 +290,7 @@ def build(year):
             "check_cause": check.get("cause", "")
                            or actions.get(key, {}).get("reason", ""),
             "action": actions.get(key, {}).get("action", "") if row["file"] else "",
-            "notes": row["notes"],
+            "notes": "; ".join(filter(None, [row["notes"], *extra.get(key, [])])),
             "sources": "+".join(f"{s['source_file']}:{s['pdf_from']}-{s['pdf_to']}"
                                 + ("(cut)" if s["cut"] else "")
                                 for s in segments if s["key"] == key)})

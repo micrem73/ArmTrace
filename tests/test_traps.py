@@ -141,3 +141,94 @@ def test_dogane_tab_marker_needs_a_word_boundary():
     assert classify_page("Dipartimento del Tesoro Direzione V\n"
                          "AVIO S.p.A. Totale\nMALTAB.M.A. BUIZZA MAZZEI\n")[0] != "DOG"
     assert classify_page("Tipo di operazione: Trasferimento TAB. MT1\n")[0] == "DOG"
+
+
+MEF_BLOCK = ("Ministero dell'Economia e delle Finanze \nDipartimento del Tesoro "
+             "Direzione V - Ufficio VIII \nOperazioni disciplinate dall'art. 27, legge "
+             "09/07/1990, n. 185 - Relazione attività 2024 \n")
+
+
+def test_mef_relation_exhibits_are_tables_not_trash():
+    """2024 vol. II p78-82 (and 2025 p263-267): the MEF relation prints six
+    exhibits -- the uncoded 'Riepilogo saldi', UE, LGP, IAA, FG, KK1. Four of
+    them disagree with their annex tables, and all six went to the trash as a
+    'second print'. 2025 extracts the captions in fragments ("Ta\\nbella LGP")."""
+    from lib.pageio import relation_exhibits
+    page79 = ("5 \n" + MEF_BLOCK + "Tabella UE - Riepilogo saldi importazioni \n"
+              "Totale Complessivo € 427.488.850,54 \n" + MEF_BLOCK
+              + "Tabella LGP - Licenze Globali di programma di cooperazione \n"
+              "AEREA S.p.A. PAESI NATO € 1.059.450,91 \n")
+    rel, still_open = relation_exhibits(page79, None)
+    assert rel == [("Tabella", "UE"), ("Tabella", "LGP")] and still_open == "LGP"
+    # p80 opens with LGP's last rows, then IAA: a continuation, then a start.
+    page80 = ("6 \nLEONARDO S.p.A. € 14.836.237,72 \nTotale Complessivo "
+              "€ 1.607.577.600,40 \n" + MEF_BLOCK + "Tabella IAA - Intermediazioni "
+              "\nTotale Complessivo € 86.516.466,20 \n")
+    rel, still_open = relation_exhibits(page80, "LGP")
+    assert rel == [("Segue", "LGP"), ("Tabella", "IAA")] and still_open is None
+    # Prose with euro amounts after a closed exhibit is not a continuation.
+    assert relation_exhibits("9 \nper un totale di € 2,1 miliardi \n", None) == ([], None)
+    # The uncoded summary, and 2025's fragmented caption.
+    saldi = "come segue \nRiepilogo saldi esportazioni e importazioni \nTotali € 1,00 \n"
+    assert relation_exhibits(saldi, None)[0] == [("Tabella", "SALDI")]
+    fragmented = ("Mi\nnistero dell'Economia e delle Finanze \nDip\nartimento del Tesoro "
+                  "\nOperazio\nni disciplinate - Relaz\nione attività 2025 \nTa\nbella LGP - Lic\nenze \n")
+    assert relation_exhibits(fragmented, None)[0] == [("Tabella", "LGP")]
+
+
+def test_relation_exhibit_codes_and_keys():
+    """MAE exhibits are numbered (Tabella 8.3 -> T83, filed MAE/T83); MEF
+    exhibits print the annex code, so they are filed under REL to stay apart
+    from the annex table of the same name (MEF/REL/UE beside MEF/UE)."""
+    from lib.pageio import rel_code
+    from lib.patterns import REL_ARTICLE, rel_article
+    assert rel_code("8.3") == "T83" and rel_code("UE") == "UE"
+    assert rel_article("UE") == REL_ARTICLE and rel_article("T83") is None
+    from VerifyTables import index_entry
+    assert index_entry({"UE": {"title": "x", "authorities": ["MEF"]}}, "UE", "MEF", "REL") is None
+
+
+def test_same_name_notes_report_copies_and_differences():
+    """The user's rule (2026-10-18): each MEF relation exhibit says, in the SQL
+    notes, whether it copies the annex table of the same name or disagrees with
+    it -- 2024 FG totals 4.380.567.163,68 in the relation, 4.315.708.982,69 in
+    the annex. Never silently pick one."""
+    from tools.build_index import compare_exhibit, compare_saldi
+    annex_lgp = "AEREA € 1.059.450,91\nASE € 312.944,23\nTotale Complessivo € 1.372.395,14"
+    note = compare_exhibit("LGP", "AEREA € 1.059.450,91\nTotale Complessivo € 1.372.395,14",
+                           annex_lgp)
+    assert note.startswith("copy of MEF/LGP")
+    note = compare_exhibit("FG", "X € 1,00\nTotale Complessivo € 4.380.567.163,68",
+                           "X € 1,00\nTotale Complessivo € 4.315.708.982,69")
+    assert "differs from MEF/FG" in note and "4.380.567.163,68" in note \
+        and "4.315.708.982,69" in note
+    saldi = ("AA \nEsportazioni definitive \nper Istituti di credito € 4.553.511.273,94 € 377.783.139,39\n"
+             "BB \nEsportazioni temporanee € 5,00 € 6,00\nTotali € 9,00")
+    notes = compare_saldi(saldi, {
+        "AA": "Totale Complessivo € 4.553.410.664,28 € 388.516.607,30",
+        "BB": "€ 5,00Totale Complessivo € 6,00"})
+    assert "AA differs" in notes["AA"] and "4.553.410.664,28" in notes["AA"]
+    assert notes["BB"].startswith("BB matches")
+
+
+def test_trash_holds_no_table():
+    """The user's rule (2026-10-18): the trash may hold covers, prose and
+    furniture, never a table. 2024 vol. II trashed six MEF relation exhibits."""
+    from tools.page_check import table_like
+    header = "Camera dei Deputati Senato della Repubblica\n– 1707 –\n"
+    assert not table_like(header + "Esportazione Definitiva (EX)\nTAB. M\n")      # cover
+    assert not table_like(header + "per un totale di € 1.000,00, € 2.000,00 e € 3,00\n")  # prose
+    exhibit = (MEF_BLOCK + "Tabella FG - Finanziamenti\nA € 1,00\nB € 2,00\n"
+               "Totale Complessivo € 3,00\n")
+    assert table_like(header + exhibit) == "MEF exhibit caption"
+    assert table_like(header + "TAB. MG1\n" + "X € 1,00\n" * 3) == "TAB. code"
+
+
+def test_totals_row_label_is_its_leftmost_line():
+    """2025 vol. II p263: 'Totali (Imp + Esp.)' sits at y=519, its amounts at
+    518. Sorting on the rounded y put an amount first, the totals row failed the
+    label test, and the Riepilogo saldi file lost its last row."""
+    from lib.emit import first_row_label
+    lines = [(518.3, 531, "6.475.669.142,80", 307), (518.4, 531, "€ 570.708.294,23", 419),
+             (519.1, 532, "Totali (Imp + Esp.)", 183)]
+    assert first_row_label(lines) == "Totali (Imp + Esp.)"
