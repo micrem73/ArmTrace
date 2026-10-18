@@ -52,6 +52,16 @@ themselves, the cover is dropped and the file must equal the stamp. Judge by whe
 first data page prints the code, not by the word "Riepilogo". Any other table must not
 start with a cover.
 
+Two more shapes of the stamp are a pass (decided 2026-10-18):
+
+- **Clipped total.** The stamp prints fewer digits than the file has pages (`N / 13` on a
+  132-page MEF table, `13 / 13` on its last page). `page_count` passes when the page
+  numbers run without a gap to `file_pages` and the last page closes the table
+  (`Totale Complessivo`); say so in `seen`.
+- **Totals overflow.** The last page holds only the table's totals row and repeats the
+  previous page's final stamp (`17 / 17` twice): it belongs to the table, so the file has
+  one page more than the stamp.
+
 Never guess a value you cannot see; never "correct" a value. The cut may be cropped to
 the table (relation exhibits): read the folio from `source-first`, the whole page.
 

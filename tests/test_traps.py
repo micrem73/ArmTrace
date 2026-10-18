@@ -130,3 +130,14 @@ def test_title_check_reads_what_the_mae_page_prints():
     # The stamp must name this file's code and page count, or it is no witness.
     assert verdict(n1, title, code="N2") == "FAIL"
     assert verdict(n1, title, total=4) == "FAIL"
+
+
+def test_dogane_tab_marker_needs_a_word_boundary():
+    """2024 vol. II p465 (MEF Tabella II) prints "MALTA" beside "B.M.A. BUIZZA
+    MAZZEI"; extracted as "MALTAB.M.A.", it read as the Dogane "TAB." marker,
+    filed p462-465 under DOG art. 1 comma 2 and split II in two: the file kept
+    p461 and 136 pages went to the trash."""
+    from lib.ontology import classify_page
+    assert classify_page("Dipartimento del Tesoro Direzione V\n"
+                         "AVIO S.p.A. Totale\nMALTAB.M.A. BUIZZA MAZZEI\n")[0] != "DOG"
+    assert classify_page("Tipo di operazione: Trasferimento TAB. MT1\n")[0] == "DOG"

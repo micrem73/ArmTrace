@@ -229,3 +229,16 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   decode 99.3% of the 11,535 distinct garbled glyphs; Windows files and human review settle
   the rest (above). PyMuPDF truncates span font names to 24 characters: resolve fonts per
   page, not by name.
+
+## 2026-10-18 — 2024 check round: two stamp shapes, by review
+
+- **A clipped stamp total is read from the page numbers.** 2024 MEF prints `N / 13` on its
+  132- and 135-page tables (EE, GG): the total is cut to two digits. `page_count` passes when
+  the numbers run without a gap to the file's last page and that page closes the table
+  (`Totale Complessivo`). The two checkers had disagreed on EE; the human decided.
+- **A totals-only overflow page belongs to its table.** 2024 MEF HH prints `17 / 17` on p1443
+  and again on p1444, which holds only the `Totale Complessivo` row: the file keeps it and has
+  one page more than the stamp. Dropping it would lose the grand total.
+- **The Dogane `TAB.` marker needs a word boundary.** "MALTA" beside "B.M.A." extracts as
+  `MALTAB.M.A.` (2024 vol. II p465), which filed four MEF pages under DOG art. 1 comma 2 and
+  split Tabella II: 1 page kept, 136 trashed.
