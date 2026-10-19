@@ -66,8 +66,10 @@ Python 3.10, ruff, pytest; `make check` is the one "done" command. Licence still
 
 The route is decided (DECISIONS.md): the extractor reads the original volumes in `In/`, finding each table through `Out/<year>/tablesindex.sqlite`, never the split PDFs. SQLite, with a plain `.sql` dump as the deliverable.
 
+Started on 2025 before Phase 2 ends (2026-10-19): 2024 and 2025 are catalogued and diffed, rows are extracted for 2025 only, one SQL table per printed table code (replaces `stg_cell`, DECISIONS.md). Pilot on one table per record grammar, review, then the whole year.
+
 1. Catalogue the table shapes of every verified year (`CatalogueTables.py`: rotation, rules, headers, record grammar), then diff them across years.
-2. Only then write the schema: one lossless cell table (`stg_cell`) plus curated projections; each row traceable to source file, volume, printed page and table key (D1, D2). Version it with migrations.
+2. Only then write the schema: one table per printed table code, as printed, plus curated projections later; each row traceable to source file, volume, printed page and table key (D1, D2). Version it with migrations.
 3. Write the extractor with its verification: printed totals against the sum of the rows, row counts, text coverage against the source page (D7). Values parsed exactly (D4). Anything that cannot be read with confidence is recorded as unknown with a reason, not guessed.
 4. MAE text goes through `lib/glyphs.py`; undecoded glyphs are carried flagged (D8).
 5. Compare reading tools last, against the ground truth the verification gives.

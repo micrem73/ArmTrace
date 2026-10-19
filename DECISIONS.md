@@ -263,3 +263,76 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   content (3+ euro amounts or more lines than a cover). Dogane covers pass: marker, no content.
 - **A totals row printed just under a grid belongs to the table** (`Totali`, within 24 pt of
   the last rule; 2024 p78).
+
+## 2026-10-19 — SQL extraction starts on 2025, tables stored as printed
+
+- **Phase 3 starts on 2025 before Phase 2 ends; 2024 is catalogued too, for the diff only.**
+  Both years are verified, so their shapes are measured on settled cuts; the column keys come
+  from two years, not one, and no 2024 rows are extracted yet. By the maintainer.
+- **Rows are stored as printed: one SQL table per printed table code, shared across years,
+  replacing the `stg_cell` EAV design.** Each row carries year, source file, printed page, row
+  order and row kind (data, group, subtotal, total); each value column keeps its printed text
+  beside the parsed value. Simpler and directly queryable; the cost is that a column renamed or
+  added in another year needs a migration. By the maintainer.
+- **The extractor and the catalogue read the source volumes through one reader (`lib/source.py`).**
+  A cut-out table is found on its source page by the crop the splitter used, stored in
+  `tablesindex.segments`, so the two never disagree on what belongs to a table.
+- **A ruled table's columns come from its printed grid** (`geometry.grid_header`): each column
+  is the gap between two walls, each label everything printed in it. The gaps between words
+  merged DOG M1's three labels into one and missed T2's header; 2025: 31 more tables get a
+  header, none lost. Unruled tables keep the label reader.
+- **Tables whose columns are years are stored one row per printed row and year**
+  (`voce, anno, valore`), not with a column per printed year. T2 prints 2021–2025 in 2025 and
+  2020–2024 in 2024: a column named `2021` would mean a different position in each edition.
+  By the maintainer, for the 2025 pilot; it applies to the relation exhibits that print a year
+  window (T2–T23).
+- **A column renamed between editions is one SQL column; the printed label is kept per year**
+  in `column_def.label_it`. 2024 EE `Importo Segnalazioni` and 2025 `Importi Segnalati` are
+  `importi_segnalati`. By the maintainer. The catalogue diff compares year labels relative to
+  the edition (`Anno Y-1`).
+
+## 2026-10-19 — reading the pilot tables (ExtractTables.py, lib/extract.py)
+
+- **A page is a header, continuation, summary or cover page.** A continuation page's grid
+  stands elsewhere (EE p2: 10.9 pt right) or with other widths (Difesa 4 p255): its columns
+  are its own walls, in order, when they are as many as the header's. A page before the first
+  header is the table's cover and may hold no amount (DOG M1 p858). A page with neither is
+  the table's printed summary (A1 p606), kept as `printed_total`, the extraction's oracle.
+- **One table, one reading frame.** A page holding only a header and one operator name has
+  fewer rotated characters than its upright running head (A1 p147); read in its own dominant
+  direction the table came out letter by letter.
+- **Records: a box between two rules is one record only where the column walls run through
+  it and at most one of its lines carries a value** (T2's wrapped labels, Difesa's lists,
+  2024 EE's wrapped `Causale`). Elsewhere each line is a record; a line with no value heads
+  a group when it is one run of text starting in the first column (A1 operator), else it
+  continues the record above (A1's wrapped description; a page that opens on one continues
+  the previous page's record).
+- **A subtotal prints at least two amounts and nothing else.** A1 boxes EURO and Val. Fini
+  Dog. under each operator, even at 0,00; an authorisation line printing only its customs
+  value was read as a subtotal and cut its operator in two (24 lines in 2025).
+- **The body ends where the grid's walls end, or, where they stop at the header (A1), at the
+  last line that is not the page stamp.** Every other line under the table is a note (it
+  opens with a note mark: `(*)`, `1   `) or an issue; a printed amount outside the body is
+  always an issue. This check found 4,103 A1 lines lost to a mid-page rule taken for the
+  table's end.
+- **A sign before the currency is read (`-€ 142.942,72`).** EE's credit notes counted zero
+  and the column summed 9.711.703,48 over its printed total.
+- **A value printed inside the height of the line above, in columns that line leaves empty,
+  belongs to that line.** A1 sets some customs (and EURO) values 3-4 pt low (p181 GEM
+  ELETTRONICA `105.500,00`); read as lines of their own, ~25 authorisations looked
+  customs-free and entered the EURO subtotals. This, not a convention, was the 9 A1 EURO
+  failures. Found by reviewing the smallest failing group with the maintainer.
+- **How MAE A1 builds its EURO totals (rule of the check, confirmed by the data).** A line with
+  a customs value does not count; a blank EURO on an EUR line counts as its Ammontare. With
+  that, every EURO and Val. Fini Dog. subtotal matches (10 within 2 cents of conversion
+  rounding), and so do the EUR, USD and CHF totals and the 2.576 authorisations. The rule is
+  only the check's; no value is changed.
+- **A1's grand EURO total is checked against the printed subtotals** (maintainer, 2026-10-19).
+  `7.721.114.868,99` equals the printed subtotals added up exactly; the rows give 0,05 more,
+  the sum of the subtotals' cent roundings. Each subtotal is checked against its rows, so
+  the chain from rows to total is still whole (`totals.tsv`: `sum euro over subtotal`).
+- **Pilot widened to MAE A2, MEF II, DOG M** (maintainer, 2026-10-19). What they taught:
+  a header may name a total (`Totale`, `Incidenza % su totale`): only a value refuses a
+  header row; `<group> Totale` with an amount is a subtotal (MEF II); a continuation page
+  may draw its inner walls in short pieces (MEF II p427). A2 agrees with A1 for each of its
+  159 operators (authorisations, EURO, customs value): a cross-table witness for later.

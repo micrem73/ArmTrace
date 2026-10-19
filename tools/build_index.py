@@ -63,6 +63,8 @@ CREATE TABLE segments (     -- where each part of a table is in the source
     source_file TEXT, sha256 TEXT,
     pdf_from INTEGER, pdf_to INTEGER, printed_from INTEGER, printed_to INTEGER,
     cut INTEGER,            -- 1: the table holds a cut-out part of the pages
+    clip TEXT,              -- cut only: JSON {pdf page: [x0, y0, x1, y1]}, the
+                            -- part's band in source page coordinates
     PRIMARY KEY (year, key, seq)
 );
 CREATE TABLE trash (        -- source pages no table holds
@@ -316,7 +318,9 @@ def build(year):
                 "pdf_from": a, "pdf_to": b,
                 "printed_from": src["printed_pages"][0],
                 "printed_to": src["printed_pages"][1],
-                "cut": 1 if src.get("cut") else 0})
+                "cut": 1 if src.get("cut") else 0,
+                "clip": json.dumps(src["clips"], sort_keys=True)
+                        if src.get("clips") else None})
         check_file = layout.checks_dir(year, ROOT) / layout.key_dir(key) / "verdict.json"
         check = json.loads(check_file.read_text()) if check_file.exists() else {}
         verdict, findings = verified.get(row["file"], ("", ""))
@@ -364,7 +368,7 @@ def write_sqlite(year, tables, segments, trash):
                    f"({','.join('?' * len(cols))})",
                    [[t[c] for c in cols] for t in tables])
     scols = ["year", "key", "seq", "source_file", "sha256", "pdf_from", "pdf_to",
-             "printed_from", "printed_to", "cut"]
+             "printed_from", "printed_to", "cut", "clip"]
     db.executemany(f"INSERT INTO segments VALUES ({','.join('?' * len(scols))})",
                    [[s[c] for c in scols] for s in segments])
     db.executemany(f"INSERT INTO trash VALUES ({','.join('?' * len(TRASH_COLUMNS))})",

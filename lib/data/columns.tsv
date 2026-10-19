@@ -1,0 +1,68 @@
+# SQL columns of each table, as agreed with the maintainer (DECISIONS.md 2026-10-19).
+# One line per column, in printed order. A header the extractor reads must match these
+# labels, or the table is refused: a renamed or added column is a decision, not a guess.
+#
+# table: the table key. col: the SQL column. type:
+#   text    printed text, kept as printed
+#   amount  a printed amount, parsed exactly (Decimal); a dash is NULL
+#   number  a printed count or quantity, parsed exactly
+#   date    dd/mm/yyyy -> yyyy-mm-dd
+#   code    an identity (`016`, `92956`): kept as printed, leading zeros matter
+#   group   the heading printed once above a group of rows (MAE operator); carried onto them
+#   years   the printed year columns of a table that prints a year window (T2): one
+#           row per printed row and year, `anno` + `valore` (amount)
+# labels: the printed header, `|` between the forms seen in different editions; a year is
+#   written relative to the edition (`Y`, `Y-1`). Empty: the column prints no label.
+# sum: `sum` when the column adds up to the table's printed totals and subtotals;
+#   `sum else <col>@<col2>=<value>` when a blank cell counts as <col> on rows where
+#   <col2> is <value> (MAE A1: an EUR authorisation leaves EURO blank, its value is
+#   its Ammontare). `unless <col>`: a row where <col> is printed adds nothing (MAE A1:
+#   a line with a customs value is not in the EURO subtotal; inferred from the subtotals,
+#   and every one of the 159 matches it, to the cent or within conversion rounding).
+table	col	type	labels	sum
+MAE/A1	operatore	group
+MAE/A1	valuta	text	Valuta
+MAE/A1	ammontare	amount	Ammontare
+MAE/A1	euro	amount	EURO	sum else ammontare@valuta=EUR unless val_fini_dog
+MAE/A1	val_fini_dog	amount	Val. Fini Dog.	sum
+MAE/A1	data	date	Data
+MAE/A1	qta	number	Q.ta'|Quantita'
+MAE/A1	unita_misura	text	Unita' Misura
+MAE/A1	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto
+MAE/A1	tipo	code	Tipo
+MAE/A1	cat	code	Cat.
+MEF/EE	numero_autorizzazione	code	Numero Autorizzazione|Numero
+MEF/EE	utilizzatore_finale	text	Utilizzatore Finale
+MEF/EE	causale	text	Causale
+MEF/EE	importi_segnalati	amount	Importi Segnalati|Importo Segnalazioni	sum
+MEF/EE	importi_accessori_segnalati	amount	Importi Accessori Segnalati|Importi Acc. Segnalati	sum
+DIFESA/4	nr	code	NR.
+DIFESA/4	programma	text	PROGRAMMA
+DIFESA/4	tipologia	text	TIPOLOGIA
+DIFESA/4	paesi_partecipanti	text	PAESI PARTECIPANTI
+DIFESA/4	ditte_italiane_partecipanti	text	DITTE ITALIANE PARTECIPANTI
+MAE/T2	voce	text
+MAE/T2	valore	years	Y-4|Y-3|Y-2|Y-1|Y
+DOG/A1C2/M1	denominazione_operatore	text	Denominazione operatore
+DOG/A1C2/M1	numero_operazioni_svolte	number	Numero di operazioni svolte	sum
+DOG/A1C2/M1	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/M1	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	sum
+MAE/A2	operatore	text	Operatore
+MAE/A2	autorizzazioni	number	Autorizzazioni	sum
+MAE/A2	valore_euro	amount	Valore (EURO)	sum
+MAE/A2	valore_euro_cooperazione	amount	di cui, per Prog. di Cooperazione	sum
+MAE/A2	val_fini_dog	amount	Valore Fini Dog.	sum
+MAE/A2	val_fini_dog_cooperazione	amount	di cui, per Prog. di Cooperazione	sum
+MAE/A2	incidenza_percento	number	Incidenza % su totale
+MEF/II	ditta	text	Ditta
+MEF/II	numero_autorizzazione	code	Numero Autorizzazione
+MEF/II	utilizzatore_finale	text	Utilizzatore Finale
+MEF/II	causale	text	Causale
+MEF/II	totale	amount	Totale	sum
+DOG/A1C2/M	denominazione_operatore	text	Denominazione operatore
+DOG/A1C2/M	codice_valuta	text	Codice valuta
+DOG/A1C2/M	ammontare_in_valuta	amount	Ammontare in valuta
+DOG/A1C2/M	quantita	number	Quantità
+DOG/A1C2/M	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto
+DOG/A1C2/M	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/M	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)

@@ -71,12 +71,17 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
 
     `keep_code` is the exported code ("T83"); the exhibit it names is found by
     its printed number ("8.3"), read from the manifest rather than guessed back
-    out of the code. A page whose band cannot be isolated returns False rather
+    out of the code. A page whose band cannot be isolated returns None rather
     than writing a file that would hold two tables.
+
+    Returns the band in SOURCE page coordinates, [x0, y0, x1, y1]: the SQL
+    extractor reads the source volume, not this file, and finds the exhibit
+    on its page by this rectangle (DECISIONS.md 2026-10-19). Text inside it
+    written against the dominant direction is furniture, dropped here too.
     """
     libs = _pymupdf()
     if libs is None:
-        return False
+        return None
     pymupdf, geometry = libs
 
     document = pymupdf.open(volume_path)
@@ -85,7 +90,7 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
         frame = geometry.Frame.for_page(source)
         turn = _FRAME_ROTATE.get(frame.name)
         if turn is None:
-            return False
+            return None
         # Page size after the turn: a quarter turn swaps the two.
         if turn in (90, 270):
             width, height = source.rect.height, source.rect.width
@@ -104,7 +109,7 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
                                         manifest, volume_index, page_no)
         band = exhibit_band(canvas, headings, wanted, height)
         if band is None:
-            return False
+            return None
         lo, hi = band
         for cut in (pymupdf.Rect(0, 0, width, lo),
                     pymupdf.Rect(0, hi, width, height)):
@@ -140,7 +145,7 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
         for drawing in canvas.get_drawings():
             box = box | drawing["rect"]
         if box is None or box.is_empty:
-            return False
+            return None
         crop = pymupdf.Rect(box.x0 - CUT_MARGIN, box.y0 - CUT_MARGIN,
                             box.x1 + CUT_MARGIN, box.y1 + CUT_MARGIN) & canvas.rect
         out = pymupdf.open()
@@ -150,9 +155,22 @@ def cut_exhibit_page(volume_path, page_no, keep_code, out_path, manifest,
         out.save(out_path)
         out.close()
         work.close()
-        return True
+        return source_rect(source, turn, pymupdf.Rect(0, lo, width, hi))
     finally:
         document.close()
+
+
+def source_rect(source, turn, rect):
+    """`rect` on the upright canvas of `source` (drawn with rotate=`turn`)
+    mapped back to the source page, rounded to 0.01 pt. Measured on 2025
+    vol. I p27, p40 (rot90) and p60: every unique word lands on its source
+    position under this mapping, and under no other quarter turn."""
+    import pymupdf
+    to_canvas = pymupdf.Matrix((360 - turn) % 360)
+    shift = source.rect * to_canvas
+    to_canvas = to_canvas * pymupdf.Matrix(1, 0, 0, 1, -shift.x0, -shift.y0)
+    back = rect * ~to_canvas
+    return [round(v, 2) for v in (back.x0, back.y0, back.x1, back.y1)]
 
 
 
@@ -626,7 +644,7 @@ def _bookmarks(reader):
     return found
 
 
-def provenance(tkey, segments, readers, manifests, paths, year, cut=False):
+def provenance(tkey, segments, readers, manifests, paths, year, clips=None):
     """Document info for one split PDF: where every page of it came from.
 
     The split PDFs are a review view; SQL extraction reads the source volumes
@@ -647,8 +665,12 @@ def provenance(tkey, segments, readers, manifests, paths, year, cut=False):
                               printed_page(manifests[idx], end)],
             # True when the file holds a cut-out part of these pages, not the
             # whole pages: the rest of each page is in the volume's trash file.
-            "cut": cut,
+            "cut": clips is not None,
         })
+        if clips is not None:
+            # Where the part is on each source page: the SQL extractor's way in.
+            sources[-1]["clips"] = {str(p): clips[(idx, p)]
+                                    for p in range(start, end + 1)}
         marks += [title for page, title in _bookmarks(readers[idx])
                   if start <= page <= end]
     record = {"table": table_key(tkey), "authority": tkey[0],
@@ -738,23 +760,26 @@ def split_pdf(readers, manifests, out_root, year, paths=None, only=None):
             # libraries do not share a page object.
             merged = PdfWriter()
             ok = True
+            clips = {}
             scratch = tempfile.mkdtemp(prefix="relazione-cut-")
             try:
                 for n, (idx, p) in enumerate(cut_pages_here):
                     tmp = Path(scratch, f"{n}.PDF")
-                    if not cut_exhibit_page(paths[idx], p, code, str(tmp),
-                                            manifests[idx], idx):
+                    clip = cut_exhibit_page(paths[idx], p, code, str(tmp),
+                                            manifests[idx], idx)
+                    if clip is None:
                         ok = False
                         cut_failed.append((code, p))
                         break
                     merged.add_page(PdfReader(str(tmp)).pages[0])
+                    clips[(idx, p)] = clip
                     cut_pages.append((code, p))
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
             if ok:
                 merged.add_metadata(provenance((authority, article, code),
                                                segments, readers, manifests,
-                                               paths, year, cut=True))
+                                               paths, year, clips=clips))
                 with open(path, "wb") as fh:
                     merged.write(fh)
                 written.append(str(path))

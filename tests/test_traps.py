@@ -241,3 +241,96 @@ def test_totals_row_label_is_its_leftmost_line():
     lines = [(518.3, 531, "6.475.669.142,80", 307), (518.4, 531, "€ 570.708.294,23", 419),
              (519.1, 532, "Totali (Imp + Esp.)", 183)]
     assert first_row_label(lines) == "Totali (Imp + Esp.)"
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_cut_clip_maps_back_to_the_source_page(year, sources):
+    """The SQL extractor finds a cut exhibit on its SOURCE page by the clip the
+    splitter returns (DECISIONS.md 2026-10-19). The splitter cuts on a page
+    turned upright, so the band must be turned back: on rot90 p40 the wrong
+    quarter turn puts Tabella 8.3's band over the margin, and the extractor
+    would read the furniture as the table."""
+    import pymupdf
+
+    from lib import geometry
+    from lib.emit import _FRAME_ROTATE, source_rect
+    doc = pymupdf.open(ROOT / "In" / year / "2025_LXVII_n4_VOLUME_I.pdf")
+    for pno in (27, 40, 60):
+        src = doc[pno - 1]
+        turn = _FRAME_ROTATE[geometry.Frame.for_page(src).name]
+        w, h = ((src.rect.height, src.rect.width) if turn in (90, 270)
+                else (src.rect.width, src.rect.height))
+        canvas = pymupdf.open().new_page(width=w, height=h)
+        canvas.show_pdf_page(canvas.rect, doc, pno - 1, rotate=turn)
+        whole = source_rect(src, turn, canvas.rect)
+        assert all(abs(a - b) < 0.01 for a, b in zip(whole, src.rect)), pno
+        words = {}
+        for x in src.get_text("words"):
+            words.setdefault(x[4], []).append(x)
+        for x in canvas.get_text("words"):
+            if len(x[4]) > 4 and len(words.get(x[4], ())) == 1:
+                back = pymupdf.Rect(source_rect(src, turn, pymupdf.Rect(x[:4])))
+                assert abs(back.x0 - words[x[4]][0][0]) < 2, (pno, x[4])
+                assert abs(back.y0 - words[x[4]][0][1]) < 2, (pno, x[4])
+
+
+# The pilot tables' headers as printed, read off the rendered source pages
+# (2026-10-19). A ruled table's columns come from its grid: the gaps between
+# words merged DOG M1's three labels into one and missed T2's header entirely.
+PILOT_HEADERS = [
+    ("2025", "2025_LXVII_n4_VOLUME_I.pdf", 70, None,
+     ["Valuta", "Ammontare", "EURO", "Val. Fini Dog.", "Data", "Q.ta'",
+      "Unita' Misura", "Materiale oggetto del contratto", "Tipo", "Cat."]),
+    ("2025", "2025_LXVII_n4_VOLUME_II.pdf", 287, None,
+     ["Numero Autorizzazione", "Utilizzatore Finale", "Causale",
+      "Importi Segnalati", "Importi Accessori Segnalati"]),
+    ("2025", "2025_LXVII_n4_VOLUME_II.pdf", 254, None,
+     ["NR.", "PROGRAMMA", "TIPOLOGIA", "PAESI PARTECIPANTI",
+      "DITTE ITALIANE PARTECIPANTI"]),
+    ("2025", "2025_LXVII_n4_VOLUME_I.pdf", 27, None,
+     ["", "2021", "2022", "2023", "2024", "2025"]),
+    ("2025", "2025_LXVII_n4_VOLUME_II.pdf", 859, None,
+     ["Denominazione operatore", "Numero di operazioni svolte",
+      "Stato di avanzamento annuale (Euro)", "Utilizzo anni precedenti (Euro)"]),
+    ("2025", "2025_LXVII_n4_VOLUME_II.pdf", 288, "data",   # EE continuation page
+     None),
+    # A header may name a total; only a data row prints one with its value.
+    ("2025", "2025_LXVII_n4_VOLUME_II.pdf", 393, None,
+     ["Ditta", "Numero Autorizzazione", "Utilizzatore Finale", "Causale", "Totale"]),
+    ("2025", "2025_LXVII_n4_VOLUME_I.pdf", 607, None,
+     ["Operatore", "Autorizzazioni", "Valore (EURO)", "di cui, per Prog. di Cooperazione",
+      "Valore Fini Dog.", "di cui, per Prog. di Cooperazione", "Incidenza % su totale"]),
+]
+
+
+@pytest.mark.parametrize("year,volume,page,kind,expected", PILOT_HEADERS,
+                         ids=lambda v: str(v) if isinstance(v, int) else None)
+def test_grid_header_reads_the_printed_columns(year, volume, page, kind,
+                                               expected, sources):
+    import pymupdf
+
+    import CatalogueTables as C
+    from lib import geometry as geo
+    from lib import grammar as gra
+    from lib.source import SourcePage
+    doc = pymupdf.open(ROOT / "In" / year / volume)
+    sp = SourcePage(doc, page, None)
+    geom = C.page_geometry(sp, geo.dominant_direction(sp))
+    header = geo.grid_header(sp, geom["words"], geom["frame"],
+                             is_label=gra.is_label_row)
+    if expected is None:
+        assert header is None       # a page that prints no header has none
+    else:
+        assert [c["text"] for c in header["cells"]] == expected
+
+
+def test_a_credit_note_prints_its_sign_before_the_euro():
+    """2025 MEF EE prints a credit note as `-€ 142.942,72`. Read as no number,
+    every credit note counted zero and the column summed 9.711.703,48 over
+    the printed `Totale Complessivo`."""
+    from decimal import Decimal
+
+    from lib.grammar import parse_number, value_shape
+    assert parse_number("-€ 142.942,72") == Decimal("-142942.72")
+    assert parse_number("€ -40,66") == Decimal("-40.66")
+    assert value_shape("-€ 142.942,72") == "currency"
