@@ -24,6 +24,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - Checker eval: `make eval` (`tools/eval_checker.py 2025`: 26 cases, about $4 and 3 min). It runs the table-checker on known-good and deliberately broken cuts (`tests/evals/checker-2025.tsv`). Run it after changing `.claude/agents/table-checker.md`, the `check-year` skill or a convention, after a model change, and before a new year. A wrong cut that gets PASS is a failure. Add a case for every miss a person finds.
 - Hooks (`.claude/hooks/guard.py`): Edit/Write is blocked on `In/<year>/` and on `Out/` outside `Out/.work/`. Each edited `.py` file is linted.
 - Debug into a scratch tree with `--out <dir>`, so the last run's `Out/` is not overwritten.
+- SQL extraction (Phase 3, pilot): `python3 CatalogueTables.py --year 2025` (table shapes, read in the sources → `Out/.work/CATALOG/`), `python3 tools/catalog_diff.py 2024 2025`, then `python3 ExtractTables.py 2025 [--only KEY]` → `Out/2025/armtrace-2025.sqlite` + `.sql` (exits 1 on a FAIL check or a refused table). Agreed columns: `lib/data/columns.tsv`; printed summaries: `lib/data/totals.tsv`. Review page: `python3 tools/extract_review.py 2025` → `Out/2025/extract-review.html`.
 
 ## Output (`lib/layout.py`)
 
@@ -69,6 +70,12 @@ Decisions and their reasons are in `DECISIONS.md`; measurements live beside the 
   - 2016 and 2018 indices: ministry rows lack page numbers, so the index is rejected.
   - `MEF/II` key collision in 2020 vol. II: in 2024 it was a false Dogane `TAB.` match (`MALTAB.M.A.`), fixed; 2020 not yet re-run.
   - 2021: `TOMO_II.pdf` and `VOLUME_II.pdf` both claim volume II (844 and 1070 pp).
+- SQL extraction (Phase 3 of `plan.md`) started on 2025 only (2026-10-19): catalogue 2024+2025 from the sources, one SQL table per printed table code. Pilot extracted (MAE/A1, MAE/A2, MAE/T2, MEF/EE, MEF/II, DIFESA/4, DOG/A1C2/M, DOG/A1C2/M1): every printed total and subtotal matches, 11 within 2 cents of rounding; A2 agrees with A1 operator by operator. Review stop B passed, committed. To do, in order:
+  1. Two-level headers (a label over several columns): T10, T11, T13, T20, T23, Difesa 3B.
+  2. MAE summary tables printed without a ruled grid: B4, D, G1, G2, I, F1.
+  3. The rest of 2025's 156 tables: agree each table's columns in `columns.tsv` (and its printed summaries in `totals.tsv`), extract, fix by kind of failure.
+  4. Store the A2 = A1 per-operator comparison as a check (cross-table witness).
+  5. Review stop C: totals report for the year, a sample of tables against their source pages.
 - Unsupported, to be listed rather than split: 2001–2010 (no text layer), 2014 vol. I and 2015 (one table found).
 
 ## Ask, do not decide

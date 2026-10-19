@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-CatalogueTables -- fingerprint every per-table PDF of one year into a database
-of *shapes*, so that a later step can ask what changed between years.
+CatalogueTables -- fingerprint every table of one year into a database of
+*shapes*, so that a later step can ask what changed between years.
 
-    Out/PDF/<authority>/[<article>/]<table><year>.PDF
-        ->  Out/CATALOG/catalog.sqlite
-            Out/CATALOG/catalog-<year>.jsonl
-            Out/CATALOG/census-<year>.md
+    In/<year>/*.pdf, located through Out/<year>/tablesindex.sqlite (lib/source.py)
+        ->  Out/.work/CATALOG/catalog.sqlite
+            Out/.work/CATALOG/census-<year>.md
+
+The tables are read in the source volumes, never in the split PDFs, so the
+catalogue measures exactly what the SQL extractor will read: a cut exhibit
+through its clip, a garbled MAE page through the glyph map (DECISIONS.md
+2026-10-19).
 
 This is the step that answers "what changed in the same table, what disappeared,
 what appeared, and how did the data inside change". It deliberately does *not*
@@ -29,7 +33,7 @@ report a change in every column of every table.
 
 What is stored per (authority, article, code, year)
 ---------------------------------------------------
-  identity      pages, bytes, source span, index title, and the *witness* for the
+  identity      pages, source span, index title, and the *witness* for the
                 table's existence -- index / bookmark / header-run / garbled /
                 missing. The witness is not decoration: the catalog inherits
                 step 1's coverage, so a table that "disappeared" in a year must
@@ -55,10 +59,8 @@ values and bands, this script knows about files and ministries, and nothing belo
 knows about `In/` paths.
 
 Usage:
-    ./CatalogueTables.py --year 2025
-    ./CatalogueTables.py --year 2025 --manifest Out/manifest-2025.jsonl
-    ./CatalogueTables.py --year 2025 --sample 7 --dry-run
-    ./CatalogueTables.py --all --out-root Out
+    python3 CatalogueTables.py --year 2025
+    python3 CatalogueTables.py --year 2025 --only MAE/A1 --sample 7 --dry-run
 
 Requires: pymupdf (pip install pymupdf). No JRE, no tabula, no OCR.
 """
@@ -66,7 +68,6 @@ Requires: pymupdf (pip install pymupdf). No JRE, no tabula, no OCR.
 import argparse
 import hashlib
 import json
-import os
 import re
 import sqlite3
 import sys
@@ -74,17 +75,12 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-try:
-    import pymupdf
-except ImportError:
-    sys.exit("Errore: pymupdf non installato. Esegui: pip install pymupdf")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import geometry as geo            # noqa: E402
 from lib import grammar as gra             # noqa: E402
-from lib import layout, ontology                   # noqa: E402
+from lib import layout, source             # noqa: E402
 
-PDF_EXT = ".PDF"
 CATALOG_DIR = "CATALOG"
 
 # Pages per table read for *geometry*. Geometry is the expensive half and the
@@ -129,13 +125,7 @@ FURNITURE_RE = re.compile(r"^TAB\.?\s|^Annesso\s", re.I)
 FOLLOW_SHARE = 0.6
 FOLLOW_WINDOW = 4
 
-# The longest a header cell may be. Measured against the archive's real column
-# names: the longest is `Materiale oggetto del contratto` at 31 characters
-# (A1) and `Importi Accessori Segnalati` at 28 (EE). A data cell runs to
-# hundreds -- `VITROCISET (oggi LEONARDO), SIRIO PANEL (oggi LEONARDO),
-# INTRTEL, REVELLI, SKF INDUSTRIE, ...` -- so 60 is a wide margin that still
-# separates the two populations.
-HEADER_CELL_MAX_CHARS = 60
+HEADER_CELL_MAX_CHARS = gra.HEADER_CELL_MAX_CHARS
 
 # How many printed bands a stacked header may occupy. Two is the measured case
 # (DOG N1 wraps every long column name once); three is the ceiling, because a
@@ -196,9 +186,8 @@ CREATE TABLE IF NOT EXISTS table_year (
     article        TEXT,
     code           TEXT NOT NULL,
     year           INTEGER NOT NULL,
-    path           TEXT,
+    path           TEXT,             -- source span: <file>:<from>-<to>[(cut)]+...
     pages          INTEGER,
-    bytes          INTEGER,
     src_first      INTEGER,          -- first page in the source volume, 1-based
     src_last       INTEGER,
     index_title    TEXT,             -- the title the volume's own index prints
@@ -904,32 +893,22 @@ def merge_stacked_header(bands, index, cells, header_cells):
 # --------------------------------------------------------------------------
 
 
-def catalogue_file(pdf_path, year, sample=DEFAULT_SAMPLE):
-    """Every catalogued fact about one per-table PDF."""
-    identity = read_identity(pdf_path, year)
-    doc = pymupdf.open(pdf_path)
-    pages = []
-    try:
-        for page in doc:
-            pages.append(page_summary(page))
-    finally:
-        doc.close()
+def catalogue_table(year, row, sample=DEFAULT_SAMPLE):
+    """Every catalogued fact about one table, read in the source volumes.
+
+    `row` is the table's row of `tablesindex.tables`."""
+    identity = read_identity(year, row)
+    src_pages = source.table_pages(year, row["key"])
+    pages = [page_summary(page) for page in src_pages]
 
     status_counts = Counter(p["status"] for p in pages)
     orientations = Counter(p["orientation"] for p in pages)
     sample_pages = choose_sample_pages(len(pages), sample)
-    signature, geometry = read_signature(pdf_path, sample_pages)
-    # Re-open for the chart census. `read_signature` closes its own handle, and
-    # the curve count needs a *drawn* page rather than an extracted one, so it is
-    # taken here over a spread of three pages: a table that is charted on one
-    # page of six is still a table, and one page would misreport it.
-    chart_doc = pymupdf.open(pdf_path)
-    try:
-        charted = any(
-            geo.hairline_census(chart_doc[i])["charted"]
-            for i in choose_sample_pages(total_pages_of(pages), 3))
-    finally:
-        chart_doc.close()
+    signature, geometry = read_signature(src_pages, sample_pages)
+    # The chart census over a spread of three pages: a table that is charted
+    # on one page of six is still a table, and one page would misreport it.
+    charted = any(geo.hairline_census(src_pages[i])["charted"]
+                  for i in choose_sample_pages(len(pages), 3))
 
     legible = status_counts.get("legible", 0)
     total_pages = len(pages)
@@ -943,7 +922,6 @@ def catalogue_file(pdf_path, year, sample=DEFAULT_SAMPLE):
         **identity,
         "year": int(year),
         "pages": total_pages,
-        "bytes": os.path.getsize(pdf_path),
         "charted": 1 if charted else 0,
         "orientation": orientation,
         "orientation_pages": orientation_n,
@@ -964,10 +942,6 @@ def catalogue_file(pdf_path, year, sample=DEFAULT_SAMPLE):
     return record
 
 
-def total_pages_of(pages):
-    return len(pages)
-
-
 def choose_sample_pages(n_pages, sample):
     """Spread the geometry sample over the file, always including both ends.
 
@@ -985,7 +959,7 @@ def choose_sample_pages(n_pages, sample):
     return sorted(i for i in idx if 0 <= i < n_pages)
 
 
-def read_signature(pdf_path, page_indices):
+def read_signature(src_pages, page_indices):
     """The column signature, and the features the grammar was decided from.
 
     Read on several pages and then compared, because a signature taken from one
@@ -993,74 +967,85 @@ def read_signature(pdf_path, page_indices):
     the same column labels, and a table where they disagree is marked as such
     rather than being given the first page's answer.
     """
-    doc = pymupdf.open(pdf_path)
     per_page = []
-    try:
-        for i in page_indices:
-            page = doc[i]
-            direction = geo.dominant_direction(page)
-            geom = page_geometry(page, direction)
-            if geom is None:
-                continue
-            bands = geom["bands"]
+    for i in page_indices:
+        page = src_pages[i]
+        direction = geo.dominant_direction(page)
+        geom = page_geometry(page, direction)
+        if geom is None:
+            continue
+        bands = geom["bands"]
+        grid = geo.grid_header(page, geom["words"], geom["frame"],
+                               is_label=gra.is_label_row)
+        if grid:
+            # The printed grid gives the columns and the header's extent;
+            # data is every band below the floor that closes the header.
+            header_cells = grid["cells"]
+            header_bands = [b for b in bands if min(w.vmid for w in b) < grid["v1"]]
+            bands = header_bands[-1:] + bands[len(header_bands):]
+            index = 0 if header_bands else None
+        else:
             try:
                 rules = geo.rule_boundaries(page, geom["frame"])["u"]
             except Exception:
                 rules = []
             index, header_cells = find_header(bands, rules)
-            if not header_cells:
-                per_page.append({
-                    "page": i, "columns": [], "cells": [], "stacked": 0,
-                    "kinds": [], "rows": [], "repeated": [],
-                    "total_bands": 0, "words": len(geom["words"]),
-                })
-                continue
-            cells, source = resolve_columns(page, header_cells,
-                                           frame=geom["frame"])
-            cells, stacked = merge_stacked_header(bands, index, cells,
-                                                   header_cells)
-            matrix = geo.cell_matrix(bands, cells)
-            header_row = matrix[index] if index is not None else None
-            kinds, rows, per_col = [], [], defaultdict(Counter)
-            previous_kind = None
-            for r, row in enumerate(matrix):
-                if r == index:
-                    continue
-                profile = gra.band_profile(row)
-                kind = gra.band_kind(profile, cells, previous=previous_kind)
-                previous_kind = kind
-                kinds.append(kind)
-                rows.append(row)
-                for c, text in enumerate(row):
-                    per_col[c][gra.value_shape(text)] += 1
-            repeated = gra.repeated_key_columns(rows, cells, kinds)
+        if not header_cells:
             per_page.append({
-                "page": i,
-                "cells": cells,
-                "column_source": source,
-                "columns": [
-                    {
-                        "ordinal": c,
-                        "label": gra.normalise_text(cell["text"]),
-                        "path": gra.normalise_text(cell.get("path")
-                                                   or cell["text"]),
-                        "width": round(cell["u1"] - cell["u0"], 1),
-                        "bold": 1 if cell["bold"] else 0,
-                    }
-                    for c, cell in enumerate(cells)
-                ],
-                "stacked": stacked,
-                "header_row": header_row,
-                "kinds": kinds,
-                "rows": rows,
-                "repeated": repeated,
-                "total_bands": kinds.count(gra.KIND_TOTAL)
-                             + kinds.count(gra.KIND_SUBTOTAL),
-                "words": len(geom["words"]),
-                "shapes": {str(c): dict(per_col[c]) for c in per_col},
+                "page": i, "columns": [], "cells": [], "stacked": 0,
+                "kinds": [], "rows": [], "repeated": [],
+                "total_bands": 0, "words": len(geom["words"]),
             })
-    finally:
-        doc.close()
+            continue
+        if grid:
+            cells, source, stacked = header_cells, "grid", 0
+        else:
+            cells, source = resolve_columns(page, header_cells,
+                                            frame=geom["frame"])
+            cells, stacked = merge_stacked_header(bands, index, cells,
+                                                  header_cells)
+        matrix = geo.cell_matrix(bands, cells)
+        header_row = matrix[index] if index is not None else None
+        if grid:
+            header_row = [c["text"] for c in cells]
+        kinds, rows, per_col = [], [], defaultdict(Counter)
+        previous_kind = None
+        for r, row in enumerate(matrix):
+            if r == index:
+                continue
+            profile = gra.band_profile(row)
+            kind = gra.band_kind(profile, cells, previous=previous_kind)
+            previous_kind = kind
+            kinds.append(kind)
+            rows.append(row)
+            for c, text in enumerate(row):
+                per_col[c][gra.value_shape(text)] += 1
+        repeated = gra.repeated_key_columns(rows, cells, kinds)
+        per_page.append({
+            "page": i,
+            "cells": cells,
+            "column_source": source,
+            "columns": [
+                {
+                    "ordinal": c,
+                    "label": gra.normalise_text(cell["text"]),
+                    "path": gra.normalise_text(cell.get("path")
+                                               or cell["text"]),
+                    "width": round(cell["u1"] - cell["u0"], 1),
+                    "bold": 1 if cell["bold"] else 0,
+                }
+                for c, cell in enumerate(cells)
+            ],
+            "stacked": stacked,
+            "header_row": header_row,
+            "kinds": kinds,
+            "rows": rows,
+            "repeated": repeated,
+            "total_bands": kinds.count(gra.KIND_TOTAL)
+                         + kinds.count(gra.KIND_SUBTOTAL),
+            "words": len(geom["words"]),
+            "shapes": {str(c): dict(per_col[c]) for c in per_col},
+        })
 
     usable = [p for p in per_page if p["columns"]]
     if not usable:
@@ -1198,46 +1183,25 @@ def extraction_status(record):
     return {"extractable": 1, "extract_reason": ""}
 
 
-def read_identity(pdf_path, year):
-    """(authority, article, code, year) read back out of the path step 1 wrote.
+def read_identity(year, row):
+    """(authority, article, code) and where the table is, from the table index.
 
-    The path is walked upwards from the file rather than indexed by position,
-    because `Out/PDF` may or may not be its root and the article level is
-    optional: `MAE/A12025.PDF` has no article, `DOG/A1C2/N12025.PDF` has one.
-    Reading the last two components as "authority, article" therefore turned
-    every MAE and MEF table into `PDF/MAE` with an article of `MAE`, which is
-    not a key the primary key can hold -- `article IS 'MAE'` matched nothing and
-    the census counted those tables under an authority named `PDF`.
-
-    So: the file's parent is the article when the grandparent is one of the four
-    ministries, otherwise the parent *is* the authority.
+    `path` is the table's source span, `<file>:<from>-<to>` per segment; the
+    split PDF is not read and not named.
     """
-    path = Path(pdf_path)
-    parent = path.parent
-    grandparent = parent.parent
-    if parent.name in ontology.AUTHORITIES:
-        authority, article = parent.name, None
-    elif grandparent.name in ontology.AUTHORITIES:
-        authority, article = grandparent.name, parent.name
-    else:
-        authority, article = parent.name or ontology.UNKNOWN, None
-    parsed = ontology.parse_stem(path.stem)
-    if parsed is None:
-        code = path.stem
-        file_year = str(year)
-    else:
-        code = parsed["code"]
-        file_year = parsed["year"]
+    segs = source.segments(year, row["key"])
     return {
-        "authority": authority,
-        "article": article,
-        "code": code.upper(),
-        "file_year": int(file_year),
-        "path": str(pdf_path),
-        "src_first": None,
-        "src_last": None,
+        "authority": row["authority"],
+        "article": row["article"] or None,
+        "code": row["code"],
+        "key": row["key"],
+        "path": "+".join(f"{g['source_file']}:{g['pdf_from']}-{g['pdf_to']}"
+                         + ("(cut)" if g["cut"] else "") for g in segs),
+        "src_first": segs[0]["pdf_from"] if segs else None,
+        "src_last": segs[-1]["pdf_to"] if segs else None,
         "index_title": None,
-        "witness": None,
+        "witness": row["witness"],
+        "segments": segs,
     }
 
 
@@ -1257,7 +1221,7 @@ def open_catalog(path, create=True):
 
 
 TY_COLUMNS = (
-    "authority", "article", "code", "year", "path", "pages", "bytes",
+    "authority", "article", "code", "year", "path", "pages",
     "src_first", "src_last", "index_title", "witness", "orientation",
     "mixed_dir", "ruled", "longest_rule", "legible_pages", "garbled_pages",
     "ciphered_pages", "empty_pages", "words", "bands", "n_columns",
@@ -1276,7 +1240,7 @@ def write_record(conn, record, year):
         "authority": record["authority"], "article": record["article"],
         "code": record["code"], "year": int(year),
         "path": record["path"], "pages": record["pages"],
-        "bytes": record["bytes"], "src_first": record["src_first"],
+        "src_first": record["src_first"],
         "src_last": record["src_last"], "index_title": record["index_title"],
         "witness": record["witness"], "orientation": record["orientation"],
         "mixed_dir": record["mixed_dir"], "ruled": record["ruled"],
@@ -1330,63 +1294,11 @@ def write_record(conn, record, year):
 
 
 def fingerprint(record):
-    """Identity of the *input*, so a re-run can tell what moved.
-
-    Size and page count rather than a content hash: the catalog is a
-    measurement of shape, and a page-count change is the signal that would
-    change a shape. Hashing every page of every table would cost more than the
-    rest of the run and answer a question the pipeline does not ask.
-    """
-    raw = f"{record['path']}|{record['bytes']}|{record['pages']}"
+    """Identity of the *input*, so a re-run can tell what moved: the source
+    bytes (SHA-256), the pages and the clips the table is read from."""
+    raw = json.dumps([(g["sha256"], g["pdf_from"], g["pdf_to"], g["clip"])
+                      for g in record["segments"]])
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
-
-
-def attach_manifest(records, manifest_path):
-    """Fold step 1's manifest in as the table's *witness*.
-
-    A table the catalog lists is a table somebody can point at: the volume's own
-    index names it, the PDF outline lists it, or the header scan saw it repeat.
-    Step 1 knows which, and the witness is what separates "the table changed"
-    from "we stopped being able to see the table". See the per-year step 1 script for
-    how the manifest shape changed once and silently disarmed the verifier.
-    """
-    if not manifest_path or not Path(manifest_path).exists():
-        return 0
-    tables = {}
-    with open(manifest_path, encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            items = entry.get("tables")
-            if isinstance(items, dict):          # the pre-ministry-tree shape
-                items = list(items.values())
-            for item in items or []:
-                key = (item.get("authority"), item.get("article"),
-                       str(item.get("code", "")).upper())
-                tables[key] = item
-    seen = 0
-    for record in records:
-        key = (record["authority"], record["article"], record["code"])
-        item = tables.get(key)
-        if not item:
-            continue
-        record["index_title"] = (item.get("title") or item.get("index_title")
-                               or item.get("index_title_it"))
-        record["src_first"] = (item.get("first_page") or item.get("start")
-                               or item.get("src_first"))
-        record["src_last"] = (item.get("last_page") or item.get("end")
-                              or item.get("src_last"))
-        record["witness"] = (item.get("witness") or item.get("source")
-                             or item.get("detected_by") or "header-run")
-        record["src_pages"] = item.get("pages")
-        record["provisional"] = item.get("provisional")
-        seen += 1
-    return seen
 
 
 # --------------------------------------------------------------------------
@@ -1409,7 +1321,7 @@ def write_census(conn, year, path, elapsed):
         " stacked_header, header_stable, grammar, total_bands, extractable,"
         " extract_reason, index_title FROM table_year WHERE year=?"
         " ORDER BY authority, article, code", (int(year),)).fetchall()
-    # The authority is the first directory below `Out/PDF`. `article IS ?` with
+    # `article IS ?` with
     # a NULL parameter never matches, so a table filed directly under its
     # ministry read back as `PDF/...` and the census grouped them under an
     # authority called `PDF`. Keying the lookup on the same tuple the primary
@@ -1510,18 +1422,12 @@ def write_census(conn, year, path, elapsed):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Fingerprint the per-table PDFs of one year into a "
-                    "catalog of table shapes.")
+        description="Fingerprint the tables of one year, read in the source "
+                    "volumes, into a catalog of table shapes.")
     parser.add_argument("--year", required=True,
                         help="reporting year to catalogue")
-    parser.add_argument("--input-dir", default=None,
-                        help="per-table PDFs (default: Out/PDF)")
-    parser.add_argument("--out-root", default=None,
-                        help="output root (default: Out)")
-    parser.add_argument("--catalog", default=None,
-                        help="catalog path (default: <out>/{CATALOG_DIR}/catalog.sqlite)")
-    parser.add_argument("--manifest", default=None,
-                        help="step 1's JSON manifest, for the table's witness")
+    parser.add_argument("--only", action="append", default=None,
+                        help="catalogue only this table key (repeatable)")
     parser.add_argument("--sample", type=int, default=DEFAULT_SAMPLE,
                         help=f"pages per table read for geometry "
                              f"(default: {DEFAULT_SAMPLE})")
@@ -1530,65 +1436,46 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     year = args.year
-    # Defaults follow lib/layout.py: tables from Out/<year>/PDF, step 1's
-    # manifest from Out/.work/<year>/, and the catalog -- an intermediate for
-    # SQL extraction, not something a person reads -- under Out/.work/.
-    input_dir = Path(args.input_dir) if args.input_dir else layout.pdf_dir(year)
-    out_root = Path(args.out_root) if args.out_root else layout.work_dir()
-    if not args.manifest and layout.manifest_path(year).exists():
-        args.manifest = str(layout.manifest_path(year))
-    catalog_dir = out_root / CATALOG_DIR
-    catalog_path = Path(args.catalog) if args.catalog \
-        else catalog_dir / "catalog.sqlite"
-
-    # Every .PDF, then filtered on the PARSED stem rather than on a glob. The
-    # glob used to be `*{year}.PDF`, which stopped matching the moment the
-    # filename grew its V<volume>P<page> tail -- the year is in the middle of the
-    # stem now, not at the end of it -- and step 2 found 0 files and said so, but
-    # a reader who had not just changed the filename would have read "no tables"
-    # as a fact about the archive rather than as the break it was.
-    files = [p for p in sorted(input_dir.rglob(f"*{PDF_EXT}"))
-             if p.is_file() and ontology.parse_stem(p.stem)]
+    index = layout.index_sqlite(year)
+    if not index.exists():
+        print(f"No table index at {index}. Run run_year.py {year} first.")
+        return 1
+    db = sqlite3.connect(index)
+    db.row_factory = sqlite3.Row
+    rows = [dict(r) for r in db.execute(
+        "SELECT * FROM tables WHERE year=? AND pages > 0 ORDER BY rowid",
+        (str(year),))]
+    db.close()
+    if args.only:
+        rows = [r for r in rows if r["key"] in args.only]
+    catalog_dir = layout.work_dir() / CATALOG_DIR
+    catalog_path = catalog_dir / "catalog.sqlite"
     print(f"CatalogueTables -- {year}")
-    print(f"  input:   {input_dir}/<authority>/[<article>/]<table>"
-          f"{year}V<volume>P<page>{PDF_EXT}")
+    print(f"  input:   {index} -> In/{year}/")
     print(f"  catalog: {catalog_path}")
-    print(f"  {len(files)} file(s) found, geometry sampled on {args.sample} "
+    print(f"  {len(rows)} table(s), geometry sampled on {args.sample} "
           f"page(s) per table\n")
-
-    if not files:
-        print(f"No per-table PDFs for {year} under {input_dir}. "
-              f"Run Reports2PDFTables.py {year} first.")
+    if not rows:
         return 1
 
     started = time.time()
     conn = open_catalog(catalog_path, create=not args.dry_run)
     records, failures = [], []
-    for i, path in enumerate(files, 1):
-        label = str(path.relative_to(input_dir))
+    for i, row in enumerate(rows, 1):
+        label = row["key"]
         try:
-            record = catalogue_file(str(path), year, args.sample)
-        except Exception as exc:                      # one bad file, not the year
+            record = catalogue_table(year, row, args.sample)
+        except Exception as exc:                      # one bad table, not the year
             failures.append((label, f"{type(exc).__name__}: {exc}"))
-            print(f"  [{i:>3}/{len(files)}] FAIL {label}: {exc}")
+            print(f"  [{i:>3}/{len(rows)}] FAIL {label}: {exc}")
             continue
         records.append(record)
         if not args.dry_run:
             write_record(conn, record, year)
-        print(f"  [{i:>3}/{len(files)}] {label:<34} "
+        print(f"  [{i:>3}/{len(rows)}] {label:<22} "
               f"{record['pages']:>4}pp {record['orientation']:<8} "
               f"{record['n_columns']:>2}col {record['grammar']:<22} "
               f"{'ok' if record['extractable'] else 'UNREADABLE'}")
-
-    attach_manifest(records, args.manifest)
-    if not args.dry_run and args.manifest:
-        # Re-upserted so the witness and the source span are stored on the row
-        # rather than only in memory. The manifest is read *after* the files,
-        # so this is a second write per table; at 110 tables and ~2 minutes for
-        # the whole year the cost is a few seconds and the alternative is a
-        # catalog whose provenance lives nowhere durable.
-        for record in records:
-            write_record(conn, record, year)
 
     elapsed = time.time() - started
     grammars = Counter(r["grammar"] for r in records)
@@ -1607,20 +1494,13 @@ def main(argv=None):
             print(f"      {label}: {why}")
     print(f"{'=' * 72}")
 
-    if not args.dry_run:
-        jsonl = catalog_dir / f"catalog-{year}.jsonl"
-        with jsonl.open("w", encoding="utf-8") as handle:
-            for record in records:
-                flat = {k: v for k, v in record.items() if k != "page_stats"}
-                flat["page_stats"] = None       # in the database already
-                handle.write(json.dumps(flat, ensure_ascii=False) + "\n")
+    if not args.dry_run and not args.only:
         census = catalog_dir / f"census-{year}.md"
         write_census(conn, year, census, elapsed)
         print(f"  wrote {catalog_path}")
-        print(f"  wrote {jsonl}")
         print(f"  wrote {census}")
     conn.close()
-    return 0
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":

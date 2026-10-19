@@ -78,6 +78,9 @@ CURRENCY_RE = re.compile(r"^\s*(?:€|EUR|euro)\s*", re.IGNORECASE)
 # with no sign at all and names the unit in the column heading. Both forms are
 # stripped before the number is parsed, and `value_shape` reports which was
 # printed so the catalog can tell the two ministries apart.
+# A sign printed before the currency: 2025 MEF EE's credit notes, `-€ 142.942,72`.
+# Moved after it (`€ -142.942,72`), the one form the number pattern reads.
+SIGN_FIRST_RE = re.compile(r"^\s*([-−–])\s*(€|EUR|euro)\s*", re.IGNORECASE)
 TRAILING_CURRENCY_RE = re.compile(r"\s*(?:€|EUR|euro)\s*$", re.IGNORECASE)
 DATE_RE = re.compile(
     r"^\s*(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\s*$")
@@ -121,6 +124,7 @@ def value_shape(text):
         return SHAPE_EMPTY
     if raw in DASHES:
         return SHAPE_DASH
+    raw = SIGN_FIRST_RE.sub(r"\2 \1", raw)
     leading = bool(CURRENCY_RE.match(raw))
     bare = CURRENCY_RE.sub("", TRAILING_CURRENCY_RE.sub("", raw)).strip()
     if TOTAL_RE.search(raw) and not NUMBER_RE.match(bare):
@@ -152,7 +156,7 @@ def parse_number(text):
     observed in this archive but reachable from a future year), for a code like
     `016` -- leading zeros are an identity, not a quantity -- and for a dash.
     """
-    raw = str(text).strip()
+    raw = SIGN_FIRST_RE.sub(r"\2 \1", str(text).strip())
     if raw == "" or raw in DASHES:
         return None
     bare = CURRENCY_RE.sub("", TRAILING_CURRENCY_RE.sub("", raw)).strip()
@@ -224,6 +228,29 @@ def normalise_text(text):
         return ""
     folded = unicodedata.normalize("NFKC", str(text))
     return re.sub(r"\s+", " ", folded).strip()
+
+
+# The longest a header cell may be. Measured against the archive's real column
+# names: the longest is `Materiale oggetto del contratto` at 31 characters
+# (A1) and `Importi Accessori Segnalati` at 28 (EE). A data cell runs to
+# hundreds -- `VITROCISET (oggi LEONARDO), SIRIO PANEL (oggi LEONARDO),
+# INTRTEL, REVELLI, SKF INDUSTRIE, ...` -- so 60 is a wide margin that still
+# separates the two populations.
+HEADER_CELL_MAX_CHARS = 60
+
+# What a header cell may not look like: a header names columns, it does not
+# hold amounts, dates or codes (years it may: 2025 T2 is `2021 ... 2025`). It
+# may name a total: MEF II's last column is `Totale`, MAE A2's `Incidenza % su
+# totale`; a total row gives itself away by its amount.
+NOT_A_LABEL = {SHAPE_NUMBER, SHAPE_CURRENCY, SHAPE_DATE, SHAPE_PERCENT, SHAPE_CODE}
+
+
+def is_label_row(texts):
+    """True when a grid row can be the header: no cell shaped as a value, none
+    as long as a data paragraph. Refuses the first row of a continuation page
+    (2025 EE p2 `86788 | INDIA | Oneri bancari | € 0,00`)."""
+    return (any(texts) and all(len(t) <= HEADER_CELL_MAX_CHARS for t in texts)
+            and not any(value_shape(t) in NOT_A_LABEL for t in texts))
 
 
 # --------------------------------------------------------------------------

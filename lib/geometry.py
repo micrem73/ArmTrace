@@ -129,6 +129,11 @@ RULE_MIN_LEN = 20.0
 # without this its ten columns read as twenty.
 RULE_TOL = 2.5
 
+# The shortest rule the grid header accepts. A wall only counts when it spans
+# the whole header row, so a short one is safe; 2025 `T2` draws its walls one
+# cell high (16 pt).
+WALL_MIN_LEN = 4.0
+
 # Header cells are separated by at least this much reading-space white. The
 # header of A1 is 10 boxed cells whose labels are 8-14pt apart; its *body* rows
 # are separated by ~4pt, which is why the same test cannot be reused for rows.
@@ -485,6 +490,166 @@ def rule_boundaries(page, frame=None, tol=RULE_TOL):
             elif span_u > RULE_MIN_LEN and span_v <= HAIRLINE_MAX:
                 vpos.append(lo_v)
     return {"u": _merge_positions(upos, tol), "v": _merge_positions(vpos, tol)}
+
+
+def rule_segments(page, frame=None, min_len=RULE_MIN_LEN):
+    """Every rule of the page as a segment in reading space, with its extent.
+
+    Returns `{"walls": [(u, v0, v1)], "floors": [(v, u0, u1)]}`: walls run
+    along `v` and divide columns, floors run along `u` and divide rows.
+    `rule_boundaries` keeps only positions, so it cannot tell a column wall
+    from the running head's underline; the grid header needs the extent.
+
+    A stroked rectangle wider than a hairline is a cell drawn as a box (2025
+    `EE` draws its grid that way), so its four edges are rules too; a filled
+    box with no stroke is a shaded cell and is not.
+
+    `min_len` is the shortest segment kept. The grid header lowers it: 2025
+    `T2` draws its column walls cell by cell, each one row high, under 20 pt.
+    """
+    frame = frame or Frame.for_page(page)
+    walls, floors = [], []
+
+    def add(p1, p2):
+        a_u, b_u = frame.u(p1.x, p1.y), frame.u(p2.x, p2.y)
+        a_v, b_v = frame.v(p1.x, p1.y), frame.v(p2.x, p2.y)
+        if abs(b_v - a_v) > min_len and abs(b_u - a_u) <= HAIRLINE_MAX:
+            walls.append(((a_u + b_u) / 2, min(a_v, b_v), max(a_v, b_v)))
+        elif abs(b_u - a_u) > min_len and abs(b_v - a_v) <= HAIRLINE_MAX:
+            floors.append(((a_v + b_v) / 2, min(a_u, b_u), max(a_u, b_u)))
+
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        drawings = []
+    for path in drawings:
+        stroked = "s" in (path.get("type") or "")
+        for item in path.get("items", ()):
+            if item[0] == "l":
+                add(item[1], item[2])
+            elif item[0] == "re":
+                r = item[1]
+                if min(abs(r.width), abs(r.height)) <= HAIRLINE_MAX:
+                    mid_x, mid_y = (r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2
+                    if abs(r.width) <= HAIRLINE_MAX:
+                        add(_P(mid_x, r.y0), _P(mid_x, r.y1))
+                    else:
+                        add(_P(r.x0, mid_y), _P(r.x1, mid_y))
+                elif stroked:
+                    for a, b in ((r.tl, r.tr), (r.bl, r.br), (r.tl, r.bl), (r.tr, r.br)):
+                        add(a, b)
+    return {"walls": walls, "floors": floors}
+
+
+class _P:
+    __slots__ = ("x", "y")
+
+    def __init__(self, x, y):
+        self.x, self.y = x, y
+
+
+def grid_header(page, words, frame=None, tol=RULE_TOL, is_label=None):
+    """The column header a ruled table prints, read off its grid, or None.
+
+    The header is the topmost row of the grid: two floors with at least three
+    walls running from one to the other (two outer edges, one or more column
+    walls). Its columns are the gaps between those walls, and each label is
+    every word printed inside its gap, line by line -- so a label set on two
+    lines (`Numero di operazioni / svolte`, DOG M1) is one label, and labels
+    that run into each other on one line (`Numero di operazioni Stato di
+    avanzamento annuale`) are still two, because a wall separates them. The
+    printed edges beat the gaps between words (DECISIONS.md, 2026-10-17).
+
+    A title underline, the running head's rule or a caption above the table
+    has no walls under it, so it is never taken for the header.
+
+    The columns are those of the first body row when it has more: a table
+    whose rows are labelled leaves the header cell over the labels unprinted
+    (2025 `T2`: no rule above its row names), so that column has an empty
+    label rather than being lost.
+
+    `is_label(texts)` lets the caller refuse a first grid row that is data: a
+    continuation page (2025 `EE` p2) prints no header, and its first row is
+    then not one. What a value looks like is `lib/grammar`'s business, not
+    this module's.
+
+    Returns `{"cells": [{"text", "u0", "u1", "bold"}], "v0", "v1"}`, `v1` being
+    the floor under the header: data starts below it.
+    """
+    frame = frame or Frame.for_page(page)
+    segs = rule_segments(page, frame, min_len=WALL_MIN_LEN)
+    walls = _join_walls(segs["walls"], tol)
+    if len(walls) < 3:
+        return None
+    levels = join_floors(segs["floors"], tol)
+    def walls_across(top, bottom, u_lo, u_hi):
+        return sorted(_merge_positions(
+            [u for u, v0, v1 in walls
+             if v0 <= top + tol and v1 >= bottom - tol and u_lo <= u <= u_hi],
+            tol))
+
+    def next_level(i):
+        for j in range(i + 1, len(levels)):
+            if levels[j][0] - levels[i][0] >= ROW_GAP_MIN:
+                return j
+        return None
+
+    for i, (top, lo, hi) in enumerate(levels):
+        j = next_level(i)
+        if j is None:
+            break
+        bottom, lo2, hi2 = levels[j]
+        u_lo, u_hi = max(lo, lo2) - tol, min(hi, hi2) + tol
+        across = walls_across(top, bottom, u_lo, u_hi)
+        inside = [w for w in words
+                  if top < w.vmid < bottom and u_lo < w.umid < u_hi]
+        if len(across) < 3 or not inside:
+            continue                # the next floor down closes no grid row
+        k = next_level(j)
+        if k is not None:
+            body = walls_across(bottom, levels[k][0],
+                                min(lo2, levels[k][1]) - tol,
+                                max(hi2, levels[k][2]) + tol)
+            if len(body) > len(across) and body[0] <= across[0] + tol \
+                    and body[-1] >= across[-1] - tol:
+                across = body
+        cells = []
+        for a, b in zip(across, across[1:]):
+            mine = sorted((w for w in inside if a < w.umid < b),
+                          key=lambda w: (round(w.v0), w.u0))
+            cells.append({"text": " ".join(" ".join(w.text for w in mine).split()),
+                          "u0": a, "u1": b,
+                          "bold": any(w.bold for w in mine)})
+        if is_label is not None and not is_label([c["text"] for c in cells]):
+            return None             # the grid starts with data: no header here
+        return {"cells": cells, "v0": top, "v1": bottom}
+    return None
+
+
+def join_floors(floors, tol=RULE_TOL):
+    """Collinear floors at one v, as one rule `[v, u0, u1]`: a grid drawn cell
+    by cell (2025 `T2`) gives one floor piece per cell."""
+    levels = []
+    for v, u0, u1 in sorted(floors):
+        if levels and v - levels[-1][0] <= tol:
+            levels[-1][1] = min(levels[-1][1], u0)
+            levels[-1][2] = max(levels[-1][2], u1)
+        else:
+            levels.append([v, u0, u1])
+    return levels
+
+
+def _join_walls(walls, tol):
+    """Collinear wall pieces that touch, joined into one wall: 2025 `T2` draws
+    each wall one text line at a time, so no piece spans a two-line row."""
+    joined = []
+    for u, v0, v1 in sorted(walls, key=lambda w: (round(w[0] / tol), w[1])):
+        last = joined[-1] if joined else None
+        if last and abs(u - last[0]) <= tol and v0 <= last[2] + tol:
+            last[2] = max(last[2], v1)
+        else:
+            joined.append([u, v0, v1])
+    return [tuple(w) for w in joined]
 
 
 def _merge_positions(values, tol):

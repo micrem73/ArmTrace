@@ -47,7 +47,7 @@ Covers stages [1] to [3]. Initial coverage: 2025 first, then each earlier year d
 
 Stages [4] and [5]. SQL extraction reads the original volumes in `In/`, locating each table through `Out/<year>/tablesindex.sqlite`, never the split PDFs: those drop the tagged table structure, page labels, bookmarks and metadata of the source. Order of work: catalogue the table shapes across years, diff them, then the schema, then the extractor with its verification; the choice of reading tool comes last (DECISIONS.md).
 
-- **D1.** SQLite, with a plain `.sql` dump as the deliverable; documented, versioned schema. Decided, not built: one lossless cell table (`stg_cell`) plus curated projections.
+- **D1.** SQLite, with a plain `.sql` dump as the deliverable; documented, versioned schema. Decided 2026-10-19: one table per printed table code, as printed (printed text kept beside each parsed value), plus curated projections later.
 - **D2.** Every row remains traceable to its source: report file, volume, printed page and table key.
 - **D3.** Entities that appear across years (companies, recipient countries, banks, authorities) are normalised, with the original spelling kept. **[decide]** How aggressive normalisation should be and how to record uncertain matches.
 - **D4.** Monetary values keep the original currency and unit as published, parsed exactly (Italian convention, decimal, never floating point); a printed dash is empty, never zero. **[decide]** Whether to add inflation-adjusted or converted values.
