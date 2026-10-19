@@ -33,6 +33,7 @@ from lib.emit import (dump_trash, report as render_report, split_pdf,
                       table_key, table_list, table_plan, write_table_list)
 from lib.pageio import (
     cited_article,
+    cover_code,
     is_table_cover,
     page_names_table,
     page_text,
@@ -59,6 +60,7 @@ from lib.patterns import (
     ANNEXO_RE,
     BARE_CODE_MAX_LINE,
     CODE_RE,
+    COVER_STYLE,
     ELENCO_TITLE,
     FAMILY2_CODES,
     INLINE_CODE,
@@ -84,7 +86,7 @@ from lib.volumes import collect_jobs, group_by_year, sibling_index
 # entry here is a decision: the function is then allowed to differ by year.
 OVERRIDES = ("read_index", "detect_family", "page_code", "page_code_listed",
              "scan_headers", "build_manifest", "resolve_repeats", "stitch",
-             "report_index_plan")
+             "report_index_plan", "declared_tables")
 
 def block_at(edges, page):
     """Ministry owning a page per the volume's INDICE, or None.
@@ -256,13 +258,18 @@ def detect_family(reader, vocabulary):
         singles = [c for c in shaped if re.fullmatch(r"[A-Z]", c)]
         if len(shaped) >= 6 and len(singles) >= 4:
             return 3
-    # No usable index: sample pages and look at the code shape.
+    # No usable index: sample pages and look at the code shape. Dogane pages
+    # are skipped: their M1..P2 are the Dogane's own codes, not the MAE's, and
+    # counting them made 2023 vol. III (the Dogane alone, no index) family 2,
+    # whose style 3 then threw away bare M, MG1-MG18 and MT1-MT13.
     letters = digits = 0
     step = max(1, len(reader.pages) // 25)
     for i in range(0, len(reader.pages), step):
         try:
             text = page_text(reader.pages[i])
         except Exception:
+            continue
+        if ontology.classify_page(text)[0] == ontology.DOG:
             continue
         for m in INLINE_CODE.finditer(text):
             cand = m.group(1)
@@ -365,6 +372,12 @@ def page_code(lines, text, vocabulary, family):
                 if not vocabulary and cand in PROSE_STOPLIST:
                     continue
             return cand, 3
+
+    # A Dogane cover that cut the code onto the line after the keyword
+    # (patterns.COVER_KEYWORD): tried last, when nothing else named the page.
+    code = cover_code(lines)
+    if code:
+        return code, COVER_STYLE
     return None, None
 
 
@@ -1508,6 +1521,43 @@ def difesa_articles(volumes):
         manifest["tables"] = rekeyed
 
 
+def declared_tables(report):
+    """Tables an edition declares by page range, for a volume file name.
+
+    Only for pages no detector can read: scans with no text layer (2023 vol. I,
+    the Difesa annexes). Each row is {authority, article, code, start, end},
+    pdf pages, read off the page images by a person. None by default.
+    """
+    return []
+
+
+def add_declared(volumes):
+    """Put the edition's declared tables into the manifest, in page order.
+
+    Runs after difesa_articles, which reads the article from the page text:
+    a scan has none, and the declared article must stand. A declared range
+    that overlaps a detected table stops the run: two claims on one page.
+    """
+    for volume in volumes:
+        rows = declared_tables(Path(volume["path"]).name)
+        if not rows:
+            continue
+        tables = volume["manifest"]["tables"]
+        for row in rows:
+            key = (row["authority"], row["article"], row["code"])
+            for other, info in tables.items():
+                if info["start"] <= row["end"] and row["start"] <= info["end"]:
+                    raise SystemExit(
+                        f"{volume['label']}: declared {'/'.join(filter(None, key))} "
+                        f"p{row['start']}-{row['end']} overlaps "
+                        f"{'/'.join(filter(None, other))} p{info['start']}-{info['end']}")
+            tables[key] = {"start": row["start"], "end": row["end"],
+                           "pages": row["end"] - row["start"] + 1,
+                           "source": "declared", "provisional": False}
+        volume["manifest"]["tables"] = dict(
+            sorted(tables.items(), key=lambda kv: kv[1]["start"]))
+
+
 def drop_covers(volumes):
     """Start each table after its own cover sheet, so the file holds only the
     pages the table numbers (decided 2026-10-16, DECISIONS.md) -- but only
@@ -1612,7 +1662,7 @@ def main(argv=None):
         epilog=__doc__,
     )
     parser.add_argument("--year", help="anno di riferimento, es. 2024")
-    parser.add_argument("--volume", default="2", choices=["1", "2", "both"],
+    parser.add_argument("--volume", default="2", choices=["1", "2", "both", "all"],
                         help="quale volume processare (default: 2)")
     parser.add_argument("--report", action="append", default=[],
                         help="percorso esplicito del PDF (ripetibile)")
@@ -1706,6 +1756,7 @@ def main(argv=None):
         resolve_repeats(volumes)
         drop_covers(volumes)
         difesa_articles(volumes)
+        add_declared(volumes)
 
         for volume in volumes:
             manifest = volume["manifest"]

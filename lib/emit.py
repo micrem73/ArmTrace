@@ -19,7 +19,7 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 
 from lib import layout, ontology
-from lib.patterns import (MEF_EXHIBIT, PDF_EXT, REL_CONTINUED, REL_HEADING,
+from lib.patterns import (MEF_EXHIBIT, MEF_EXHIBIT_TITLES, PDF_EXT, REL_CONTINUED, REL_HEADING,
                           REL_SALDI)
 from lib.pageio import RUNNING_HEADER, rel_code
 
@@ -375,6 +375,13 @@ def exhibit_headings(page):
                 mef = MEF_EXHIBIT.match(text)
                 if mef:
                     found.append(("Tabella", mef.group(1) or REL_SALDI, y0, y1))
+                else:
+                    # 2023 prints four exhibits under a bare title; this page
+                    # is a relation page, so no annex header to rule it out.
+                    for pattern, code in MEF_EXHIBIT_TITLES:
+                        if pattern.match(text):
+                            found.append(("Tabella", code, y0, y1))
+                            break
             if MINISTRY_LINE.match(text):
                 ministry.append(y0)
     # A MEF exhibit's band opens at the ministry block printed above its caption
@@ -540,7 +547,10 @@ def table_list(readers, manifests, year, labels):
             for cover in manifest.get("covers") or []:
                 if (cover["authority"], cover["article"], cover["code"]) == tkey:
                     notes.append(f"cover V{m_idx + 1}:{cover['page']} dropped")
-            if tkey[2] in (manifest.get("singletons") or []):
+            # Singletons are bare codes, so only a volume holding the table
+            # may speak: 2023 vol. I's MAE M2 is not vol. III's Dogane M2.
+            if tkey[2] in (manifest.get("singletons") or []) \
+                    and any(i == m_idx for i, _s, _e in segments):
                 notes.append(f"singleton V{m_idx + 1}")
         if any(manifests[i].get("folio_offset") is None for i, _s, _e in segments):
             notes.append("no folio: printed = PDF index")

@@ -151,8 +151,15 @@ DIFESA_CODE = re.compile(r"^[0-9]+[A-Z]?$")
 #
 # The tolerance is confined to the keyword itself. The separator before the code
 # still cannot span a newline, and the period is still required, so MAE's "TAB"
-# and a prose "TAB." are unaffected.
-DOG_CODE_RE = re.compile(r"\bT\s*A\s*B\s*\.[^\n]{0,40}?\b([A-Z]{1,3}\d{0,2})\b")
+# and a prose "TAB." are unaffected. One exception, the second branch: the
+# Dogane cover that ends a line on the keyword and prints the code alone on the
+# next (patterns.COVER_KEYWORD), "Riesportazione (RE) TAB." / "M - APPENDICE"
+# on 2023 vol. III p389. Unclassified, that cover lost its article and the
+# table was filed DOG/MAPPENDICE. Callers test for a match only.
+DOG_CODE_RE = re.compile(
+    r"\bT\s*A\s*B\s*\.(?:[^\n]{0,40}?\b([A-Z]{1,3}\d{0,2})\b"
+    r"|[ \t]*\n[ \t]*([A-Z]{1,3}\d{0,2})[ \t]*(?:[-–—][ \t]*APPENDICE[ \t]*)?$)",
+    re.MULTILINE)
 DOG_QUALIFIER = (
     (re.compile(r"Autorizzazioni\s+Globali\s+di\s+Trasferimento", re.IGNORECASE),
      "A10QUATER"),

@@ -117,6 +117,7 @@ from lib.patterns import (
     PDF_EXT,
     REL_ARTICLE,
     REL_CODE,
+    MEF_EXHIBIT_TITLES,
     REL_SALDI,
     REPORTS_DIR,
     STAMP_BAND,
@@ -125,6 +126,8 @@ from lib.patterns import (
 )
 from lib.pageio import (
     appendix_code,
+    cover_code,
+    no_text_layer,
     is_blank,
     is_ciphered,
     is_garbled,
@@ -162,6 +165,10 @@ FIRST_CODE_LOOKUP = 3
 # on a shared word like "Riepilogo".
 TITLE_OVERLAP = 0.6
 SALDI_TITLE = re.compile(r"Riepilogo saldi esportazioni ed? importazioni")
+# Relation exhibits named by a title instead of a code: SALDI in every year,
+# and in 2023 UE, LGP, IAA and FG (patterns.MEF_EXHIBIT_TITLES).
+EXHIBIT_TITLE = {REL_SALDI: SALDI_TITLE,
+                 **{code: title for title, code in MEF_EXHIBIT_TITLES}}
 TITLE_STEM = 6  # letters compared per word: "definitiv-a/-e", "esporta-zione/-zioni"
 
 # There is deliberately no minimum fraction here any more. See check_uniqueness:
@@ -473,6 +480,7 @@ def read_facts(page, fingerprint=True):
         "garbled": is_garbled(text),
         "ciphered": is_ciphered(text),
         "blank": is_blank(lines),
+        "scanned": no_text_layer(lines),
         "folio": sorted(printed_numbers(lines)),
         "fingerprint": page_fingerprint(page) if fingerprint else None,
     }
@@ -583,6 +591,11 @@ def page_code(lines, vocabulary):
     appendix = appendix_code(lines)
     if appendix:
         return appendix
+    # The Dogane cover that cuts the code onto the next line ("Riepilogo per
+    # operatore TAB." / "M1"): the only page of M1..P1 that names them.
+    cover = cover_code(lines)
+    if cover:
+        return cover
 
     # The ministry relation's own numbered exhibits, read as the T-prefixed code
     # the file is named after. Without this a file called T812025.PDF reads as
@@ -765,7 +778,7 @@ def check_uniqueness(pages, code, checks):
     own = hits.get(code, 0)
     legible = [f for f in pages.values() if not f["blank"]]
     readable = [f for f in legible
-                if not f["garbled"] and not f["ciphered"]]
+                if not f["garbled"] and not f["ciphered"] and not f.get("scanned")]
     unreadable = len(pages) - len(readable)
 
     # On a file whose text layer was destroyed at PDF generation time the
@@ -805,17 +818,17 @@ def check_uniqueness(pages, code, checks):
         checks.maybe("uniqueness.foreign_table_mention",
                      f"codici estranei nominati una volta sola: {detail}")
 
-    if own == 0 and code == REL_SALDI:
-        # The one code the document does not print (DECISIONS.md 2026-10-18):
-        # the MEF "Riepilogo saldi esportazioni ed importazioni" is identified
-        # by that title instead.
-        if any(SALDI_TITLE.search("".join(f["text"].split("\n")))
+    if own == 0 and code in EXHIBIT_TITLE:
+        # Codes the document does not print (DECISIONS.md 2026-10-18 and
+        # 2026-10-19): the exhibit is identified by its title instead.
+        title = EXHIBIT_TITLE[code]
+        if any(title.search("".join(f["text"].split("\n")))
                for f in pages.values()):
             checks.ok("uniqueness.own_code_absent",
-                      "codice assegnato, non stampato: titolo 'Riepilogo saldi' presente")
+                      f"codice assegnato, non stampato: titolo '{title.pattern}' presente")
         else:
             checks.bad("uniqueness.own_code_absent",
-                       "né il codice SALDI né il titolo 'Riepilogo saldi' compaiono")
+                       f"né il codice {code} né il titolo '{title.pattern}' compaiono")
     elif own == 0:
         # "The code is not on any page" and "the page that carries the code
         # cannot be read" are different findings, and only the first is a

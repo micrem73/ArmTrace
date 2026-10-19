@@ -10,8 +10,8 @@ detectors."""
 import re
 
 from lib.patterns import (
-    ALLEGATO_HEAD, APPENDIX_CODE, APPENDIX_SUFFIX, ELENCO_HEAD, ELENCO_MIN_CODES,
-    ELENCO_ROW, EXHIBIT_CLOSED, MAX_TRAILING_PAGES, MEF_EXHIBIT, PAGE_NUMBER_RE,
+    ALLEGATO_HEAD, ANNEX_HEADER, APPENDIX_CODE, APPENDIX_SUFFIX, COVER_CODE, COVER_KEYWORD, ELENCO_HEAD, ELENCO_MIN_CODES,
+    ELENCO_ROW, EXHIBIT_CLOSED, MAX_TRAILING_PAGES, MEF_EXHIBIT, MEF_EXHIBIT_TITLES, PAGE_NUMBER_RE,
     PUA_RE, REL_CONTINUED, REL_HEADING, REL_HEADING_SCAN, REL_PREFIX, REL_SALDI, STAMP_BAND, STAMP_NUM, STAMP_SIZE, STAMP_WORD,
     SUBSET_SPACE, TITLE_RE, _WS,
 )
@@ -19,7 +19,9 @@ from lib.patterns import (
 
 # The running header every page of the printed act carries, which is not part
 # of any table: the two chambers, the legislature line and the folio.
-RUNNING_HEADER = re.compile(r"Senato della Repubblica|Camera dei Deputati|LEGISLATURA")
+# "LEGISLA TURA": pypdf splits the word on 2023 vol. III's covers, and the line
+# it leaves behind hid 13 Dogane covers from is_table_cover.
+RUNNING_HEADER = re.compile(r"Senato della Repubblica|Camera dei Deputati|LEGISLA\s*TURA")
 COVER_MAX_LINES = 8
 COVER_MAX_CHARS = 160
 
@@ -199,6 +201,35 @@ def appendix_code(lines):
 
 
 
+def cover_code(lines):
+    """The code a Dogane cover prints under its cut keyword, or None
+    (patterns.COVER_KEYWORD)."""
+    for j, line in enumerate(lines):
+        if not COVER_KEYWORD.search(line) or j + 1 >= len(lines):
+            continue
+        m = COVER_CODE.match(lines[j + 1].strip())
+        if m:
+            suffix = APPENDIX_SUFFIX if "APPENDICE" in lines[j + 1].upper() \
+                else ""
+            return f"{m.group(1).upper()}{suffix}"
+    return None
+
+
+
+def no_text_layer(lines):
+    """True for a scanned page: text, but only the act's own furniture.
+
+    2023 vol. I prints the Difesa section as images; the act's running header
+    and folio are the only text on them ("XIX LEGISLA TURA ... DOC. LXVII"),
+    so a reader that counts text as legible would call them 100% readable.
+    """
+    if not lines:
+        return False
+    return all(RUNNING_HEADER.search(ln) or PAGE_NUMBER_RE.match(ln)
+               or "LXVII" in ln for ln in lines)
+
+
+
 def is_blank(lines):
     """True for a separator page: no text, or the Italian "PAGINA BIANCA"."""
     if not lines:
@@ -250,8 +281,15 @@ def relation_exhibits(text, open_code):
     band too. Returns the exhibit this page leaves open, for the next page.
     """
     joined = "".join(text.split("\n"))
-    starts = [(m.start(), m.group(1) or REL_SALDI)
-              for m in MEF_EXHIBIT.finditer(joined)]
+    coded = list(MEF_EXHIBIT.finditer(joined))
+    starts = [(m.start(), m.group(1) or REL_SALDI) for m in coded]
+    # A bare title opens an exhibit unless "Tabella <code> - " just printed it.
+    if not ANNEX_HEADER.search(text):
+        for pattern, code in MEF_EXHIBIT_TITLES:
+            for t in pattern.finditer(joined):
+                if not any(0 <= t.start() - m.end() <= 2 for m in coded):
+                    starts.append((t.start(), code))
+        starts.sort()
     head = joined[:starts[0][0]] if starts else joined
     found = []
     if open_code and "€" in head:

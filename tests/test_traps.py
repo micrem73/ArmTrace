@@ -241,3 +241,95 @@ def test_totals_row_label_is_its_leftmost_line():
     lines = [(518.3, 531, "6.475.669.142,80", 307), (518.4, 531, "€ 570.708.294,23", 419),
              (519.1, 532, "Totali (Imp + Esp.)", 183)]
     assert first_row_label(lines) == "Totali (Imp + Esp.)"
+
+
+def test_dogane_cover_with_the_code_on_the_next_line():
+    """2023 vol. III p345: "Riepilogo per operatore TAB." / "M1" is the only
+    place M1 is named; its data pages print no code, so P swallowed M1..P1. On
+    p389 the same shape left the cover unclassified and the table lost its
+    article (DOG/MAPPENDICE instead of DOG/A1C89/MAPPENDICE)."""
+    from lib.engine import page_code
+    from lib.ontology import classify_page
+    from lib.patterns import COVER_STYLE
+    cover = ["Esportazione Definitiva (EX)", "Riepilogo per operatore TAB.", "M1"]
+    assert page_code(cover, "\n".join(cover), set(), 1) == ("M1", COVER_STYLE)
+    appendix = "Programmi Intergovernativi\nRiesportazione (RE) TAB.\n M - APPENDICE\n"
+    assert classify_page(appendix) == ("DOG", "A1C89", None)
+    assert classify_page("si veda la TAB.\nIl totale delle operazioni\n")[0] is None
+
+
+def test_dogane_pages_do_not_make_a_volume_family_2():
+    """2023 vol. III holds the Dogane alone and has no index. Its sampled pages
+    print M1..P2, which made it family 2 (MAE), and family 2's style 3 dropped
+    bare M, MG1-MG18 and MT1-MT13: 20 tables instead of 51."""
+    from lib.engine import detect_family
+
+    class Page:
+        def __init__(self, text):
+            self.text = text
+
+    class Reader:
+        pages = [Page("Tipo di operazione: Esportazione Definitiva (EX) TAB. M2\n"),
+                 Page("Licenze Globali di Progetto TAB. MG4\n")]
+
+    import lib.engine as engine
+    saved = engine.page_text
+    engine.page_text = lambda page: page.text
+    try:
+        assert detect_family(Reader(), set()) == 1
+    finally:
+        engine.page_text = saved
+
+
+def test_bare_relation_exhibit_titles():
+    """2023 vol. II p8-10 prints four MEF relation exhibits without 'Tabella
+    <code> -' (2024 and 2025 print it before the same titles). The annex repeats
+    two titles (p364 IAA, p539 LGP) under its 'ELENCO TABELLE' header."""
+    from lib.pageio import relation_exhibits
+    page8 = (MEF_BLOCK + "Riepilogo saldi importazioni intracomunitarie \nTotali \nUE \n"
+             "€ 358.644.372,28 \n" + MEF_BLOCK
+             + "Licenze Globali di programma di cooperazione \nAEREA S.p.A. € 1,00 \n")
+    rel, still_open = relation_exhibits(page8, None)
+    assert rel == [("Tabella", "UE"), ("Tabella", "LGP")] and still_open == "LGP"
+    annex = ("ELENCO TABELLE\n" + MEF_BLOCK + "IAA\nIntermediazioni per Aziende - "
+             "Riepilogo generale\nTabella\nX € 1,00\n")
+    assert relation_exhibits(annex, None) == ([], None)
+    coded = MEF_BLOCK + "Tabella FG - Finanziamenti-Garanzie per intermediari - Riepilogo generale\n"
+    assert relation_exhibits(coded, None)[0] == [("Tabella", "FG")]
+
+
+def test_a_scan_is_not_a_legible_page():
+    """2023 vol. I p926-944: the Difesa annexes are images, and the act's own
+    running header is their only text. Counted as legible, the verifier failed
+    all five for not printing their code."""
+    from lib.pageio import no_text_layer
+    scan = ["Senato della Repubblica Camera dei Deputati",
+            "XIX  LEGISLA TURA − DISEGNI DI LEGGE E RELAZIONI - DOCUMENTI -  DOC. LXVII, N. 2 VOLUME I",
+            "–    927    –"]
+    assert no_text_layer(scan)
+    assert not no_text_layer(scan + ["MINISTERO DELLA DIFESA - Annesso 3A"])
+    assert not no_text_layer([])
+    from VerifyTables import page_code
+    assert page_code(["Riepilogo per operatore TAB.", "M1"], set()) == "M1"
+
+
+def test_a_segue_page_continues_its_exhibit():
+    """2023 vol. I p41 is headed "SEGUE Tabella 8.8" and holds the table's
+    "Totale per area" row; unread, T88 stopped a page short and its total went
+    to the trash."""
+    from lib.pageio import rel_heading
+    assert rel_heading("SEGUE Tabella 8.8") == ("Tabella", "8.8")
+    assert rel_heading("Tabella 8.8") == ("Tabella", "8.8")
+    assert rel_heading("Nella Tabella 8.8 si vede") is None
+
+
+def test_a_cover_whose_header_pypdf_splits_is_still_a_cover():
+    """2023 vol. III p393: pypdf prints the act's header after the cover's
+    caption and splits it ("XIX  LEGISLA TURA"); unrecognised as furniture, it
+    hid the "TAB. O" ending and DOG/A1C89/O kept its cover."""
+    from lib.pageio import is_table_cover
+    p393 = ("Programmi Intergovernativi\n \nImportazione Definitiva (IM) \nTAB. O\n"
+            "Senato della Repubblica Camera dei Deputati\n"
+            "XIX  LEGISLA TURA − DISEGNI DI LEGGE E RELAZIONI - DOCUMENTI -  DOC. LXVII, N. 2 VOLUME III\n"
+            "– 1907    –\n")
+    assert is_table_cover(p393, "O")

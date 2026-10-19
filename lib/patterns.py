@@ -93,6 +93,25 @@ APPENDIX_CODE = re.compile(
 )
 
 
+# A Dogane cover whose last line ends with the keyword, the code standing alone
+# on the line after (2024 vol. II, fifteen covers; 2023 vol. III):
+#
+#     Riepilogo per operatore TAB.
+#     M1
+#
+#     Reimportazione(RI) TAB.
+#     O - APPENDICE
+#
+# The covers are the only place M1..P1 and several MG codes are named: their
+# data pages print no code, so without this the table before swallows them.
+COVER_KEYWORD = re.compile(r"(?i:T\s*a\s*b\s*e\s*l\s*l\s*a|TAB)\s*\.\s*$")
+COVER_CODE = re.compile(
+    rf"^({CODE_TAIL})(?![A-Za-z0-9])(?:\s*[-–—]\s*APPENDICE)?$")
+# Its own style number: a cover is not a running header, so MIN_RUN (style 3
+# only) does not apply to it.
+COVER_STYLE = 8
+
+
 # The suffix the code carries from then on, and it is deliberately glued to the
 # base code rather than separated by a space. The manifest code and the
 # filename stem have to be the same string: the verifier reads the code back out
@@ -251,9 +270,10 @@ REL_PREFIX = "T"
 
 
 # "Tabella 8.8 (parte 1 di 2)" and "Grafico 9". The whole line, nothing either
-# side. Both kinds because both are band boundaries; see rel_heading.
+# side. Both kinds because both are band boundaries; see rel_heading. "SEGUE
+# Tabella 8.8" heads a continuation page (2023 vol. I p41): the same exhibit.
 REL_HEADING = re.compile(
-    r"^(Tabella|Grafico)\s+(\d+(?:\.\d+)?)"
+    r"^(?:SEGUE\s+)?(Tabella|Grafico)\s+(\d+(?:\.\d+)?)"
     r"(?:\s*\(\s*parte\s+\d+\s+di\s+\d+\s*\))?\s*$", re.IGNORECASE)
 
 
@@ -301,6 +321,21 @@ MEF_EXHIBIT = re.compile(
     r"Tabella\s+([A-Z]{1,3}\d{0,2})\s+[-–]\s"
     r"|Riepilogo saldi esportazioni ed? importazioni")
 REL_SALDI = "SALDI"
+# Four exhibit titles 2024 and 2025 print after "Tabella <code> - " and 2023
+# prints bare (vol. II p8-10). The code is the one those editions print with
+# the same title. The annex repeats two titles (2023 p364 IAA, p539 LGP), but its
+# pages carry the running header "ELENCO TABELLE" (ANNEX_HEADER), which the
+# relation's pages never do: such a page reads no title. (The code beside it is
+# no witness: pypdf moves it to a line of its own, as it does the relation's
+# row code "UE" on p8.)
+MEF_EXHIBIT_TITLES = (
+    (re.compile(r"Riepilogo saldi importazioni intracomunitarie"), "UE"),
+    (re.compile(r"Licenze Globali di programma di cooperazione"), "LGP"),
+    (re.compile(r"Intermediazioni per Aziende\s*[-–]\s*Riepilogo generale"), "IAA"),
+    (re.compile(r"Finanziamenti-Garanzie per intermediari\s*[-–]\s*Riepilogo generale"),
+     "FG"),
+)
+ANNEX_HEADER = re.compile(r"ELENCO\s+TABELLE")
 REL_ARTICLE = "REL"
 REL_CONTINUED = "Segue"
 # What closes an exhibit: its grand total row. A page after an unclosed exhibit

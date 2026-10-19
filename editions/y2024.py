@@ -11,7 +11,7 @@ copy of commit bb05615, reading pages through the page cache.
     against the export stamps (place_from_plan, stamp_witness).
   * vol. II: the Dogane's own code space (bare M/N/O/P, MG1-MG18, MT1/7/13) is
     outside the MEF vocabulary; fifteen covers print the code under a cut
-    keyword (cover_code); vol. II is family 1, not 3 (detect_family).
+    keyword (pageio.cover_code, in the engine); vol. II is family 1, not 3 (detect_family).
 
 The volumes are separate documents whose folios run continuously, and every
 2024 table stops before printed 1000: no table straddles the join, so stitch()
@@ -56,7 +56,7 @@ from lib.engine import (
     trim_trailing,
     trim_trailing_blanks,
 )
-from lib.patterns import APPENDIX_SUFFIX, CODE_TAIL, rel_article
+from lib.patterns import rel_article
 
 VOLUME = "both"
 
@@ -192,51 +192,12 @@ def read_index(reader):
     return set(), {}, {"page": None, "rows": []}
 
 
-# A line the export header cut between the keyword and the code, and the code
-# that follows it.
+# The Dogane covers that cut the code onto the line after the keyword are read
+# by the engine (pageio.cover_code, shared with 2023 vol. III).
 #
-# The Dogane prints every table of its annex as a cover page plus data pages,
-# and on fifteen of the covers the cover's own last line ends with the keyword
-# and the code stands alone on the line after:
-#
-#     Riepilogo per operatore TAB.          <- p1071
-#     M1                                   <- p1071
-#
-#     Programmi Intergovernativi
-#     Reimportazione(RI) TAB.              <- p1120
-#     O - APPENDICE                        <- p1120
-#
-# lib/pageio.appendix_code() already probes a joined pair, but only for the
-# APPENDICE shape, and nothing else sees a bare code on the next line at all.
-# Those fifteen covers are the ONLY place MG3, MG6, MG8, MG11, MG15 and MG18
-# are named, so without this the Dogane's whole art. 11 comma 5-bis series is
-# invisible and the table before it swallows the lot.
-COVER_KEYWORD_2024 = re.compile(r"(?i:T\s*a\s*b\s*e\s*l\s*l\s*a|TAB)\s*\.\s*$")
-
-
-COVER_CODE_2024 = re.compile(
-    rf"^({CODE_TAIL})(?![A-Za-z0-9])(?:\s*[-–—]\s*APPENDICE)?$")
-
-
-# Styles this year adds. Their own numbers, because every existing style is a
-# shape that could be a law table and neither of these is.
-COVER_STYLE_2024 = 8      # the shredded cover above
-
-
+# Styles this year adds. Their own number, because every existing style is a
+# shape that could be a law table and this one is not.
 DOGANE_STYLE_2024 = 9     # a code from the Dogane's own scheme, below
-
-
-def cover_code(lines):
-    """The code a cover page prints under its cut keyword, or None."""
-    for j, line in enumerate(lines):
-        if not COVER_KEYWORD_2024.search(line) or j + 1 >= len(lines):
-            continue
-        m = COVER_CODE_2024.match(lines[j + 1].strip())
-        if m:
-            suffix = APPENDIX_SUFFIX if "APPENDICE" in lines[j + 1].upper() \
-                else ""
-            return f"{m.group(1).upper()}{suffix}"
-    return None
 
 
 def detect_family(reader, vocabulary):
@@ -336,9 +297,6 @@ def page_code(lines, text, vocabulary, family, dogane=False):
     code, style = _page_code_shared(lines, text, vocabulary, family)
     if code:
         return code, style
-    code = cover_code(lines)
-    if code:
-        return code, COVER_STYLE_2024
     if not dogane:
         return None, None
     for line in lines:

@@ -263,3 +263,38 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   content (3+ euro amounts or more lines than a cover). Dogane covers pass: marker, no content.
 - **A totals row printed just under a grid belongs to the table** (`Totali`, within 24 pt of
   the last rule; 2024 p78).
+
+## 2026-10-19 — 2023: three volumes, scanned Difesa annexes, bare exhibit titles
+
+- **An edition may read every volume of its year** (`VOLUME = "all"`). 2023 is three
+  volumes (MAE/Difesa/Interno, MEF, Dogane) whose folios run on; `both` reads only I and II.
+- **Scanned pages are declared, not detected.** 2023 vol. I prints the Difesa section
+  (p879-944) and the Interno page (p945) as images with no text layer. By review: the
+  annexes are cut from a page map in `editions/y2023.py` (`declared_tables`, an engine
+  override), read off the scans and filed as in 2025: Annesso 2 → `DIFESA/A5/2`, 3A-3C →
+  `A2C6` (the scans print "art. 2 comma 6"), Annesso 4 → `DIFESA/4`. Their `source` is
+  `declared`. A declared range overlapping a detected table stops the run. SQL extraction
+  will need OCR for them. The Interno page is not a table (trash), as in 2025.
+- **The Dogane cut-keyword cover is read by the engine** (`pageio.cover_code`, moved from
+  `editions/y2024.py`): "Riepilogo per operatore TAB." / "M1" names M1-P1, whose data pages
+  print no code. The same cover shape now classifies as Dogane (`ontology.DOG_CODE_RE`), so
+  its article is kept (2023 vol. III p389 was filed `DOG/MAPPENDICE`).
+- **Dogane pages do not vote on the code family.** A volume with no index is sampled for
+  code shapes; the Dogane's M1-P2 made 2023 vol. III (Dogane only) family 2, whose style 3
+  drops bare M, MG and MT. Dogane pages are now skipped in that sample.
+- **A bare relation-exhibit title names its exhibit.** 2023 prints four MEF relation
+  exhibits without `Tabella <code> -`; the code is the one 2024 and 2025 print before the
+  same title (UE, LGP, IAA, FG). Annex pages, which repeat two titles, carry the running
+  header "ELENCO TABELLE" and read no title. Reversible default, like `SALDI`.
+- **The verifier reads what step 1 reads.** A page whose only text is the act's running
+  header and folio is a scan (`pageio.no_text_layer`) and counts as unreadable, like a
+  garbled one: the code check is a warning there, not a failure. The cut-keyword cover
+  names its code to the verifier too, and an exhibit named by a title passes on its title,
+  as SALDI already did.
+- **The relation cutter knows the bare titles** (`emit.exhibit_headings`): before this the
+  four 2023 exhibits were written as files of 0 pages.
+- **Check round 1 (2023): two code defects, fixed test-first.** "SEGUE Tabella 8.8" heads
+  a continuation page (vol. I p41): `REL_HEADING` reads it, and T88 keeps its total row.
+  pypdf splits the act's header into "XIX  LEGISLA TURA" on vol. III's covers; unfiltered,
+  it hid 13 Dogane covers (A1C89/O, MG7-MG18) from `is_table_cover`, and they were kept.
+  `RUNNING_HEADER` now reads `LEGISLA\s*TURA`. 2024 and 2025 snapshots unchanged.

@@ -101,7 +101,13 @@ def collect_jobs(args):
         raise SystemExit(
             f"Nessun anno trovato in {reports_dir}/: usa --year"
         )
-    volumes = ["1", "2"] if args.volume == "both" else [args.volume]
+    if args.volume == "all":             # every volume in the folder (2023: three)
+        folder = Path(reports_dir, year)
+        volumes = sorted({str(n) for n in (parse_volume(p.stem)
+                                           for p in folder.glob("*.pdf")) if n},
+                         key=int)
+    else:
+        volumes = ["1", "2"] if args.volume == "both" else [args.volume]
     return [(str(find_report(year, v, reports_dir)), year)
             for v in volumes]
 
