@@ -289,3 +289,6 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   (`columns.tsv`: `sum else ammontare@valuta=EUR unless val_fini_dog`) is not in the database, so
   `sum(euro)` gives €385 M of a printed €7.72 bn. The page warns on A1 and the questions write the
   rule in SQL; the database should carry it.
+- **Published from a local build to the `gh-pages` branch, one commit with no history**
+  (`tools/publish_site.sh`). CI cannot build it: the sources and `Out/` are not in git. The code
+  history stays on the code branches; the published data is reproducible from them.
