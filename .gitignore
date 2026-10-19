@@ -28,3 +28,6 @@ Out/
 *.XLS
 *.xlsx
 *.XLSX
+
+# Built explorer (tools/build_site.py): regenerable from web/ and Out/.
+site/

@@ -1,6 +1,6 @@
 # ArmTrace: import pipeline
 
-ArmTrace makes Italian arms export data queryable for journalists, activists and local administrators. This file covers only the import pipeline: official reports in, a validated SQL database out. Do not build the query server, the LLM layer or any interface here.
+ArmTrace makes Italian arms export data queryable for journalists, activists and local administrators. This file covers the import pipeline (official reports in, a validated SQL database out) and the public explorer in `web/` (section below). Do not build the query server or the LLM layer here.
 
 ## Source and goal
 
@@ -24,6 +24,13 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - Checker eval: `make eval` (`tools/eval_checker.py 2025`: 26 cases, about $4 and 3 min). It runs the table-checker on known-good and deliberately broken cuts (`tests/evals/checker-2025.tsv`). Run it after changing `.claude/agents/table-checker.md`, the `check-year` skill or a convention, after a model change, and before a new year. A wrong cut that gets PASS is a failure. Add a case for every miss a person finds.
 - Hooks (`.claude/hooks/guard.py`): Edit/Write is blocked on `In/<year>/` and on `Out/` outside `Out/.work/`. Each edited `.py` file is linted.
 - Debug into a scratch tree with `--out <dir>`, so the last run's `Out/` is not overwritten.
+
+## Explorer (`web/`)
+
+- A static page that loads the whole database in the browser (sql.js) and queries it read-only: Domande (curated questions, `web/domande.json`: answer, chart, the query), Tabelle (extracted tables row by row; all found with a switch), SQL (editor, schema, share link), Metodo (coverage, checks, limits, sources). Italian only, no LLM.
+- A new question is checked against the source pages before it is published (a printed total or another table that prints the same figure), and the build runs every question: it fails on an error, no rows, or a chart column the query does not return.
+- Build: `python3 tools/build_site.py [--root <dir with Out/ and In/>]` → `site/` (gitignored) with `site/armtrace.sqlite`: the rows of every `Out/<year>/armtrace-<year>.sqlite`, plus `catalogo` (from `tablesindex.sqlite`) and `fonte` (official URL per volume, from `In/manifest.tsv`). Same input gives the same bytes.
+- Try it: `python3 -m http.server -d site 8000`. Every row links to `<official url>#page=<pdf_page>`; nothing shown is computed beyond what the query asks; printed text beside each value.
 
 ## Output (`lib/layout.py`)
 
