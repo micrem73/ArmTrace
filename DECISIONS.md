@@ -298,3 +298,45 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   pypdf splits the act's header into "XIX  LEGISLA TURA" on vol. III's covers; unfiltered,
   it hid 13 Dogane covers (A1C89/O, MG7-MG18) from `is_table_cover`, and they were kept.
   `RUNNING_HEADER` now reads `LEGISLA\s*TURA`. 2024 and 2025 snapshots unchanged.
+
+## 2026-10-19 — 2022: shifted fonts read back, export stamp as witness, Dogane outside the MEF vocabulary
+
+- **Scanned Difesa annexes are declared, as in 2023** (`editions/y2022.py`): vol. I
+  p999-1017, Annesso 2 → `DIFESA/A5/2`, 3A-3C → `A2C6`, 4 → `DIFESA/4`. Annesso 1 is the
+  Gazzetta Ufficiale's Elenco Materiali, pasted in (p958-998), no table. The Interno
+  section is a cover and a blank page (trash).
+- **A shifted font is read back, not given up** (`pageio.decipher`). The pages
+  `is_ciphered` flags on 2022 vol. I (p938-950: MAE N1-P2) are Identity-H fonts whose glyph
+  index is the character code less 29 (`patterns.CIPHER_SHIFT`); shifted back they read
+  exactly ("TAB N1", amounts, country names). The earlier note called them unrecoverable.
+  Only shifted lines of a flagged page are touched. Other years flagged (2016-2018) are not
+  yet checked for the same shift.
+- **The MAE export stamp names its table** ("MAECI - UAMA - CENTRO INFORMATICO Pagina 1 di
+  1 TAB M2", `patterns.STAMP_LINE`, style 9). A stamp is no prose mention, so MIN_RUN does
+  not apply: 2022 B5 and M2 are one page each and had been dropped (2023 found them by
+  bookmark; 2022 has none). A table's trailing page whose stamp names another report is not
+  the table's (`pageio.trim_foreign_stamp`): E no longer takes the VALORE summary (p798),
+  which stays untabled as in 2025.
+- **On a Dogane page the vocabulary does not filter style 3.** 2022 vol. II's MEF ELENCO
+  prints "Tabella AA" alone on a line, so `read_index` takes it for the volume's index, and
+  its 12 codes rejected every Dogane "TAB. M". Dogane codes are their own space (as for the
+  family vote, 2023). `read_index` itself is unchanged, because the 2012 index has the same
+  shape.
+- **A caption glued to the keyword still names the code**: "operatoreTAB. M1" (vol. II
+  p927, p938, p941), in `INLINE_CODE` and `ontology.DOG_CODE_RE`. Only a lowercase letter
+  then exact `TAB.`; the uppercase join of 2024 ("MALTAB.M.A.") still reads nothing.
+- **FG's 2022 relation title** says "per istituti di credito" where 2023 says "per
+  intermediari"; both name FG.
+- **The printer's barcode leaf is blank** (`pageio.is_blank`): vol. II ends "PAGINA
+  BIANCA", then a page with only "*190670036670*"; MT13 had kept both.
+- 2023, 2024 and 2025 snapshots unchanged by all of the above.
+- **Check round 1 (2022): one code defect, fixed test-first.** LGP's last rows and total
+  open vol. II p9, above IAA, in a font whose euro sign pypdf reads as "Φ"; the
+  continuation test looked for "€" only, so the exhibit stopped at p8. A head holding the
+  open exhibit's grand total now continues it too (`pageio.relation_exhibits`). 2023-2025
+  snapshots unchanged.
+- **2025 table list: eight "singleton V2" notes gone, pages unchanged.** MAE M2, N2, O2 are
+  one-page tables their stamp names; style 9 keeps them, so they are no longer a discarded
+  one-page hit, and the note (which also leaked onto the Dogane M2/N2/O2 of the same bare
+  code) is no longer written. `tests/golden/2025-tables.tsv` regenerated for the notes
+  column only; the 2025 snapshot is byte-identical.

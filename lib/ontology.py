@@ -155,9 +155,11 @@ DIFESA_CODE = re.compile(r"^[0-9]+[A-Z]?$")
 # Dogane cover that ends a line on the keyword and prints the code alone on the
 # next (patterns.COVER_KEYWORD), "Riesportazione (RE) TAB." / "M - APPENDICE"
 # on 2023 vol. III p389. Unclassified, that cover lost its article and the
-# table was filed DOG/MAPPENDICE. Callers test for a match only.
+# table was filed DOG/MAPPENDICE. Callers test for a match only. The keyword
+# may also be glued to a lowercase caption, "operatoreTAB. M1" (2022 vol. II
+# p927), as in patterns.INLINE_CODE.
 DOG_CODE_RE = re.compile(
-    r"\bT\s*A\s*B\s*\.(?:[^\n]{0,40}?\b([A-Z]{1,3}\d{0,2})\b"
+    r"(?:\b|(?<=[a-z]))T\s*A\s*B\s*\.(?:[^\n]{0,40}?\b([A-Z]{1,3}\d{0,2})\b"
     r"|[ \t]*\n[ \t]*([A-Z]{1,3}\d{0,2})[ \t]*(?:[-–—][ \t]*APPENDICE[ \t]*)?$)",
     re.MULTILINE)
 DOG_QUALIFIER = (
