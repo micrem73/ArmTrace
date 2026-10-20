@@ -366,11 +366,37 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   percentages under the amounts' labels: a label runs until its `:`, a line with no value
   after a closed label heads the lines under it, a value before `%` is `<label> (%)`.
 - **A text printed twice a hair apart is printed once** (MAE B4 fakes bold so: `AArreeaa`,
-  or `Area Geografica` twice, by whether the 0.2 pt shift splits the run). Both forms are
+  or `Area Geografica` twice, by whether the 0.2 pt shift splits the run). A repeated glyph is
+  the same glyph only within half its own width: two real full stops (`S.p.A..`) stand a whole
+  width apart. Both forms are
   dropped in `geometry.lines_of`, so the catalogue and the extractor read the same text.
 - **MEF II's `Ditta` is carried down** (maintainer, 2026-10-20: "table II is a visualisation,
   not raw data"). The company is printed on its first line and in its `<Ditta> Totale`; every
   line between is that company's. New column type `carry` (`columns.tsv`): the name fills the
   lines under it up to the subtotal, which must name the same company, or an issue is recorded
-  and nothing is overwritten. 2025: all 3.991 lines named; 2 issues where the source spells a
-  name two ways (`AVIO S.p.A.` / `AVIO S.p.A.. Totale`, `FERRETTI S.p. A.` / `S.p..A.`).
+  and nothing is overwritten. 2025: all 3.991 lines named, no issue. (The 2 issues first
+  reported, `AVIO S.p.A.` vs `AVIO S.p.A.. Totale`, were mine: the overprinted-bold rule
+  dropped the second of two full stops. The importer eval caught it; the rule now compares a
+  repeated glyph with its own width, and M too reads `AVIO S.P.A..` as printed.)
+- **Tables are stored as facts; the printed table is rebuilt from them** (maintainer,
+  2026-10-20: "tables in reports are often visualisations of raw data; a total is generated,
+  not a row"). Each SQL table holds its data rows only; a group printed once is a column on
+  every row (`group`, `carry`). Every figure the table prints that is not a fact (subtotal,
+  total, summary line) is in `printed_figure`, at the place printed; `view_def` says how the
+  table is laid out. `lib/views.py` rebuilds the printed table from the database alone
+  (`from_db`, `render`): headings, carried names on their first row, subtotals and totals
+  showing the **printed** figure, flagged with the facts' sum where they differ (maintainer's
+  choice: the official figure is the printed one). The rebuild is the import's check: for the
+  8 pilot tables it reproduces the print row for row (29.000 rows, no difference), and a
+  plain `SUM` is right (MEF II `totale` = its `Totale Complessivo` to the cent). Why not
+  store the printed rows: a user summing a column counted subtotals and totals too, and the
+  official rounding (A1's total is the sum of rounded subtotals) cannot be regenerated.
+- **A summary table agrees with the table it summarises** (`lib/data/views.tsv`, checked when
+  the year is assembled). MAE A2 = A1 for all 159 operators (authorisations; EURO and customs
+  value equal to A1's *printed* subtotals, rounding included). DOG M1 = M in euro for all 200
+  M1 lines (190 names). A first comparison of mine said M1 disagreed: I had merged names M1
+  keeps apart, and misread `AVIO S.P.A..` (above).
+  What does not rebuild M1 from M: M1 splits some names over two lines (`CPM ELETTRONICA SRL`
+  twice) by a key M does not print, counts operations (17.806) where M prints lines (6.245),
+  and adds `Utilizzo anni precedenti` once per authorisation while M repeats it on each line.
+  So both are stored, and their agreement is a check, not a rebuild.

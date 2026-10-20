@@ -21,10 +21,16 @@ Run from the repo root:
     python3 tools/import_queue.py <year> --render <key> 2>/dev/null
 
 It prints JSON: `images` (PNG per page, with PDF and printed page), and, in `check` mode,
+for each image `rebuilt`: that page's rows as the database rebuilds the printed table
+(`[kind, cell, cell, ...]`, kind `group` | `data` | `subtotal` | `total` | `summary`); and
 `db` and `sql_table` (the table's own SQLite database), `columns` (SQL column, type, label
 read from the header), `rows` by kind, `checks` by status, `not_pass` (every check that is
-not a PASS), `issues`, `notes`, `printed_totals`. In `columns` mode, `header`: the labels
-read off the printed grid (null when none was found).
+not a PASS), `issues`, `notes`, `summary`. In `columns` mode, `header`: the labels read off
+the printed grid (null when none was found).
+
+The database holds the table's facts only (its data rows); headings, subtotals and totals
+are layout, stored as the figures the table prints and put back by the rebuild. So the
+rebuilt rows must be the printed table: judge them against the image.
 
 Look at every image with Read. Pages are often rotated 90°; read them anyway.
 
@@ -51,13 +57,14 @@ header reader must be fixed before the columns can be agreed.
 
 ## Mode `check`: judge the rows
 
-Query the rows with `sqlite3` or Python on `db` (`SELECT * FROM <sql_table> WHERE
-pdf_page=<n> ORDER BY row_ord`), page by page against the images:
+Compare each image with its `rebuilt` rows, line by line. For more than they show, query the
+facts with `sqlite3` or Python on `db` (`SELECT * FROM <sql_table> WHERE pdf_page=<n> ORDER
+BY row_ord`; the printed figures are in `printed_figure`):
 
 | check | pass when |
 |---|---|
 | `header` | every column's `printed_label` is the label the page prints over that column |
-| `rows` | each printed line of the image is one row, in order: none missing, none extra, none split in two or merged with its neighbour; a cell wrapped over several lines is one cell |
+| `rows` | each printed line of the image is one rebuilt row, in order: none missing, none extra, none split in two or merged with its neighbour; a cell wrapped over several lines is one cell; a name printed once for its group (a heading, or a first line) is rebuilt where it is printed |
 | `cells` | each value sits in the column it is printed under, with its printed text in `<col>_raw` |
 | `kinds` | group headings are `group`, subtotals `subtotal`, the total `total`, everything else `data` |
 | `totals` | every `not_pass` check explained: `ROUNDING` (within 2 cents) passes; a `FAIL` is a reading defect unless the printed table itself does not add up (show the figures) |

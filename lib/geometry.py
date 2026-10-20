@@ -751,11 +751,14 @@ def lines_of(page, frame=None, foreign_dirs=()):
         current = []
         for glyph in glyphs:
             # Bold faked by printing the text twice a hair apart (MAE B4
-            # `Area GeograficaArea Geografica` in one span): a letter repeated
-            # within a quarter em is that letter once. A real double letter
-            # (`zz` in `Autorizzazioni`) stands a whole letter away.
-            if (current and glyph[0] == current[-1][0] and not glyph[0].isspace()
-                    and glyph[1] - current[-1][1] < 0.25 * (glyph[5] or 1)):
+            # `Area GeograficaArea Geografica` in one span, the copy 0.19 pt
+            # on): a letter repeated within half its own width is that letter
+            # once. A real double letter stands its whole width on: `zz` in
+            # `Autorizzazioni`, MEF II's `S.p.A..` (each stop 1.0 pt wide,
+            # the second 0.97 pt on).
+            prev = current[-1] if current else None
+            if (prev and glyph[0] == prev[0] and not glyph[0].isspace()
+                    and glyph[1] - prev[1] < 0.5 * (prev[2] - prev[1])):
                 continue
             if current:
                 gap = glyph[1] - current[-1][2]

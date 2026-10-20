@@ -57,7 +57,7 @@ def target_row(db, name, need=None):
     first = db.execute(f"SELECT min(pdf_page) FROM {name}").fetchone()[0]
     where = f" AND {need}_raw IS NOT NULL" if need and _has(db, name, f"{need}_raw") \
         else f" AND {need} IS NOT NULL AND {need}!=''" if need else ""
-    cur = db.execute(f"SELECT rowid, * FROM {name} WHERE pdf_page=? AND row_kind='data'"
+    cur = db.execute(f"SELECT rowid, * FROM {name} WHERE pdf_page=?"
                      f"{where} ORDER BY row_ord", (first,))
     cols = [d[0] for d in cur.description]
     rows = [dict(zip(cols, r)) for r in cur.fetchall()]
@@ -94,8 +94,16 @@ def mutate(db_path, key, mutation):
         row, _ = target_row(db, name)
         db.execute(f"DELETE FROM {name} WHERE rowid=?", (row["rowid"],))
     elif kind == "kind":
+        # A fact read as layout: it leaves the facts and becomes a printed figure.
         row, _ = target_row(db, name)
-        db.execute(f"UPDATE {name} SET row_kind=? WHERE rowid=?", (arg, row["rowid"]))
+        db.execute(f"DELETE FROM {name} WHERE rowid=?", (row["rowid"],))
+        for ordinal, col in db.execute("SELECT ordinal, col FROM column_def "
+                                       "WHERE table_key=? ORDER BY ordinal", (key,)).fetchall():
+            raw = row.get(f"{col}_raw", row.get(col))
+            if raw:
+                db.execute("INSERT INTO printed_figure VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                           (row["year"], key, arg, row["row_ord"], row["pdf_page"],
+                            row["printed_page"], None, ordinal, None, None, raw))
     elif kind == "wrong-value":
         row, _ = target_row(db, name, arg)
         if f"{arg}_raw" in cols:
@@ -121,7 +129,7 @@ def mutate(db_path, key, mutation):
         new = {c: None for c in cols}
         new.update({c: row[c] for c in ("year", "source_file", "pdf_page", "printed_page")
                     if c in cols})
-        new.update({c: row[c] for c in moved}, row_kind="data", row_ord=row["row_ord"] + 0.5)
+        new.update({c: row[c] for c in moved}, row_ord=row["row_ord"] + 0.5)
         if "operatore" in cols:
             new["operatore"] = row["operatore"]
         db.execute(f"INSERT INTO {name} ({', '.join(cols)}) VALUES "
@@ -131,7 +139,7 @@ def mutate(db_path, key, mutation):
         nxt = rows[rows.index(row) + 1] if rows.index(row) + 1 < len(rows) else rows[0]
         for c in cols:
             if c.endswith("_raw") or c in ("year", "source_file", "pdf_page", "printed_page",
-                                          "row_ord", "row_kind", "flags"):
+                                          "row_ord", "flags"):
                 continue
             if isinstance(row[c], str) and isinstance(nxt[c], str) and not c + "_raw" in cols:
                 db.execute(f"UPDATE {name} SET {c}=? WHERE rowid=?",

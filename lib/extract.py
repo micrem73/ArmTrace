@@ -88,9 +88,9 @@ class Column:
         """The SQL a data row adds to this column's printed totals, or None.
 
         Stored in `column_def.sum_sql`, so a query adds a column up the way
-        the table does: `SELECT total(<sum_sql>) FROM <table> WHERE
-        row_kind='data'`. The same rule as `_effective`, which the checks use;
-        a test holds the two together. `unless` names a valued column, one
+        the table does: `SELECT total(<sum_sql>) FROM <table>` (facts only:
+        no subtotal or total row to leave out). The same rule as `_effective`,
+        which the checks use; a test holds the two together. `unless` names a valued column, one
         with its printed text in `<col>_raw`."""
         if not self.sum:
             return None
@@ -516,9 +516,10 @@ class Reader:
         return rows[-1] if rows else None
 
     def emit(self, sp, kind, row, group=None):
-        row = self.carry(sp, kind, list(row) if row else [])
+        row, carried = self.carry(sp, kind, list(row) if row else [])
         self.row_ord += 1
         self.result.rows.append({
+            "carried": carried,
             "pdf_page": sp.pdf_page, "printed_page": sp.printed_page,
             "row_ord": self.row_ord, "kind": kind, "group": group,
             "cells": list(row) if row else [""] * len(self.order),
@@ -530,7 +531,9 @@ class Reader:
     def carry(self, sp, kind, row):
         """A `carry` column's text, printed on a group's first row only (MEF II
         `Ditta`), filled into the rows under it. The group's subtotal names
-        it (`<name> Totale`): a different name is an issue, never overwritten."""
+        it (`<name> Totale`): a different name is an issue, never overwritten.
+        Returns the row and the indices filled in, not printed."""
+        carried = set()
         for i, col in enumerate(self.order or []):
             if col.type != "carry" or i >= len(row):
                 continue
@@ -539,6 +542,7 @@ class Reader:
                     self.carried[i] = row[i]
                 elif i in self.carried:
                     row[i] = self.carried[i]
+                    carried.add(i)
             elif kind in ("subtotal", "total"):
                 named = SUBTOTAL_TAIL.match(row[i]) if kind == "subtotal" else None
                 if named and self.carried.get(i, named.group(1)) != named.group(1):
@@ -546,7 +550,7 @@ class Reader:
                         (sp.pdf_page, "carry", f"{col.key} {self.carried[i]!r} carried "
                                                f"into a group closed by {row[i]!r}"))
                 self.carried.pop(i, None)
-        return row
+        return row, carried
 
 
 class Refused(Exception):
@@ -624,55 +628,8 @@ ROUNDING = __import__("decimal").Decimal("0.02")
 
 def checks(result, spec):
     """[(check, printed, computed, status)]: PASS, ROUNDING, FAIL, or
-    UNCHECKED for a printed total no rule recomputes (reported, never dropped)."""
-    out = []
-    additive = [c for c in spec.printed if c.sum]
-    data, since = [], []
-    for row in result.rows:
-        if row["kind"] == "data":
-            data.append(row)
-            since.append(row)
-        elif row["kind"] in ("subtotal", "total"):
-            scope = since if row["kind"] == "subtotal" else data
-            for col in additive:
-                printed = _cell(row, col.key)
-                value, _ = parse("amount", printed)
-                if value is None:
-                    continue
-                computed = sum(_effective(r, col, spec) for r in scope)
-                # The group names the subtotal: A1 p410 closes two operators.
-                whose = f" ({row['group']})" if row["kind"] == "subtotal" and row["group"] else ""
-                out.append((f"{row['kind']} p{row['pdf_page']} {col.key}{whose}", printed,
-                            computed, _status(computed, value)))
-            if row["kind"] == "subtotal":
-                since = []
-    for _page, _printed_page, label, raw in result.totals:
-        rule = next(((m, expr) for rx, expr in spec.totals if (m := rx.search(label))),
-                    None)
-        value, _ = parse("amount", raw)
-        if rule is None or value is None:
-            out.append((f"printed {label!r}", raw, None, "UNCHECKED"))
-            continue
-        m, expr = rule
-        words = expr.split()
-        if words[0] == "count":
-            computed = sum(1 for r in data if _cell(r, words[1]))
-            value = gra.parse_number(raw)
-        elif words[-2:] == ["over", "subtotal"]:
-            # The printed subtotals added up: A1's grand EURO total is theirs,
-            # each subtotal rounded, and the rows give the roundings' sum more.
-            computed = sum((parse("amount", _cell(r, words[1]))[0] or 0)
-                           for r in result.rows if r["kind"] == "subtotal")
-        else:
-            col = next(c for c in spec.printed if c.key == words[1])
-            scope = data
-            if "where" in words:
-                key, want = words[words.index("where") + 1].split("=")
-                want = m.group(1) if want == "$1" else want
-                scope = [r for r in scope if _cell(r, key) == want]
-            if "unless" in words:
-                skip = words[words.index("unless") + 1]
-                scope = [r for r in scope if not _cell(r, skip)]
-            computed = sum(_effective(r, col, spec) for r in scope)
-        out.append((f"printed {label!r}", raw, computed, _status(computed, value)))
-    return out
+    UNCHECKED for a printed total no rule recomputes (reported, never dropped).
+    The table rebuilt from its facts, compared with its printed figures
+    (`lib/views`)."""
+    from lib import views
+    return views.checks(*views.split(result), spec)

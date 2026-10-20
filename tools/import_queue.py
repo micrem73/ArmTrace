@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
-from lib import extract, layout, source  # noqa: E402
+from lib import extract, layout, source, views  # noqa: E402
 from recheck import decide  # noqa: E402
 
 PARALLEL = 4
@@ -94,10 +94,14 @@ def render(year, key, dpi=110):
         name = extract.sql_name(key)
         pages |= review.failing_pages(db, name, key)
         has_rows = db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone()
+        view = views.render(*views.from_db(db, key, year), extract.specs()[key]) \
+            if has_rows else []
+        kinds = {}
+        for row in view:
+            kinds[row["kind"]] = kinds.get(row["kind"], 0) + 1
         out.update({
             "db": str(db_path.relative_to(ROOT)), "sql_table": name if has_rows else None,
-            "rows": dict(db.execute(f"SELECT row_kind, count(*) FROM {name} GROUP BY 1")
-                         ) if has_rows else {},
+            "rows": kinds,
             "columns": [dict(zip(("col", "type", "printed_label"), r)) for r in db.execute(
                 "SELECT col, type, label_it FROM column_def WHERE table_key=? "
                 "ORDER BY ordinal", (key,))],
@@ -110,9 +114,9 @@ def render(year, key, dpi=110):
                 "SELECT pdf_page, kind, detail FROM extract_issue WHERE table_key=?", (key,))],
             "notes": [list(r) for r in db.execute(
                 "SELECT pdf_page, text FROM table_note WHERE table_key=?", (key,))],
-            "printed_totals": [list(r) for r in db.execute(
-                "SELECT pdf_page, label, value_raw FROM printed_total WHERE table_key=?",
-                (key,))]})
+            "summary": [list(r) for r in db.execute(
+                "SELECT pdf_page, label, value_raw FROM printed_figure "
+                "WHERE table_key=? AND kind='summary'", (key,))]})
         with contextlib.redirect_stdout(sys.stderr):     # stdout is the JSON
             review.build(year, {key: sorted(pages)}, folder / "review.html", db_path)
         (folder / "checked.json").write_text(json.dumps({"content": content(year, key)}),
@@ -128,6 +132,10 @@ def render(year, key, dpi=110):
             sp.page.get_pixmap(dpi=dpi, clip=sp.clip).save(png)
             images.append({"pdf_page": sp.pdf_page, "printed_page": sp.printed_page,
                            "png": str(png.relative_to(ROOT))})
+            if agreed:
+                # The page as the database rebuilds it: what the importer judges.
+                images[-1]["rebuilt"] = [[r["kind"]] + list(r["cells"]) for r in view
+                                         if r["pdf_page"] == sp.pdf_page]
     out["images"] = images
     print(json.dumps(out, ensure_ascii=False, indent=1, default=str))
 

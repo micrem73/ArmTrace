@@ -146,6 +146,50 @@ def test_tables_extracted_apart_and_merged_give_the_full_run(year, sources, tmp_
     assert (tmp_path / "merged" / dump).read_bytes() == (tmp_path / "full" / dump).read_bytes()
 
 
+def stored(year, result, key):
+    """The table as `ExtractTables.py` stores it, in an in-memory database."""
+    import sqlite3
+
+    import ExtractTables as E
+    spec = extract.specs()[key]
+    db = sqlite3.connect(":memory:")
+    db.executescript(E.SHARED)
+    name = extract.sql_name(key)
+    E.create(db, name, spec)
+    rows, _ = E.records(year, result, spec)
+    db.executemany(f"INSERT INTO {name} VALUES ({','.join('?' * len(rows[0]))})", rows)
+    for i, label in enumerate(result.labels):
+        col = spec.printed[min(i, len(spec.printed) - 1)]
+        db.execute("INSERT INTO column_def VALUES (?,?,?,?,?,?,?,?)",
+                   (name, key, int(year), i, col.key, col.type, label, col.sum_sql()))
+    db.executemany("INSERT INTO printed_figure VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                   E.figures(year, key, result)[0])
+    return db
+
+
+@pytest.mark.parametrize("year", ["2025"])
+@pytest.mark.parametrize("key,volume,first,last,printed,clip", [
+    ("MEF/II", VOL2, 393, 395, 1431, None),
+    ("MAE/A1", VOL1, 184, 186, 180, None),
+    ("MAE/T2", VOL1, 27, 27, 23, [0.0, 295.84, 595.28, 513.41]),     # the year window
+    ("DOG/A1C2/M1", VOL2, 858, 867, 1896, None),
+])
+def test_the_database_alone_rebuilds_the_printed_table(year, sources, key, volume, first,
+                                                        last, printed, clip):
+    """What a user asking for a table gets: the facts and printed figures, read
+    back from the database, rebuild the table exactly as from the pages, and
+    the facts table holds no subtotal or total to double-count."""
+    from lib import views
+    r = read(volume, first, last, printed, key, clip=clip)
+    spec = extract.specs()[key]
+    db = stored(year, r, key)
+    cols = [d[1] for d in db.execute(f"PRAGMA table_info({extract.sql_name(key)})")]
+    assert "row_kind" not in cols
+    from_pages = views.render(*views.split(r), spec)
+    from_db = views.render(*views.from_db(db, key, year), spec)
+    assert from_db == from_pages
+
+
 @pytest.mark.parametrize("year", ["2025"])
 def test_the_sum_rule_is_in_the_database_and_agrees_with_the_checks(year, sources):
     """A1's EURO adds up to its printed totals only by its rule (customs-value
@@ -165,8 +209,7 @@ def test_the_sum_rule_is_in_the_database_and_agrees_with_the_checks(year, source
     db.executemany(f"INSERT INTO mae_a1 VALUES ({','.join('?' * len(rows[0]))})", rows)
     for col in (c for c in spec.printed if c.sum):
         expr = col.sum_sql()
-        got = db.execute(f"SELECT round(total({expr}), 2) FROM mae_a1 "
-                         "WHERE row_kind='data'").fetchone()[0]
+        got = db.execute(f"SELECT round(total({expr}), 2) FROM mae_a1").fetchone()[0]
         want = sum(extract._effective(x, col, spec) for x in r.rows if x["kind"] == "data")
         assert Decimal(str(got)) == want, (col.key, expr)
     assert extract.specs()["MAE/A1"].printed[2].sum_sql() == (
@@ -202,3 +245,71 @@ def test_mae_a1_summary_labels_whole_with_their_section(year, sources):
                   "Internazionali (%)"] == "7,48"
     assert labels["Totali parziali per tipo valuta"] == "1.552.753,27"     # no currency
     assert labels["Totali parziali per tipo valuta: USD"] == "373.003.985,50"
+
+
+def printed_sequence(result):
+    """The table as printed: (kind, cells) per row, a group heading once per
+    group (MAE A1 repeats it at the top of each page: page furniture)."""
+    out, last = [], None
+    for x in result.rows:
+        if x["kind"] == "group":
+            if x["group"] != last:
+                out.append(("group", [x["group"]]))
+            last = x["group"]
+            continue
+        cells = [("" if i in x.get("carried", ()) else c) for i, c in enumerate(x["cells"])]
+        out.append((x["kind"], cells))
+    return out
+
+
+def rebuilt_sequence(result, key):
+    from lib import views
+    facts, figures, summary = views.split(result)
+    return [(r["kind"], r["cells"]) for r in views.render(facts, figures, summary,
+                                                          extract.specs()[key])
+            if r["kind"] != "summary"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+@pytest.mark.parametrize("key,volume,first,last,printed", [
+    ("DOG/A1C2/M1", VOL2, 858, 867, 1896),     # rows, then a total in a value column
+    ("MEF/II", VOL2, 393, 395, 1431),          # Ditta on a company's first line, `<Ditta> Totale`
+    ("MAE/A1", VOL1, 184, 186, 180),           # operator headings, unlabelled subtotals
+])
+def test_the_printed_table_is_rebuilt_from_its_facts(year, sources, key, volume, first,
+                                                     last, printed):
+    """The data rows are the facts; headings, subtotals and totals are layout.
+    Rebuilt from the facts and the printed figures, the table is the printed
+    one, row by row and cell by cell (maintainer, 2026-10-20)."""
+    r = read(volume, first, last, printed, key)
+    assert rebuilt_sequence(r, key) == printed_sequence(r)
+
+
+def test_a_summary_agrees_with_the_table_it_summarises():
+    """MAE A2 restates A1 per operator; DOG M1 restates M (maintainer: "when a
+    corresponding table exists, data should match"). Checked on the year's
+    database; an M1 name may cover several lines, or be cut short in print."""
+    import sqlite3
+    path = ROOT / "Out" / "2025" / "armtrace-2025.sqlite"
+    if not path.exists():
+        pytest.skip("no assembled 2025 database: ExtractTables.py 2025 --merge ...")
+    from lib import views
+    got = views.cross_checks(sqlite3.connect(path), "2025")
+    a2 = [c for c in got if c[1] == "MAE/A2"]
+    assert len(a2) == 3 * 159 and all(c[5] == "PASS" for c in a2)
+    m1 = [c for c in got if c[1] == "DOG/A1C2/M1"]
+    assert len(m1) == 190 and all(c[5] == "PASS" for c in m1)
+    # M1 prints `CPM ELETTRONICA SRL` twice: its two lines add up to M's one name.
+    assert any(c[2].endswith("(CPM ELETTRONICA SRL)") for c in m1)
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_two_full_stops_in_a_row_are_printed_not_overprinted(year, sources):
+    """MEF II prints `AVIO S.p.A..` and `FERRETTI S.p..A.` (each stop its own
+    width on); the overprinted-bold rule (MAE B4, a copy 0.19 pt off) dropped
+    the second stop, and the carried name then disagreed with its printed
+    subtotal. Found by the importer eval."""
+    r = read(VOL2, 393, 398, 1431, "MEF/II")
+    names = {x["cells"][0] for x in r.rows if x["kind"] == "data"}
+    assert {"AVIO S.p.A..", "FERRETTI S.p..A."} <= names
+    assert not [i for i in r.issues if i[1] == "carry"]

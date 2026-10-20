@@ -7,7 +7,7 @@
 #   merge-rows         a data row swallows the next one
 #   swap-cells=<a>,<b> two values change columns
 #   wrong-value=<col>  a value misread (a digit, a word)
-#   kind=<kind>        a data row typed as another kind
+#   kind=<kind>        a data row read as layout (a subtotal): gone from the facts
 #   label=<col>:<text> a column's printed label misread
 # Add a case for every miss a person finds.
 case	key	mutation	expect	note
@@ -27,5 +27,5 @@ swap-ee	MEF/EE	swap-cells=importi_segnalati,importi_accessori_segnalati	FAIL
 value-t2	MAE/T2	wrong-value=valore	FAIL	no total to catch it: only the page
 value-m	DOG/A1C2/M	wrong-value=stato_avanzamento_annuale_euro	FAIL
 value-difesa	DIFESA/4	wrong-value=paesi_partecipanti	FAIL	text misread
-kind-ii	MEF/II	kind=group	FAIL	a transaction typed as a heading
+kind-ii	MEF/II	kind=subtotal	FAIL	a transaction read as a subtotal
 label-difesa	DIFESA/4	label=tipologia:TIPO	FAIL	header misread

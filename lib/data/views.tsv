@@ -1,0 +1,15 @@
+# Printed tables that restate another one, and how they must agree (lib/views.cross_checks).
+# Checked on the year's assembled database (`ExtractTables.py <year> --merge`): per group, each
+# summary column against the detail table's facts. Mismatches are listed, never fitted.
+#
+# table: the summary table. of: the table it summarises. group: <summary col>=<detail col>,
+#   matched by name as printed (spaces collapsed), else by a name cut short in print, else
+#   by letters and digits (`lib/views._match`); the summary lines that match one detail name
+#   are added up (DOG M1 prints `CPM ELETTRONICA SRL` twice).
+# cols: <summary col>=<detail col>, the detail column added up by its `sum_sql` (A1 `euro`:
+#   its EUR and customs-value rule); `count(<col>)` counts detail rows with <col> printed;
+#   `subtotal(<col>)` is the detail table's printed subtotal of <col> (A2 restates A1's
+#   subtotals, rounding and all: CALZONI 32.212.217,15 in both, the rows give ...,17).
+table	of	group	cols
+MAE/A2	MAE/A1	operatore=operatore	autorizzazioni=count(data) valore_euro=subtotal(euro) val_fini_dog=subtotal(val_fini_dog)
+DOG/A1C2/M1	DOG/A1C2/M	denominazione_operatore=denominazione_operatore	stato_avanzamento_annuale_euro=stato_avanzamento_annuale_euro

@@ -1,0 +1,252 @@
+"""A printed table rebuilt from its facts, and checked against the print.
+
+The reports print visualisations (maintainer, 2026-10-20): a table's data rows
+are facts; its group headings, subtotals, totals and summary lines are layout,
+generated from the facts. So a table is stored as facts plus the figures it
+prints (`printed_figure`), and rebuilt on request by `render`:
+
+  facts      the data rows, in printed order (`row_ord`), each with its group
+             (MAE A1's operator, MEF II's carried `Ditta`)
+  figures    the printed subtotal and total rows, at the place they are
+             printed: what the facts must add up to
+  summary    what a table prints outside its grid (MAE A1's last page)
+
+A rebuilt row shows what the report prints: a group heading once per group, a
+carried name on its group's first row only, each subtotal and total with its
+printed figure, and beside it the sum of the facts, flagged when the two
+differ (`checks`: PASS, ROUNDING, FAIL; UNCHECKED where no rule recomputes a
+summary line). The checks are the import's oracle and a view's footnotes at
+once, so the two cannot drift apart.
+"""
+import re
+from decimal import Decimal
+
+from lib import extract
+from lib import grammar as gra
+
+
+def split(result):
+    """(facts, figures, summary) of a table as read (`extract.read_table`)."""
+    facts = [r for r in result.rows if r["kind"] == "data"]
+    figures = [r for r in result.rows if r["kind"] in ("subtotal", "total")]
+    return facts, figures, list(result.totals)
+
+
+def from_db(db, key, year, spec=None):
+    """(facts, figures, summary) of a table as `ExtractTables.py` stored it:
+    what `render` needs to rebuild the printed table from the database alone."""
+    spec = spec or extract.specs()[key]
+    name = extract.sql_name(key)
+    by_col = {c.key: c for c in spec.printed}
+    order, year_of = [], {}
+    for i, col, label in db.execute("SELECT ordinal, col, label_it FROM column_def "
+                                    "WHERE table_key=? AND year=? ORDER BY ordinal",
+                                    (key, int(year))):
+        order.append(by_col[col])
+        if by_col[col].type == "years":
+            year_of[i] = int(label)
+    cur = db.execute(f"SELECT * FROM {name} WHERE year=? ORDER BY row_ord", (int(year),))
+    names = [d[0] for d in cur.description]
+    lines = {}
+    for values in cur.fetchall():
+        row = dict(zip(names, values))
+        lines.setdefault(row["row_ord"], []).append(row)
+    facts = []
+    for row_ord, rows in lines.items():
+        row = rows[0]
+        cells = []
+        for i, col in enumerate(order):
+            if col.type == "years":
+                hit = next((r for r in rows if r["anno"] == year_of[i]), {})
+                cells.append(hit.get(f"{col.key}_raw") or "")
+            elif col.type in ("amount", "number", "date"):
+                cells.append(row[f"{col.key}_raw"] or "")
+            else:
+                cells.append(row[col.key] or "")
+        facts.append({"kind": "data", "row_ord": row_ord, "pdf_page": row["pdf_page"],
+                      "printed_page": row["printed_page"], "order": order, "cells": cells,
+                      "year_of": year_of, "group": row[spec.group.key] if spec.group else None})
+    figures = {}
+    for kind, row_ord, pdf_page, printed_page, grp, i, raw in db.execute(
+            "SELECT kind, row_ord, pdf_page, printed_page, grp, ordinal, value_raw "
+            "FROM printed_figure WHERE table_key=? AND year=? AND kind!='summary' "
+            "ORDER BY row_ord, ordinal", (key, int(year))):
+        fig = figures.setdefault(row_ord, {
+            "kind": kind, "row_ord": row_ord, "pdf_page": pdf_page,
+            "printed_page": printed_page, "group": grp, "order": order,
+            "cells": [""] * len(order), "year_of": year_of})
+        fig["cells"][i] = raw
+    summary = [tuple(r) for r in db.execute(
+        "SELECT pdf_page, printed_page, label, value_raw FROM printed_figure "
+        "WHERE table_key=? AND year=? AND kind='summary' ORDER BY rowid", (key, int(year)))]
+    return facts, list(figures.values()), summary
+
+
+def _group_of(row, spec):
+    if spec.group:
+        return row["group"]
+    carry = [i for i, c in enumerate(row["order"]) if c.type == "carry"]
+    return row["cells"][carry[0]] if carry else None
+
+
+def _figure_checks(row, scope, spec):
+    out = []
+    for col in (c for c in spec.printed if c.sum):
+        printed = extract._cell(row, col.key)
+        value, _ = extract.parse("amount", printed)
+        if value is None:
+            continue
+        computed = sum(extract._effective(r, col, spec) for r in scope)
+        # The group names the subtotal: A1 p410 closes two operators.
+        whose = f" ({row['group']})" if row["kind"] == "subtotal" and row["group"] else ""
+        out.append((f"{row['kind']} p{row['pdf_page']} {col.key}{whose}", printed,
+                    computed, extract._status(computed, value)))
+    return out
+
+
+def render(facts, figures, summary, spec):
+    """The table as printed, rebuilt: [{kind, group, cells, pdf_page, checks}].
+
+    `kind` is `group` (a heading), `data`, `subtotal`, `total` or `summary`.
+    Cells are the printed text: a fact's own, a figure's printed values."""
+    out, scope, everything = [], [], []
+    heading, run = object(), object()
+    carry = None
+    for row in sorted(facts + figures, key=lambda r: r["row_ord"]):
+        if carry is None:
+            carry = {i for i, c in enumerate(row["order"]) if c.type == "carry"}
+        if row["kind"] == "data":
+            group = _group_of(row, spec)
+            if spec.group and group != heading:
+                out.append({"kind": "group", "group": group, "cells": [group],
+                            "pdf_page": row["pdf_page"], "checks": []})
+                heading = group
+            first = group != run or not scope
+            cells = [("" if i in carry and not first else c) for i, c in enumerate(row["cells"])]
+            out.append({"kind": "data", "group": group, "cells": cells,
+                        "pdf_page": row["pdf_page"], "checks": []})
+            scope.append(row)
+            everything.append(row)
+            run = group
+        else:
+            within = scope if row["kind"] == "subtotal" else everything
+            out.append({"kind": row["kind"], "group": row["group"], "cells": list(row["cells"]),
+                        "pdf_page": row["pdf_page"],
+                        "checks": _figure_checks(row, within, spec)})
+            if row["kind"] == "subtotal":
+                scope, run = [], object()
+    for pdf_page, _printed_page, label, raw in summary:
+        out.append({"kind": "summary", "group": None, "cells": [label, raw],
+                    "pdf_page": pdf_page,
+                    "checks": [_summary_check(label, raw, facts, figures, spec)]})
+    return out
+
+
+def checks(facts, figures, summary, spec):
+    """[(check, printed, computed, status)] of every printed figure."""
+    return [c for row in render(facts, figures, summary, spec) for c in row["checks"]]
+
+
+def _summary_check(label, raw, facts, figures, spec):
+    rule = next(((m, expr) for rx, expr in spec.totals if (m := rx.search(label))), None)
+    value, _ = extract.parse("amount", raw)
+    if rule is None or value is None:
+        return (f"printed {label!r}", raw, None, "UNCHECKED")
+    m, expr = rule
+    words = expr.split()
+    if words[0] == "count":
+        computed = sum(1 for r in facts if extract._cell(r, words[1]))
+        value = gra.parse_number(raw)
+    elif words[-2:] == ["over", "subtotal"]:
+        # The printed subtotals added up: A1's grand EURO total is theirs,
+        # each subtotal rounded, and the facts give the roundings' sum more.
+        computed = sum((extract.parse("amount", extract._cell(r, words[1]))[0] or 0)
+                       for r in figures if r["kind"] == "subtotal")
+    else:
+        col = next(c for c in spec.printed if c.key == words[1])
+        scope = facts
+        if "where" in words:
+            key, want = words[words.index("where") + 1].split("=")
+            want = m.group(1) if want == "$1" else want
+            scope = [r for r in scope if extract._cell(r, key) == want]
+        if "unless" in words:
+            skip = words[words.index("unless") + 1]
+            scope = [r for r in scope if not extract._cell(r, skip)]
+        computed = sum(extract._effective(r, col, spec) for r in scope)
+    return (f"printed {label!r}", raw, computed, extract._status(computed, value))
+
+
+def _compact(name):
+    return re.sub(r"[^A-Z0-9]", "", name.upper())
+
+
+def _match(names, detail):
+    """{summary name: detail name}. The name as printed; else the one detail
+    name it begins or ends (print cuts long names: M `CORDON ... S.R.L. CON`,
+    M1 `... CON UNICO SOCIO`) among those no summary name has exactly; else
+    the same letters and digits (M `ALMAVIVA S.P..A.`, M1 `ALMAVIVA S.P. A.`).
+    No match: None."""
+    out = {n: n for n in names if n in detail}
+    free = [d for d in detail if d not in out.values()]
+    for n in (n for n in names if n not in out):
+        hits = [d for d in free if d.startswith(n) or n.startswith(d)]
+        if len(hits) != 1:
+            hits = [d for d in detail if _compact(d) == _compact(n)]
+        out[n] = hits[0] if len(hits) == 1 else None
+    return out
+
+
+def cross_checks(db, year):
+    """[(year, table_key, check, printed, computed, status)]: each summary table
+    in `lib/data/views.tsv` against the table it summarises, per group."""
+    out = []
+    for row in extract._rows("views.tsv"):
+        key, of = row["table"], row["of"]
+        s_name, d_name = extract.sql_name(key), extract.sql_name(of)
+        if not all(db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (n,)).fetchone()
+                   for n in (s_name, d_name)):
+            continue
+        s_group, d_group = row["group"].split("=")
+        sums = dict(db.execute("SELECT col, sum_sql FROM column_def WHERE table_key=? "
+                               "AND year=? AND sum_sql IS NOT NULL", (of, int(year))))
+        ordinal = dict(db.execute("SELECT col, ordinal FROM column_def WHERE table_key=? "
+                                  "AND year=?", (of, int(year))))
+        for pair in row["cols"].split():
+            s_col, d_expr = pair.split("=")
+            fn, _, inner = d_expr.rstrip(")").partition("(")
+            if fn == "subtotal":
+                # The detail table's printed subtotals: A2 restates A1's, rounding and all.
+                found = db.execute(
+                    "SELECT grp, value FROM printed_figure WHERE table_key=? AND year=? "
+                    "AND kind='subtotal' AND ordinal=?", (of, int(year), ordinal[inner]))
+            elif fn == "count":
+                found = db.execute(f"SELECT {d_group}, count({inner}_raw) FROM {d_name} "
+                                   "WHERE year=? GROUP BY 1", (int(year),))
+            else:
+                found = db.execute(f"SELECT {d_group}, round(total({sums.get(fn, fn)}), 2) "
+                                   f"FROM {d_name} WHERE year=? GROUP BY 1", (int(year),))
+            detail = {}
+            for name, value in found:
+                name = " ".join((name or "").split())
+                detail[name] = detail.get(name, Decimal(0)) + Decimal(str(value or 0))
+            summary = {}
+            for name, raw in db.execute(f"SELECT {s_group}, {s_col}_raw FROM {s_name} "
+                                        "WHERE year=? ORDER BY row_ord", (int(year),)):
+                name = " ".join((name or "").split())
+                summary[name] = summary.get(name, Decimal(0)) + (gra.parse_number(raw) or 0)
+            matched = _match(list(summary), detail)
+            per = {}
+            for name, value in summary.items():
+                per.setdefault(matched[name], []).append((name, value))
+            for target, lines in per.items():
+                names = " + ".join(n for n, _v in lines)
+                value = sum(v for _n, v in lines)
+                check = f"same as {of} {s_col} ({names})"
+                if target is None:
+                    out += [(int(year), key, f"same as {of} {s_col} ({n})", str(v), None, "FAIL")
+                            for n, v in lines]
+                    continue
+                got = detail[target]
+                out.append((int(year), key, check, str(value), str(got),
+                            extract._status(got, value)))
+    return out
