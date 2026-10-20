@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArmTrace</title>
+<meta name="description" content="Le relazioni ufficiali sull'export di armamenti (legge 185/1990) come database interrogabile, ogni riga collegata alla pagina della relazione.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#domande">ArmTrace</a>
+  <nav>
+    <a href="#domande" data-view="domande">Domande</a>
+    <a href="#tabelle" data-view="tabelle">Tabelle</a>
+    <a href="#sql" data-view="sql">SQL</a>
+    <a href="#metodo" data-view="metodo">Metodo</a>
+  </nav>
+</header>
+<main id="main">
+  <p class="status" id="status">Caricamento del database…</p>
+</main>
+<footer class="foot">
+  Dati dalle relazioni ufficiali al Parlamento ai sensi della legge 185/1990.
+  Ogni riga rimanda alla pagina della relazione da cui è letta.
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

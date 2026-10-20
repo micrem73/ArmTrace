@@ -1,0 +1,219 @@
+[
+  {
+    "id": "andamento",
+    "gruppo": "Il quadro",
+    "titolo": "Quanto vale l'export autorizzato, anno per anno?",
+    "spiegazione": "Il valore delle autorizzazioni individuali all'esportazione, in miliardi di euro, come lo stampa la Tabella 2 della relazione 2025 per gli ultimi cinque anni.",
+    "grafico": {"etichetta": "anno", "valore": "miliardi_euro"},
+    "sql": [
+      "SELECT anno, valore AS miliardi_euro, source_file, pdf_page, printed_page",
+      "FROM mae_t2",
+      "WHERE year = 2025 AND voce LIKE 'Valore autorizzazioni%'",
+      "ORDER BY anno"
+    ]
+  },
+  {
+    "id": "ue-nato",
+    "gruppo": "Il quadro",
+    "titolo": "Quanto va a Paesi fuori da UE e NATO?",
+    "spiegazione": "La quota delle autorizzazioni verso Paesi UE-NATO e verso Paesi extra UE-NATO, in percentuale, dal 2021 al 2025 (Tabella 2).",
+    "sql": [
+      "SELECT voce, anno, valore_raw AS percentuale, source_file, pdf_page, printed_page",
+      "FROM mae_t2",
+      "WHERE year = 2025 AND voce LIKE '%(\\%)' ESCAPE '\\'",
+      "ORDER BY voce, anno"
+    ]
+  },
+  {
+    "id": "aziende",
+    "gruppo": "Le aziende",
+    "titolo": "Quali aziende hanno ottenuto le autorizzazioni di valore più alto?",
+    "spiegazione": "Le prime 15 aziende per valore delle autorizzazioni rilasciate nel 2025, dalla Tabella A2 (riepilogo per operatore): numero di autorizzazioni, valore in euro e peso sul totale, come stampati.",
+    "grafico": {"etichetta": "operatore", "valore": "valore_euro"},
+    "sql": [
+      "SELECT operatore, autorizzazioni, valore_euro, incidenza_percento,",
+      "       source_file, pdf_page, printed_page",
+      "FROM mae_a2",
+      "WHERE year = 2025 AND row_kind = 'data'",
+      "ORDER BY valore_euro DESC",
+      "LIMIT 15"
+    ]
+  },
+  {
+    "id": "concentrazione",
+    "gruppo": "Le aziende",
+    "titolo": "Quante aziende fanno metà del valore autorizzato?",
+    "spiegazione": "Le aziende in ordine di valore autorizzato (Tabella A2), con la quota cumulata sul totale: si legge a quale riga si supera il 50%. Un calcolo che sulla carta richiede di sommare 160 righe a mano.",
+    "sql": [
+      "SELECT row_number() OVER (ORDER BY valore_euro DESC) AS posizione,",
+      "       operatore, valore_euro,",
+      "       round(100.0 * sum(valore_euro) OVER (ORDER BY valore_euro DESC)",
+      "             / sum(valore_euro) OVER (), 1) AS quota_cumulata_pct,",
+      "       source_file, pdf_page, printed_page",
+      "FROM mae_a2",
+      "WHERE year = 2025 AND row_kind = 'data'",
+      "ORDER BY posizione",
+      "LIMIT 10"
+    ]
+  },
+  {
+    "id": "licenze-azienda",
+    "gruppo": "Le aziende",
+    "titolo": "Che cosa ha chiesto di esportare un'azienda?",
+    "spiegazione": "Tutte le voci delle autorizzazioni 2025 di RWM ITALIA nella Tabella A1, con il materiale come descritto nella licenza. Per un'altra azienda cambia il nome nella query (come stampato: vedi la Tabella A2). Nella A1 il valore è sulla prima riga di ogni licenza; EURO è vuoto per le licenze in euro, dove vale l'Ammontare.",
+    "sql": [
+      "SELECT data_raw AS data, valuta, ammontare_raw AS ammontare, euro_raw AS euro,",
+      "       materiale_oggetto_del_contratto AS materiale, qta_raw AS quantita, unita_misura, cat,",
+      "       source_file, pdf_page, printed_page",
+      "FROM mae_a1",
+      "WHERE year = 2025 AND row_kind = 'data' AND operatore = 'RWM ITALIA S.P.A.'",
+      "ORDER BY row_ord"
+    ]
+  },
+  {
+    "id": "cerca-materiale",
+    "gruppo": "Le aziende",
+    "titolo": "Chi ha autorizzazioni che citano munizioni?",
+    "spiegazione": "Cerca una parola in tutte le descrizioni dei materiali della Tabella A1 (oltre 8.000 voci su più di 500 pagine) e conta le voci per azienda. Cambia 'MUNIZ' con un'altra parola: 'BOMB', 'ELICOTTER', 'SILURO'. Il link porta alla prima voce trovata.",
+    "grafico": {"etichetta": "operatore", "valore": "voci"},
+    "sql": [
+      "SELECT operatore, count(*) AS voci, min(row_ord) AS prima_voce,",
+      "       source_file, pdf_page, printed_page",
+      "FROM mae_a1",
+      "WHERE year = 2025 AND row_kind = 'data'",
+      "  AND materiale_oggetto_del_contratto LIKE '%MUNIZ%'",
+      "GROUP BY operatore",
+      "ORDER BY voci DESC"
+    ]
+  },
+  {
+    "id": "autorizzato-esportato",
+    "gruppo": "Autorizzato ed esportato",
+    "titolo": "Quanto hanno esportato davvero le aziende, accanto a quanto è stato autorizzato?",
+    "spiegazione": "Per azienda, il valore esportato nel 2025 secondo l'Agenzia delle Dogane (Tabella M1: operazioni svolte su licenze di qualunque anno) accanto al valore delle nuove autorizzazioni 2025 (MAE, Tabella A2). Non sono la stessa misura: si esporta oggi su licenze di ieri. I nomi sono confrontati senza badare a maiuscole; «—» vuol dire nessuna nuova autorizzazione nel 2025, o il nome scritto in modo diverso. La stessa azienda può comparire due volte, come stampata: «RWM ITALIA S.P.A.» e «R.W.M. ITALIA S.P.A.».",
+    "grafico": {"etichetta": "operatore", "valore": "esportato_euro"},
+    "sql": [
+      "SELECT d.denominazione_operatore AS operatore,",
+      "       d.stato_avanzamento_annuale_euro AS esportato_euro,",
+      "       a.valore_euro AS autorizzato_2025_euro,",
+      "       d.source_file, d.pdf_page, d.printed_page",
+      "FROM dog_a1c2_m1 AS d",
+      "LEFT JOIN mae_a2 AS a",
+      "  ON a.year = d.year AND a.row_kind = 'data'",
+      " AND upper(trim(a.operatore)) = upper(trim(d.denominazione_operatore))",
+      "WHERE d.year = 2025 AND d.row_kind = 'data'",
+      "ORDER BY esportato_euro DESC",
+      "LIMIT 15"
+    ]
+  },
+  {
+    "id": "denaro-paesi",
+    "gruppo": "Il denaro",
+    "titolo": "Verso quali Paesi vanno i pagamenti segnalati dalle banche?",
+    "spiegazione": "Le transazioni bancarie per esportazioni definitive segnalate al Ministero dell'Economia (Tabella EE), sommate per Paese di destinazione. La tabella stampa il Paese una volta per autorizzazione: la query lo riporta sulle righe seguenti della stessa autorizzazione. Il link porta alla prima riga di quel Paese.",
+    "grafico": {"etichetta": "paese", "valore": "importi_segnalati"},
+    "sql": [
+      "WITH righe AS (",
+      "  SELECT *, count(numero_autorizzazione) OVER (ORDER BY row_ord) AS autorizzazione",
+      "  FROM mef_ee WHERE year = 2025 AND row_kind = 'data'),",
+      "paese AS (",
+      "  SELECT autorizzazione, max(utilizzatore_finale) AS paese FROM righe GROUP BY autorizzazione)",
+      "SELECT paese, count(DISTINCT autorizzazione) AS autorizzazioni,",
+      "       sum(importi_segnalati) AS importi_segnalati,",
+      "       sum(importi_accessori_segnalati) AS importi_accessori,",
+      "       min(row_ord) AS prima_riga, source_file, pdf_page, printed_page",
+      "FROM righe JOIN paese USING (autorizzazione)",
+      "GROUP BY paese",
+      "ORDER BY importi_segnalati DESC",
+      "LIMIT 20"
+    ]
+  },
+  {
+    "id": "denaro-causali",
+    "gruppo": "Il denaro",
+    "titolo": "A che cosa servono quei pagamenti?",
+    "spiegazione": "Le stesse transazioni (Tabella EE) per causale: beni e servizi, anticipi, oneri bancari, compensi di intermediazione, penali. Gli importi accessori sono la colonna che la relazione stampa a parte.",
+    "grafico": {"etichetta": "causale", "valore": "totale"},
+    "sql": [
+      "SELECT causale, count(*) AS righe,",
+      "       sum(importi_segnalati) AS importi_segnalati,",
+      "       sum(importi_accessori_segnalati) AS importi_accessori,",
+      "       sum(importi_segnalati) + sum(importi_accessori_segnalati) AS totale",
+      "FROM mef_ee",
+      "WHERE year = 2025 AND row_kind = 'data'",
+      "GROUP BY causale",
+      "ORDER BY totale DESC"
+    ]
+  },
+  {
+    "id": "intermediazione",
+    "gruppo": "Il denaro",
+    "titolo": "Chi paga compensi di intermediazione, e per quale Paese?",
+    "spiegazione": "Dalla Tabella II (transazioni per azienda), le righe con causale «Compensi intermediazione», per azienda e Paese. Azienda e Paese sono stampati una volta per gruppo: la query li riporta sulle righe seguenti. Il link porta alla prima riga.",
+    "grafico": {"etichetta": ["azienda", "paese"], "valore": "compensi"},
+    "sql": [
+      "WITH righe AS (",
+      "  SELECT *, count(ditta) OVER (ORDER BY row_ord) AS gruppo_ditta,",
+      "            count(numero_autorizzazione) OVER (ORDER BY row_ord) AS autorizzazione",
+      "  FROM mef_ii WHERE year = 2025 AND row_kind = 'data'),",
+      "ditta AS (SELECT gruppo_ditta, max(ditta) AS azienda FROM righe GROUP BY gruppo_ditta),",
+      "paese AS (SELECT autorizzazione, max(utilizzatore_finale) AS paese FROM righe GROUP BY autorizzazione)",
+      "SELECT azienda, paese, count(*) AS righe, sum(totale) AS compensi,",
+      "       min(row_ord) AS prima_riga, source_file, pdf_page, printed_page",
+      "FROM righe JOIN ditta USING (gruppo_ditta) JOIN paese USING (autorizzazione)",
+      "WHERE causale = 'Compensi intermediazione'",
+      "GROUP BY azienda, paese",
+      "ORDER BY compensi DESC",
+      "LIMIT 20"
+    ]
+  },
+  {
+    "id": "programmi",
+    "gruppo": "Programmi intergovernativi",
+    "titolo": "In quali programmi intergovernativi è coinvolta un'azienda?",
+    "spiegazione": "I programmi di cooperazione della Difesa (Tabella 4) in cui compare LEONARDO fra le aziende italiane partecipanti, con i Paesi partner. Cambia il nome per un'altra azienda.",
+    "sql": [
+      "SELECT nr, programma, tipologia, paesi_partecipanti,",
+      "       source_file, pdf_page, printed_page",
+      "FROM difesa_4",
+      "WHERE year = 2025 AND ditte_italiane_partecipanti LIKE '%LEONARDO%'",
+      "ORDER BY row_ord"
+    ]
+  },
+  {
+    "id": "verifica-totali",
+    "gruppo": "La relazione si controlla da sé",
+    "titolo": "Le righe estratte tornano con i totali stampati?",
+    "spiegazione": "Ogni tabella stampa totali e subtotali. Per ciascuno, la somma delle righe estratte è confrontata con il valore stampato: PASS uguale, ROUNDING entro 2 centesimi, UNCHECKED non ricalcolabile (per esempio una percentuale).",
+    "sql": [
+      "SELECT table_key AS tabella,",
+      "       sum(status = 'PASS') AS uguali,",
+      "       sum(status = 'ROUNDING') AS arrotondamento,",
+      "       sum(status = 'UNCHECKED') AS non_verificabili,",
+      "       sum(status NOT IN ('PASS', 'ROUNDING', 'UNCHECKED')) AS diversi",
+      "FROM check_result",
+      "WHERE year = 2025",
+      "GROUP BY table_key",
+      "ORDER BY table_key"
+    ]
+  },
+  {
+    "id": "verifica-a1-a2",
+    "gruppo": "La relazione si controlla da sé",
+    "titolo": "Il dettaglio delle licenze dà lo stesso totale del riepilogo, azienda per azienda?",
+    "spiegazione": "La Tabella A1 elenca ogni licenza, la A2 ne stampa il riepilogo per azienda. Qui le licenze della A1 sono sommate per azienda (EURO, o l'Ammontare per le licenze in euro; zero se la licenza ha un valore ai fini doganali, come fa la relazione) e confrontate con la A2. In cima le differenze; «—» vuol dire che il nome non è scritto uguale nelle due tabelle.",
+    "sql": [
+      "WITH a1 AS (",
+      "  SELECT operatore, round(sum(",
+      "    CASE WHEN val_fini_dog_raw IS NOT NULL THEN 0",
+      "         ELSE coalesce(euro, CASE WHEN valuta = 'EUR' THEN ammontare END, 0) END), 2) AS euro_a1",
+      "  FROM mae_a1 WHERE year = 2025 AND row_kind = 'data' GROUP BY operatore)",
+      "SELECT a2.operatore, a2.valore_euro AS euro_a2, a1.euro_a1,",
+      "       round(a1.euro_a1 - a2.valore_euro, 2) AS differenza,",
+      "       a2.source_file, a2.pdf_page, a2.printed_page",
+      "FROM mae_a2 AS a2 LEFT JOIN a1 USING (operatore)",
+      "WHERE a2.year = 2025 AND a2.row_kind = 'data'",
+      "ORDER BY a1.euro_a1 IS NOT NULL, abs(differenza) DESC, a2.operatore"
+    ]
+  }
+]

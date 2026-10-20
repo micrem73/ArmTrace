@@ -413,3 +413,32 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   one-page hit, and the note (which also leaked onto the Dogane M2/N2/O2 of the same bare
   code) is no longer written. `tests/golden/2025-tables.tsv` regenerated for the notes
   column only; the 2025 snapshot is byte-identical.
+
+## 2026-10-19 — public explorer: static page, database in the browser
+
+- **The explorer is one static page that runs SQLite in the browser (sql.js 1.10.3), no server.**
+  Read-only by construction (`PRAGMA query_only` on the visitor's own copy), free to host, nothing
+  to guard. By the maintainer: simple, effective, free.
+- **Hosting: GitHub Pages; the repository is public.** Cloudflare Pages is the same thing if that
+  changes.
+- **The whole file is downloaded for now (pilot: 4.1 MB); switch the loader to HTTP range reads
+  (`sql.js-httpvfs`, chunked) before it passes about 30 MB.** A full year is expected at 30–80 MB
+  and GitHub refuses files over 100 MB. Only `start()` in `web/app.js` changes.
+- **Italian only; no LLM in v1.** Curated questions plus an editable SQL editor show what the
+  database allows without a model that can be wrong; the MCP/LLM layer keeps its own phase.
+- **Rows link to the official PDF on camera.it (`#page=<pdf_page>`), never to a copy.** The
+  manifest has the URL of every volume; hosting the PDFs would add a second, unofficial source.
+- **Printed text is shown, parsed values only sort and compute.** A column with a `_raw` sibling
+  shows the `_raw` text; a dash stays a dash.
+- **13 curated questions on the pilot, each checked against the report.** Values read on their
+  source pages (T2 p23, A2 p605, M1 p1901, II p1436); the per-country sums of MEF EE equal the
+  92 country totals printed in Tabella GG, and the per-company sums of II its 157 printed
+  subtotals: the country and company printed once per group are carried to the rows that follow.
+- **MAE A1's EURO column is not additive as stored.** It is blank on EUR licences (the value is
+  `ammontare`) and excluded where a customs value is printed: the extractor's rule
+  (`columns.tsv`: `sum else ammontare@valuta=EUR unless val_fini_dog`) is not in the database, so
+  `sum(euro)` gives €385 M of a printed €7.72 bn. The page warns on A1 and the questions write the
+  rule in SQL; the database should carry it.
+- **Published from a local build to the `gh-pages` branch, one commit with no history**
+  (`tools/publish_site.sh`). CI cannot build it: the sources and `Out/` are not in git. The code
+  history stays on the code branches; the published data is reproducible from them.
