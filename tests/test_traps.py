@@ -294,6 +294,10 @@ PILOT_HEADERS = [
       "Stato di avanzamento annuale (Euro)", "Utilizzo anni precedenti (Euro)"]),
     ("2025", "2025_LXVII_n4_VOLUME_II.pdf", 288, "data",   # EE continuation page
      None),
+    # Bold faked by printing each letter twice, a hair apart: one letter
+    # (MAE B4 `AArreeaa GGeeooggrraaffiiccaa`, found by the importer agent).
+    ("2025", "2025_LXVII_n4_VOLUME_I.pdf", 684, None,
+     ["Area Geografica", "Paese di destinazione", "Autorizzazioni", "Valore (EURO)"]),
     # A header may name a total; only a data row prints one with its value.
     ("2025", "2025_LXVII_n4_VOLUME_II.pdf", 393, None,
      ["Ditta", "Numero Autorizzazione", "Utilizzatore Finale", "Causale", "Totale"]),

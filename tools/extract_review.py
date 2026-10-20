@@ -106,8 +106,14 @@ def failing_pages(db, name, key):
     return pages
 
 
-def build(year, pages, path):
-    db = sqlite3.connect(layout.year_dir(year) / f"armtrace-{year}.sqlite")
+def sample_pages(year, key):
+    """First, middle and last page of a table with no pages chosen for it."""
+    pdf = [sp.pdf_page for sp in source.table_pages(year, key)]
+    return sorted({pdf[0], pdf[len(pdf) // 2], pdf[-1]}) if pdf else []
+
+
+def build(year, pages, path, db_path=None):
+    db = sqlite3.connect(db_path or layout.year_dir(year) / f"armtrace-{year}.sqlite")
     out = [f"<!doctype html><meta charset='utf-8'><title>Extraction review {year}</title>"
            f"<style>{CSS}</style><h1>Extraction review, {year}</h1>",
            "<p class='note'>Rows read from the source volumes (ExtractTables.py) beside "
@@ -115,6 +121,11 @@ def build(year, pages, path):
            "totals red. Every check that is not a PASS is listed.</p>"]
     for key, wanted in pages.items():
         name = extract.sql_name(key)
+        wanted = wanted or sample_pages(year, key)
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone():
+            # Refused: no rows, only the reason and the pages it was refused on.
+            db.execute(f"CREATE TEMP TABLE {name} (row_kind TEXT, pdf_page INTEGER, "
+                       "printed_page INTEGER, row_ord INTEGER)")
         kinds = db.execute(f"SELECT row_kind, count(*) FROM {name} GROUP BY 1").fetchall()
         checks = db.execute("SELECT check_name, printed, computed, status FROM check_result "
                             "WHERE table_key=?", (key,)).fetchall()
@@ -168,9 +179,13 @@ if __name__ == "__main__":
     parser.add_argument("year")
     parser.add_argument("--only", action="append", help="one table (repeatable), "
                         "written to Out/.work/<year>/ so the full page is kept")
+    parser.add_argument("--db", type=Path, help="read this database (a table's own, "
+                        "tools/import_queue.py) instead of Out/<year>/'s")
+    parser.add_argument("--html", type=Path, help="write the page here")
     args = parser.parse_args()
     if args.only:
         build(args.year, {k: DEFAULT_PAGES.get(k, []) for k in args.only},
-              layout.work_year(args.year) / "extract-review-only.html")
+              args.html or layout.work_year(args.year) / "extract-review-only.html",
+              args.db)
     else:
         build(args.year, DEFAULT_PAGES, layout.year_dir(args.year) / "extract-review.html")

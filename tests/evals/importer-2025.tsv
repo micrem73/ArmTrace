@@ -1,0 +1,31 @@
+# Importer eval cases for 2025: tools/eval_importer.py. A mutation turns a table's
+# correctly extracted rows into what a reading defect would give, on the table's first
+# page (always shown to the importer); expect is the verdict the importer must give.
+# FAIL cases are caught by FAIL or UNSURE; PASS cases must get PASS. Mutations:
+#   drop-row           a data row disappears
+#   split-row=<col>    <col> leaves its row for a row of its own (MAE A1 p181, GEM)
+#   merge-rows         a data row swallows the next one
+#   swap-cells=<a>,<b> two values change columns
+#   wrong-value=<col>  a value misread (a digit, a word)
+#   kind=<kind>        a data row typed as another kind
+#   label=<col>:<text> a column's printed label misread
+# Add a case for every miss a person finds.
+case	key	mutation	expect	note
+pass-t2	MAE/T2	none	PASS	year window, wrapped labels, footnote
+pass-a1	MAE/A1	none	PASS	groups, subtotals, wrapped descriptions
+pass-a2	MAE/A2	none	PASS	summary of A1, share printed under the totals
+pass-difesa-4	DIFESA/4	none	PASS	cells wrapped over many lines, no totals
+pass-ee	MEF/EE	none	PASS	continuation pages, credit notes
+pass-ii	MEF/II	none	PASS	company subtotals
+pass-m	DOG/A1C2/M	none	PASS	272 rotated pages
+pass-m1	DOG/A1C2/M1	none	PASS	cover page, total
+drop-m1	DOG/A1C2/M1	drop-row	FAIL	an operator missing
+drop-ii	MEF/II	drop-row	FAIL
+split-a1	MAE/A1	split-row=val_fini_dog	FAIL	the GEM defect found by the maintainer
+merge-a2	MAE/A2	merge-rows	FAIL	two operators read as one
+swap-ee	MEF/EE	swap-cells=importi_segnalati,importi_accessori_segnalati	FAIL
+value-t2	MAE/T2	wrong-value=valore	FAIL	no total to catch it: only the page
+value-m	DOG/A1C2/M	wrong-value=stato_avanzamento_annuale_euro	FAIL
+value-difesa	DIFESA/4	wrong-value=paesi_partecipanti	FAIL	text misread
+kind-ii	MEF/II	kind=group	FAIL	a transaction typed as a heading
+label-difesa	DIFESA/4	label=tipologia:TIPO	FAIL	header misread

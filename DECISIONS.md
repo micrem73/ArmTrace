@@ -336,3 +336,41 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   header row; `<group> Totale` with an amount is a subtotal (MEF II); a continuation page
   may draw its inner walls in short pieces (MEF II p427). A2 agrees with A1 for each of its
   159 operators (authorisations, EURO, customs value): a cross-table witness for later.
+- **A year is imported by an agent loop, as step 1 checks its cuts** (maintainer, 2026-10-19).
+  `import-year` skill: one `table-importer` subagent per table drafts its columns or judges
+  its rows against the rendered pages; it never edits code or the agreed columns. The main
+  agent alone fixes code, test-first; escalation reuses `tools/recheck.py`'s rules. Each
+  table is extracted alone (`ExtractTables.py --out`) and the year assembled (`--merge`),
+  byte-identical to a single run. Why an agent at all: half the tables print no total, and
+  the first two trial runs found what the checks could not (Difesa 4's stray spaces, MAE B4's
+  doubled header letters). Scored by `tools/eval_importer.py` on broken copies of the pilot.
+- **Two words touching on one line are one word.** The source sets some words in two spans
+  (Difesa 4 `THALES IT` + `ALIA.`, `MBDA ITALIA` + `.`); joined with a space, 9 cells read
+  `IT ALIA`, `S.R.L . .`. A word that ends in its own printed space (T2 `Paesi `) is not
+  touching. T2 prints `UE-NATO`: the pilot test had asserted the spaces the old join invented.
+- **Open, for the maintainer: a word broken across two lines without a hyphen.** Difesa 4
+  prints `HYPERTAC/SMITHSINTE` / `RCONNECT` in a wrapped cell. Joining the lines with a space
+  (now) splits the word; joining without one would merge every pair of real words at a line
+  end. Kept as printed with a space until a convention is agreed.
+- **The sum rule is stored with the data** (`column_def.sum_sql`, 2026-10-19). The interface
+  worktree summed A1's `euro` as printed and got 385 M against a printed 7,72 bn: the rule
+  lived only in `columns.tsv` and the checks. Each summed column now carries the SQL a data
+  row adds (`CASE WHEN val_fini_dog_raw IS NOT NULL THEN 0 ELSE COALESCE(euro, CASE WHEN
+  valuta = 'EUR' THEN ammontare END, 0) END`), generated from the same `columns.tsv` line the
+  checks read, and a test runs it in SQLite against the checks' sum.
+- **The importer eval found two defects the checks could not** (first run: 10/10 broken
+  tables caught, 2 of 8 correct ones failed, both rightly). A value-shaped last line of a
+  wrapped description (`CAL.` / `5,56`, `(CLIN` / `5)`) was a row of its own: 45 in A1, 13 in
+  DOG M; only a value in a non-text column makes a line a record. A1's summary page cut a
+  three-line label to its first line, dropped `Totali parziali per tipo valuta:` and filed the
+  percentages under the amounts' labels: a label runs until its `:`, a line with no value
+  after a closed label heads the lines under it, a value before `%` is `<label> (%)`.
+- **A text printed twice a hair apart is printed once** (MAE B4 fakes bold so: `AArreeaa`,
+  or `Area Geografica` twice, by whether the 0.2 pt shift splits the run). Both forms are
+  dropped in `geometry.lines_of`, so the catalogue and the extractor read the same text.
+- **MEF II's `Ditta` is carried down** (maintainer, 2026-10-20: "table II is a visualisation,
+  not raw data"). The company is printed on its first line and in its `<Ditta> Totale`; every
+  line between is that company's. New column type `carry` (`columns.tsv`): the name fills the
+  lines under it up to the subtotal, which must name the same company, or an issue is recorded
+  and nothing is overwritten. 2025: all 3.991 lines named; 2 issues where the source spells a
+  name two ways (`AVIO S.p.A.` / `AVIO S.p.A.. Totale`, `FERRETTI S.p. A.` / `S.p..A.`).

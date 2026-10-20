@@ -9,6 +9,9 @@
 #   date    dd/mm/yyyy -> yyyy-mm-dd
 #   code    an identity (`016`, `92956`): kept as printed, leading zeros matter
 #   group   the heading printed once above a group of rows (MAE operator); carried onto them
+#   carry   text printed in its column on a group's first row only (MEF II `Ditta`); carried
+#           down to the rows under it, up to the group's `<name> Totale` subtotal, which must
+#           name the same (maintainer, 2026-10-20: the table is a visualisation, not raw data)
 #   years   the printed year columns of a table that prints a year window (T2): one
 #           row per printed row and year, `anno` + `valore` (amount)
 # labels: the printed header, `|` between the forms seen in different editions; a year is
@@ -54,7 +57,7 @@ MAE/A2	valore_euro_cooperazione	amount	di cui, per Prog. di Cooperazione	sum
 MAE/A2	val_fini_dog	amount	Valore Fini Dog.	sum
 MAE/A2	val_fini_dog_cooperazione	amount	di cui, per Prog. di Cooperazione	sum
 MAE/A2	incidenza_percento	number	Incidenza % su totale
-MEF/II	ditta	text	Ditta
+MEF/II	ditta	carry	Ditta
 MEF/II	numero_autorizzazione	code	Numero Autorizzazione
 MEF/II	utilizzatore_finale	text	Utilizzatore Finale
 MEF/II	causale	text	Causale

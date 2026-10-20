@@ -49,6 +49,8 @@ TOL = geo.RULE_TOL
 # A value-shaped cell: what tells a record's line from a wrapped text line.
 VALUE_SHAPES = {gra.SHAPE_NUMBER, gra.SHAPE_CURRENCY, gra.SHAPE_DATE,
                 gra.SHAPE_PERCENT, gra.SHAPE_CODE, gra.SHAPE_YEAR}
+# Columns of printed words: a value's shape there is text (`CAL. 5,56`).
+TEXT_TYPES = {"text", "group", "carry"}
 # A printed amount: what must never be lost outside a table's body.
 AMOUNT_WORD = re.compile(r"\d,\d{2}%?$")
 # A note printed under the table belongs to it (DECISIONS.md 2026-10-17).
@@ -81,6 +83,25 @@ class Column:
     else_col: str = None        # `sum else <col>@<col2>=<value>`
     else_when: tuple = None
     unless: str = None          # `unless <col>`: a row with <col> printed adds nothing
+
+    def sum_sql(self):
+        """The SQL a data row adds to this column's printed totals, or None.
+
+        Stored in `column_def.sum_sql`, so a query adds a column up the way
+        the table does: `SELECT total(<sum_sql>) FROM <table> WHERE
+        row_kind='data'`. The same rule as `_effective`, which the checks use;
+        a test holds the two together. `unless` names a valued column, one
+        with its printed text in `<col>_raw`."""
+        if not self.sum:
+            return None
+        expr = self.key
+        if self.else_col:
+            when_col, when_value = self.else_when
+            expr = (f"COALESCE({self.key}, CASE WHEN {when_col} = '{when_value}' "
+                    f"THEN {self.else_col} END, 0)")
+        if self.unless:
+            expr = f"CASE WHEN {self.unless}_raw IS NOT NULL THEN 0 ELSE {expr} END"
+        return expr
 
 
 @dataclass
@@ -124,6 +145,12 @@ def specs():
             if "unless" in rule:
                 col.unless = rule[rule.index("unless") + 1]
         out.setdefault(row["table"], Spec(row["table"], [])).columns.append(col)
+    for spec in out.values():
+        valued = {c.key for c in spec.columns if c.type in ("amount", "number", "date")}
+        for col in spec.columns:
+            if col.unless and col.unless not in valued:
+                raise ValueError(f"{spec.table}.{col.key}: `unless {col.unless}` "
+                                 "must name an amount, number or date column")
     for row in _rows("totals.tsv"):
         out[row["table"]].totals.append((re.compile(row["label"]), row["expr"]))
     return out
@@ -169,17 +196,7 @@ def page_words(page, frame=None):
     frame = frame or geo.Frame(geo.dominant_direction(page)["right"])
     foreign = [d for d in ((1, 0), (0, 1), (-1, 0), (0, -1))
                if d != (round(frame.right[0]), round(frame.right[1]))]
-    words, seen = [], []
-    for w in geo.lines_of(page, frame, foreign_dirs=foreign):
-        if w.foreign:
-            continue
-        # A word printed twice in one place is one word: 2025 T2 overprints
-        # `Programmi intergovernativi (%)`, which read as two rows.
-        if any(w.text == x.text and abs(w.u0 - x.u0) < 1 and abs(w.v0 - x.v0) < 1
-               for x in seen):
-            continue
-        seen.append(w)
-        words.append(w)
+    words = [w for w in geo.lines_of(page, frame, foreign_dirs=foreign) if not w.foreign]
     return frame, words
 
 
@@ -224,6 +241,7 @@ class Reader:
         self.order = None           # header column index -> spec column
         self.year_of = {}           # header column index -> printed year (T2)
         self.group = None           # the current group heading
+        self.carried = {}           # column index -> text carried down (`carry`)
         self.frame = None           # the table's reading frame, from its header
         self.row_ord = 0
 
@@ -359,15 +377,43 @@ class Reader:
                     (sp.pdf_page, "outside", f"amount {w.text!r} outside the table"))
 
     def read_summary(self, sp, words):
+        """The table's printed summary, as (label, value) pairs.
+
+        MAE A1 p606: a label may run over several lines (`Di cui relativi a
+        trasformazione ... temporanee` / `relative a Programmi
+        Intergovernativi` / `:`), each line without a value continuing it until
+        a `:` closes it; a line without a value after a closed label heads the
+        lines under it (`Totali parziali per tipo valuta:` over `AED`, `BGN`,
+        ...: `Totali parziali per tipo valuta: AED`; the line with no currency,
+        `Totali parziali per tipo valuta`); a value followed by `%` is
+        labelled `<label> (%)`."""
         self.count("summary")
+        entries, section = [], ""          # [label, [(value, is_percent)]]
         for band in geo.row_bands(words):
-            label = " ".join(w.text for w in band
-                             if gra.value_shape(w.text) not in VALUE_SHAPES
-                             and w.text not in ("%", ":"))
-            label = gra.normalise_text(label.rstrip(" :"))
-            for w in band:
+            band = sorted(band, key=lambda w: w.u0)
+            values, text = [], []
+            for i, w in enumerate(band):
                 if gra.value_shape(w.text) in (gra.SHAPE_NUMBER, gra.SHAPE_CURRENCY):
-                    self.result.totals.append((sp.pdf_page, sp.printed_page, label, w.text))
+                    pct = i + 1 < len(band) and band[i + 1].text.strip() == "%"
+                    values.append((w.text, pct))
+                elif w.text.strip() != "%":
+                    text.append(w.text)
+            text = gra.normalise_text(" ".join(text))
+            if STAMP.search(text):
+                continue
+            if not values:
+                if entries and not entries[-1][0].endswith(":"):
+                    entries[-1][0] = f"{entries[-1][0]} {text}".strip()
+                else:
+                    section = text
+                continue
+            label = f"{section} {text}".strip() if section else text
+            entries.append([label, values])
+        for label, values in entries:
+            label = gra.normalise_text(re.sub(r"\s*:+$", "", label))
+            for raw, pct in values:
+                self.result.totals.append(
+                    (sp.pdf_page, sp.printed_page, f"{label} (%)" if pct else label, raw))
 
     # -- records --------------------------------------------------------------
 
@@ -413,7 +459,11 @@ class Reader:
         return out
 
     def has_value(self, row):
-        return any(gra.value_shape(t) in VALUE_SHAPES for t in row if t)
+        """A value in a column that holds values. In a text column a value's
+        shape is only a wrapped description's last line (DOG M `(CLIN` /
+        `5)`, MAE A1 `CAL.` / `5,56`): it does not make the line a record."""
+        return any(gra.value_shape(t) in VALUE_SHAPES
+                   for t, col in zip(row, self.order) if t and col.type not in TEXT_TYPES)
 
     def place(self, sp, row, band, first):
         """A record, a group heading, or the continuation of the record above."""
@@ -466,6 +516,7 @@ class Reader:
         return rows[-1] if rows else None
 
     def emit(self, sp, kind, row, group=None):
+        row = self.carry(sp, kind, list(row) if row else [])
         self.row_ord += 1
         self.result.rows.append({
             "pdf_page": sp.pdf_page, "printed_page": sp.printed_page,
@@ -474,6 +525,28 @@ class Reader:
             "order": self.order, "year_of": self.year_of,
             "source_file": sp.doc.name.split("/")[-1],
         })
+
+
+    def carry(self, sp, kind, row):
+        """A `carry` column's text, printed on a group's first row only (MEF II
+        `Ditta`), filled into the rows under it. The group's subtotal names
+        it (`<name> Totale`): a different name is an issue, never overwritten."""
+        for i, col in enumerate(self.order or []):
+            if col.type != "carry" or i >= len(row):
+                continue
+            if kind == "data":
+                if row[i]:
+                    self.carried[i] = row[i]
+                elif i in self.carried:
+                    row[i] = self.carried[i]
+            elif kind in ("subtotal", "total"):
+                named = SUBTOTAL_TAIL.match(row[i]) if kind == "subtotal" else None
+                if named and self.carried.get(i, named.group(1)) != named.group(1):
+                    self.result.issues.append(
+                        (sp.pdf_page, "carry", f"{col.key} {self.carried[i]!r} carried "
+                                               f"into a group closed by {row[i]!r}"))
+                self.carried.pop(i, None)
+        return row
 
 
 class Refused(Exception):
@@ -500,7 +573,7 @@ def parse(col_type, raw):
     raw = raw or ""
     if raw == "":
         return None, None
-    if col_type in ("text", "code", "group"):
+    if col_type in ("text", "code", "group", "carry"):
         return raw, ("undecoded" if glyphs.undecoded(raw) else None)
     if col_type in ("amount", "number", "years"):
         if raw in gra.DASHES:

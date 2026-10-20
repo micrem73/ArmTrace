@@ -90,6 +90,11 @@ def checks_dir(year, root="."):
     return work_year(year, root) / "checks"
 
 
+def import_dir(year, root="."):
+    """One folder per table: its own database, rendered pages, verdicts."""
+    return work_year(year, root) / "import"
+
+
 def key_dir(key):
     """'DOG/A1C2/N' -> 'DOG_A1C2_N', the folder name of one table's checks."""
     return key.replace("/", "_")

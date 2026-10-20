@@ -3,6 +3,9 @@
 
     python3 ExtractTables.py 2025                  every table with agreed columns
     python3 ExtractTables.py 2025 --only MEF/EE    one table (repeatable)
+    python3 ExtractTables.py 2025 --only MEF/EE --out DIR
+                                                   that table alone, in DIR
+    python3 ExtractTables.py 2025 --merge DIR...   Out/<year>/ from those DIRs
 
         ->  Out/<year>/armtrace-<year>.sqlite
             Out/<year>/armtrace-<year>.sql        the deliverable: a plain dump
@@ -15,7 +18,11 @@ window (T2) has one row per printed row and year.
 
 Shared tables:
     source_file    each source volume and its SHA-256
-    column_def     each SQL column, its type, and the label printed in that year
+    column_def     each SQL column, its type, the label printed in that year, and
+                   `sum_sql`: how a data row adds to the table's printed totals.
+                   Sum with it, not the bare column: MAE A1's `euro` is blank on
+                   EUR lines and excludes customs-value lines (`SELECT
+                   total(<sum_sql>) FROM mae_a1 WHERE row_kind='data'`)
     printed_total  totals a table prints outside its grid (MAE A1's summary page)
     table_note     notes printed under a table
     extract_issue  what could not be read with confidence, with its reason
@@ -36,7 +43,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib import extract, layout, source  # noqa: E402
 
-SQL_TYPE = {"text": "TEXT", "code": "TEXT", "group": "TEXT", "date": "TEXT",
+SQL_TYPE = {"text": "TEXT", "code": "TEXT", "group": "TEXT", "carry": "TEXT", "date": "TEXT",
             "amount": "DECIMAL", "number": "DECIMAL"}
 META = ["year INTEGER", "source_file TEXT", "pdf_page INTEGER", "printed_page INTEGER",
         "row_ord INTEGER", "row_kind TEXT"]
@@ -44,7 +51,7 @@ META = ["year INTEGER", "source_file TEXT", "pdf_page INTEGER", "printed_page IN
 SHARED = """
 CREATE TABLE source_file (year INTEGER, file TEXT, sha256 TEXT, PRIMARY KEY (year, file));
 CREATE TABLE column_def (sql_table TEXT, table_key TEXT, year INTEGER, ordinal INTEGER,
-    col TEXT, type TEXT, label_it TEXT, PRIMARY KEY (sql_table, year, col));
+    col TEXT, type TEXT, label_it TEXT, sum_sql TEXT, PRIMARY KEY (sql_table, year, col));
 CREATE TABLE printed_total (year INTEGER, table_key TEXT, pdf_page INTEGER,
     printed_page INTEGER, label TEXT, value DECIMAL, value_raw TEXT);
 CREATE TABLE table_note (year INTEGER, table_key TEXT, pdf_page INTEGER,
@@ -54,6 +61,8 @@ CREATE TABLE extract_issue (year INTEGER, table_key TEXT, pdf_page INTEGER,
 CREATE TABLE check_result (year INTEGER, table_key TEXT, check_name TEXT,
     printed TEXT, computed DECIMAL, status TEXT);
 """
+SHARED_TABLES = {"source_file", "column_def", "printed_total", "table_note",
+                 "extract_issue", "check_result"}
 
 
 def columns_of(spec):
@@ -128,77 +137,72 @@ def records(year, result, spec):
     return rows, issues
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    parser.add_argument("year")
-    parser.add_argument("--only", action="append", default=None)
-    args = parser.parse_args(argv)
-    year = args.year
-    specs = extract.specs()
-    keys = args.only or [k for k in source.table_keys(year) if k in specs]
+def extract_one(db, year, key, spec):
+    """Read one table into `db`. Returns (fails, refusal or None)."""
+    name = extract.sql_name(key)
+    try:
+        result = extract.read_table(year, key, spec)
+    except extract.Refused as exc:
+        db.execute("INSERT INTO extract_issue VALUES (?,?,?,?,?)",
+                   (int(year), key, None, "refused", str(exc)))
+        print(f"  {key:<14} REFUSED {exc}")
+        return 0, str(exc)
+    create(db, name, spec)
+    rows, issues = records(year, result, spec)
+    width = len(rows[0]) if rows else 0
+    db.executemany(f"INSERT INTO {name} VALUES ({','.join('?' * width)})", rows)
+    for i, label in enumerate(result.labels):
+        col = [c for c in spec.printed][min(i, len(spec.printed) - 1)]
+        db.execute("INSERT OR IGNORE INTO column_def VALUES (?,?,?,?,?,?,?,?)",
+                   (name, key, int(year), i, col.key, col.type, label, col.sum_sql()))
+    db.executemany("INSERT INTO printed_total VALUES (?,?,?,?,?,?,?)",
+                   [(int(year), key, p, pp, label,
+                     str(v) if (v := extract.parse("amount", raw)[0]) is not None else None,
+                     raw) for p, pp, label, raw in result.totals])
+    db.executemany("INSERT INTO table_note VALUES (?,?,?,?,?)",
+                   [(int(year), key, p, pp, text) for p, pp, text in result.notes])
+    db.executemany("INSERT INTO extract_issue VALUES (?,?,?,?,?)",
+                   [(int(year), key, p, kind, detail)
+                    for p, kind, detail in result.issues + issues])
+    results = extract.checks(result, spec)
+    db.executemany("INSERT INTO check_result VALUES (?,?,?,?,?,?)",
+                   [(int(year), key, name_, printed,
+                     str(c) if c is not None else None, status)
+                    for name_, printed, c, status in results])
+    tally = {s: sum(1 for x in results if x[3] == s)
+             for s in ("PASS", "ROUNDING", "FAIL", "UNCHECKED")}
+    print(f"  {key:<14} {len(rows):>6} rows  pages {result.pages}  "
+          f"issues {len(result.issues) + len(issues)}  checks "
+          + " ".join(f"{s} {n}" for s, n in tally.items() if n))
+    return tally["FAIL"], None
 
-    out_dir = layout.year_dir(year)
-    path = out_dir / f"armtrace-{year}.sqlite"
-    tmp = path.with_suffix(".tmp")
-    tmp.unlink(missing_ok=True)
-    if args.only and path.exists():
-        # `--only` replaces those tables and keeps the rest, as in step 1.
-        shutil.copyfile(path, tmp)
-        db = sqlite3.connect(tmp)
-        for key in keys:
-            db.execute(f"DROP TABLE IF EXISTS {extract.sql_name(key)}")
-            for table in ("column_def", "printed_total", "table_note",
-                          "extract_issue", "check_result"):
-                db.execute(f"DELETE FROM {table} WHERE table_key=?", (key,))
-        db.execute("DELETE FROM source_file")
-    else:
-        db = sqlite3.connect(tmp)
-        db.executescript(SHARED)
-    files, failed, refused = {}, 0, []
-    for key in keys:
-        spec = specs[key]
-        name = extract.sql_name(key)
-        try:
-            result = extract.read_table(year, key, spec)
-        except extract.Refused as exc:
-            refused.append((key, str(exc)))
-            db.execute("INSERT INTO extract_issue VALUES (?,?,?,?,?)",
-                       (int(year), key, None, "refused", str(exc)))
-            print(f"  {key:<14} REFUSED {exc}")
+
+def merge(db, year, part):
+    """Copy every table of one per-table database (`--out`) into `db`."""
+    db.execute("ATTACH DATABASE ? AS part", (str(part),))
+    for name, sql in db.execute("SELECT name, sql FROM part.sqlite_master "
+                                "WHERE type='table'").fetchall():
+        if name in SHARED_TABLES:
+            if name != "source_file":
+                db.execute(f"INSERT INTO {name} SELECT * FROM part.{name}")
             continue
-        create(db, name, spec)
-        rows, issues = records(year, result, spec)
-        width = len(rows[0]) if rows else 0
-        db.executemany(f"INSERT INTO {name} VALUES ({','.join('?' * width)})", rows)
+        # `main.`: unqualified, SQLite would find and drop the part's own table.
+        db.execute(f"DROP TABLE IF EXISTS main.{name}")
+        db.execute(sql)
+        db.execute(f"INSERT INTO {name} SELECT * FROM part.{name}")
+    db.commit()
+    db.execute("DETACH DATABASE part")
+
+
+def finish(db, year, out_dir):
+    """Record the source files of every table in `db`, write the dump."""
+    files = {}
+    keys = {k for (k,) in db.execute("SELECT DISTINCT table_key FROM column_def")}
+    keys |= {k for (k,) in db.execute("SELECT DISTINCT table_key FROM extract_issue")}
+    for key in sorted(keys):
         for seg in source.segments(year, key):
             files[seg["source_file"]] = seg["sha256"]
-        for i, label in enumerate(result.labels):
-            col = [c for c in spec.printed][min(i, len(spec.printed) - 1)]
-            db.execute("INSERT OR IGNORE INTO column_def VALUES (?,?,?,?,?,?,?)",
-                       (name, key, int(year), i, col.key, col.type, label))
-        db.executemany("INSERT INTO printed_total VALUES (?,?,?,?,?,?,?)",
-                       [(int(year), key, p, pp, label,
-                         str(v) if (v := extract.parse("amount", raw)[0]) is not None else None,
-                         raw) for p, pp, label, raw in result.totals])
-        db.executemany("INSERT INTO table_note VALUES (?,?,?,?,?)",
-                       [(int(year), key, p, pp, text) for p, pp, text in result.notes])
-        db.executemany("INSERT INTO extract_issue VALUES (?,?,?,?,?)",
-                       [(int(year), key, p, kind, detail)
-                        for p, kind, detail in result.issues + issues])
-        results = extract.checks(result, spec)
-        db.executemany("INSERT INTO check_result VALUES (?,?,?,?,?,?)",
-                       [(int(year), key, name_, printed,
-                         str(c) if c is not None else None, status)
-                        for name_, printed, c, status in results])
-        tally = {s: sum(1 for x in results if x[3] == s)
-                 for s in ("PASS", "ROUNDING", "FAIL", "UNCHECKED")}
-        failed += tally["FAIL"]
-        print(f"  {key:<14} {len(rows):>6} rows  pages {result.pages}  "
-              f"issues {len(result.issues) + len(issues)}  checks "
-              + " ".join(f"{s} {n}" for s, n in tally.items() if n))
-    for (key,) in db.execute("SELECT DISTINCT table_key FROM column_def").fetchall():
-        for seg in source.segments(year, key):
-            files[seg["source_file"]] = seg["sha256"]
+    db.execute("DELETE FROM source_file")
     for name, sha in sorted(files.items()):
         db.execute("INSERT INTO source_file VALUES (?,?,?)", (int(year), name, sha))
     db.commit()
@@ -206,10 +210,69 @@ def main(argv=None):
     with open(dump, "w", encoding="utf-8", newline="\n") as fh:
         for line in db.iterdump():
             fh.write(line + "\n")
+    return hashlib.sha256(dump.read_bytes()).hexdigest()[:12]
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[1])
+    parser.add_argument("year")
+    parser.add_argument("--only", action="append", default=None)
+    parser.add_argument("--out", type=Path, help="write to this folder instead of "
+                        "Out/<year>/, from scratch: one table's own database (import-year)")
+    parser.add_argument("--merge", type=Path, nargs="+", metavar="DIR",
+                        help="assemble Out/<year>/ from the `--out` folders given, "
+                        "in table index order (the dump is the one a full run writes)")
+    args = parser.parse_args(argv)
+    year = args.year
+    specs = extract.specs()
+    order = source.table_keys(year)
+    out_dir = args.out or layout.year_dir(year)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"armtrace-{year}.sqlite"
+    tmp = path.with_suffix(".tmp")
+    tmp.unlink(missing_ok=True)
+    db = sqlite3.connect(tmp)
+    failed, refused = 0, []
+    if args.merge:
+        db.executescript(SHARED)
+        parts = {}
+        for folder in args.merge:
+            part = folder / f"armtrace-{year}.sqlite"
+            if not part.exists():           # a table with no agreed columns yet
+                continue
+            with sqlite3.connect(part) as pdb:
+                for (key,) in pdb.execute("SELECT DISTINCT table_key FROM column_def "
+                                          "UNION SELECT table_key FROM extract_issue"):
+                    parts[key] = part
+                failed += pdb.execute("SELECT count(*) FROM check_result "
+                                      "WHERE status='FAIL'").fetchone()[0]
+                refused += [k for (k,) in pdb.execute(
+                    "SELECT table_key FROM extract_issue WHERE kind='refused'")]
+        for key in sorted(parts, key=order.index):
+            merge(db, year, parts[key])
+            print(f"  {key:<14} merged from {parts[key].parent}")
+    else:
+        keys = args.only or [k for k in order if k in specs]
+        if args.only and path.exists() and not args.out:
+            # `--only` replaces those tables and keeps the rest, as in step 1.
+            db.close()
+            shutil.copyfile(path, tmp)
+            db = sqlite3.connect(tmp)
+            for key in keys:
+                db.execute(f"DROP TABLE IF EXISTS {extract.sql_name(key)}")
+                for table in SHARED_TABLES - {"source_file"}:
+                    db.execute(f"DELETE FROM {table} WHERE table_key=?", (key,))
+        else:
+            db.executescript(SHARED)
+        for key in keys:
+            fails, refusal = extract_one(db, year, key, specs[key])
+            failed += fails
+            if refusal:
+                refused.append(key)
+    digest = finish(db, year, out_dir)
     db.close()
     tmp.replace(path)
-    digest = hashlib.sha256(dump.read_bytes()).hexdigest()[:12]
-    print(f"  wrote {path}\n  wrote {dump} (sha256 {digest})")
+    print(f"  wrote {path}\n  wrote {out_dir / f'armtrace-{year}.sql'} (sha256 {digest})")
     return 1 if failed or refused else 0
 
 

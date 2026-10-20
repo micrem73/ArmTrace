@@ -11,11 +11,12 @@
 #   sum <col> over subtotal        the printed subtotals of <col> added up (A1's EURO total:
 #                                  the rows give 0,05 more, its subtotals' cent roundings;
 #                                  each subtotal is checked against its rows)
-# An empty label is a printed total whose label cell is blank (A1: `1.552.753,27`, first
-# of the per-currency totals, beside no currency; the rows with no currency printed).
+# A label under a heading carries it (`lib/extract.read_summary`): A1's per-currency totals are
+# `Totali parziali per tipo valuta: USD`; the first, `1.552.753,27`, beside no currency, is the
+# heading alone (the rows with no currency printed).
 table	label	expr
 MAE/A1	^Totale Autorizzazioni	count data
 MAE/A1	^Totale Valore in EURO	sum euro over subtotal
 MAE/A1	^Valore Fini Doganali	sum val_fini_dog
-MAE/A1	^([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog
-MAE/A1	^$	sum ammontare where valuta= unless val_fini_dog
+MAE/A1	^Totali parziali per tipo valuta: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog
+MAE/A1	^Totali parziali per tipo valuta$	sum ammontare where valuta= unless val_fini_dog
