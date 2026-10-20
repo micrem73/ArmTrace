@@ -127,6 +127,7 @@ from lib.patterns import (
 from lib.pageio import (
     appendix_code,
     cover_code,
+    decipher,
     no_text_layer,
     is_blank,
     is_ciphered,
@@ -456,7 +457,7 @@ def read_page_stamped(page):
         if stamp_of(chunk):
             found.append(chunk)
 
-    return page.extract_text(visitor_text=visit) or "", \
+    return decipher(page.extract_text(visitor_text=visit) or ""), \
         (found[0] if found else None)
 
 

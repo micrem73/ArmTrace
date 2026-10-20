@@ -53,6 +53,8 @@ from lib.pageio import (
     rel_headings,
     relation_exhibits,
     same_table,
+    stamp_code,
+    trim_foreign_stamp,
     trim_trailing,
     trim_trailing_blanks,
 )
@@ -68,6 +70,8 @@ from lib.patterns import (
     LEADING_CODE,
     MIN_RUN,
     OUT_DIR,
+    STAMP_LINE,
+    STAMP_STYLE,
     PDF_EXT,
     PROSE_STOPLIST,
     REL_STYLE,
@@ -356,11 +360,27 @@ def page_code(lines, text, vocabulary, family):
             if m:
                 return m.group(1).upper(), 2
 
+    # The MAE export stamp names the table on every page it exported; unlike a
+    # style-3 hit it cannot be a prose mention, so a one-page table survives
+    # (patterns.STAMP_LINE). Same vocabulary as style 3.
+    for line in lines:
+        m = STAMP_LINE.search(line)
+        if m and m.group(1):
+            cand = m.group(1).upper()
+            if cand in FAMILY2_CODES or (family != 2 and cand in (vocabulary or ())):
+                return cand, STAMP_STYLE
+            break
+
     # Style 3: deliberately unbounded. A positional window cannot separate a
     # running header from a prose cross-reference -- 8 lines lost 24 of 28
     # tables in 2019 vol. I, 24 lines invented KK1 on 2025 vol. II p263 ("come
     # da elencazione sintetica della tabella KK1"), and every threshold in
     # between was wrong somewhere. Callers disambiguate by frequency instead.
+    # The Dogane number their tables in a space of their own (bare M, MG1, MT7),
+    # which no MEF or MAE vocabulary lists: on their pages the vocabulary does
+    # not filter. 2022 vol. II reads its MEF ELENCO as the index, and lost every
+    # Dogane table to it.
+    dogane = None
     for line in lines:
         for m in INLINE_CODE.finditer(line):
             cand = m.group(1).upper()
@@ -368,7 +388,10 @@ def page_code(lines, text, vocabulary, family):
                 if family == 2:
                     continue
                 if vocabulary and cand not in vocabulary:
-                    continue
+                    if dogane is None:
+                        dogane = ontology.classify_page(text)[0] == ontology.DOG
+                    if not dogane:
+                        continue
                 if not vocabulary and cand in PROSE_STOPLIST:
                     continue
             return cand, 3
@@ -586,6 +609,7 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
             facts["blank"][page_no] = is_blank(lines)
             facts["numbers"][page_no] = printed_numbers(lines)
             facts["fingerprints"][page_no] = header_fingerprint(lines)
+            facts["stamp_codes"][page_no] = stamp_code(lines)
         if not lines:
             continue
         # An index of tables, read as one. Tested before is_index_page() because
@@ -876,7 +900,7 @@ def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
     stamps = {}
     raw_prov = {}
     pasted = []
-    facts = {"blank": {}, "numbers": {}, "fingerprints": {}}
+    facts = {"blank": {}, "numbers": {}, "fingerprints": {}, "stamp_codes": {}}
     page_codes, weak_pages, unassigned, garbled, ciphered, foreign, listings, \
         candidates, shared_pages, rel_pages = scan_headers(
             reader, vocabulary, family, stamps, raw_prov, pasted, facts,
@@ -1209,6 +1233,10 @@ def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
 
         info["end"], dropped, note = trim_trailing(info["start"], info["end"],
                                                    stamps)
+        if facts is not None:
+            info["end"], stamped_away = trim_foreign_stamp(
+                info["start"], info["end"], facts["stamp_codes"], tkey[2])
+            dropped += stamped_away
         if dropped:
             trimmed[where] = dropped
         if note:

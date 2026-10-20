@@ -60,7 +60,11 @@ CODE_RE = re.compile(rf"^{CODE_TAIL}$")
 #   - the separator must NOT span a newline. These PDFs break lines mid-word,
 #     so prose such as "una tabella (F\nG) ed un grafico (GF\n)" otherwise
 #     reads as a table code. A real code never has its keyword split from it.
-INLINE_CODE = re.compile(rf"\b(?i:TAB|TABELLA)\b\.?[^\S\n]+({CODE_TAIL})\b")
+# The second branch is a caption glued to the keyword, "operatoreTAB. M1" (2022
+# vol. II Dogane covers): a lowercase letter, then TAB and its period, both
+# exact. An uppercase join stays out ("MALTAB.M.A.", 2024 vol. II).
+INLINE_CODE = re.compile(
+    rf"(?:\b(?i:TAB|TABELLA)\b\.?|(?<=[a-z])TAB\.)[^\S\n]+({CODE_TAIL})\b")
 
 
 # "TAB. M - APPENDICE": the Dogane print an appendix as its base code plus this
@@ -110,6 +114,22 @@ COVER_CODE = re.compile(
 # Its own style number: a cover is not a running header, so MIN_RUN (style 3
 # only) does not apply to it.
 COVER_STYLE = 8
+
+
+# The MAE export stamp, "MAECI - UAMA - CENTRO INFORMATICO Pagina 1 di 1 TAB M2":
+# the report each page was exported from, named on every page. It ends in the
+# table code, or in a bare word for a report that is no table ("... VALORE",
+# the 2022 summary by value band). Its own style, because a one-page table
+# (2022 B5, M2) names itself only here and is no prose mention: MIN_RUN does
+# not apply.
+STAMP_LINE = re.compile(rf"CENTRO\s+INFORMATICO\b.*?(?:\bTAB\.?\s+({CODE_TAIL})|\b([A-Z]{{2,}}))\s*$")
+STAMP_STYLE = 9
+
+
+# Identity-H fonts with no ToUnicode and no /Differences hand pypdf the glyph
+# index, which in these fonts is the character code less 29 (2022 vol. I
+# p938-950: "7$%\x031\x14" is "TAB N1"). A space is glyph 3.
+CIPHER_SHIFT = 29
 
 
 # The suffix the code carries from then on, and it is deliberately glued to the
@@ -332,8 +352,9 @@ MEF_EXHIBIT_TITLES = (
     (re.compile(r"Riepilogo saldi importazioni intracomunitarie"), "UE"),
     (re.compile(r"Licenze Globali di programma di cooperazione"), "LGP"),
     (re.compile(r"Intermediazioni per Aziende\s*[-–]\s*Riepilogo generale"), "IAA"),
-    (re.compile(r"Finanziamenti-Garanzie per intermediari\s*[-–]\s*Riepilogo generale"),
-     "FG"),
+    # 2022 says "istituti di credito" for the same exhibit (vol. II p10).
+    (re.compile(r"Finanziamenti-Garanzie per (?:intermediari|istituti di credito)"
+                r"\s*[-–]\s*Riepilogo generale"), "FG"),
 )
 ANNEX_HEADER = re.compile(r"ELENCO\s+TABELLE")
 REL_ARTICLE = "REL"

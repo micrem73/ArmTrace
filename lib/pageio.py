@@ -10,9 +10,9 @@ detectors."""
 import re
 
 from lib.patterns import (
-    ALLEGATO_HEAD, ANNEX_HEADER, APPENDIX_CODE, APPENDIX_SUFFIX, COVER_CODE, COVER_KEYWORD, ELENCO_HEAD, ELENCO_MIN_CODES,
+    ALLEGATO_HEAD, ANNEX_HEADER, APPENDIX_CODE, APPENDIX_SUFFIX, CIPHER_SHIFT, COVER_CODE, COVER_KEYWORD, ELENCO_HEAD, ELENCO_MIN_CODES,
     ELENCO_ROW, EXHIBIT_CLOSED, MAX_TRAILING_PAGES, MEF_EXHIBIT, MEF_EXHIBIT_TITLES, PAGE_NUMBER_RE,
-    PUA_RE, REL_CONTINUED, REL_HEADING, REL_HEADING_SCAN, REL_PREFIX, REL_SALDI, STAMP_BAND, STAMP_NUM, STAMP_SIZE, STAMP_WORD,
+    PUA_RE, REL_CONTINUED, REL_HEADING, REL_HEADING_SCAN, REL_PREFIX, REL_SALDI, STAMP_BAND, STAMP_LINE, STAMP_NUM, STAMP_SIZE, STAMP_WORD,
     SUBSET_SPACE, TITLE_RE, _WS,
 )
 
@@ -23,6 +23,7 @@ from lib.patterns import (
 # it leaves behind hid 13 Dogane covers from is_table_cover.
 RUNNING_HEADER = re.compile(r"Senato della Repubblica|Camera dei Deputati|LEGISLA\s*TURA")
 COVER_MAX_LINES = 8
+BARCODE_LINE = re.compile(r"^\s*\*\d{6,}\*\s*$")
 COVER_MAX_CHARS = 160
 
 
@@ -231,8 +232,12 @@ def no_text_layer(lines):
 
 
 def is_blank(lines):
-    """True for a separator page: no text, or the Italian "PAGINA BIANCA"."""
+    """True for a separator page: no text, the Italian "PAGINA BIANCA", or the
+    printer's back leaf, which carries only its barcode ("*190670036670*",
+    2022 vol. II p1088)."""
     if not lines:
+        return True
+    if all(BARCODE_LINE.match(line) for line in lines):
         return True
     return len(lines) == 1 and "BIANCA" in lines[0].upper()
 
@@ -292,7 +297,9 @@ def relation_exhibits(text, open_code):
         starts.sort()
     head = joined[:starts[0][0]] if starts else joined
     found = []
-    if open_code and "€" in head:
+    # Amounts continue it; so does its grand total, which 2022 vol. II p9 prints
+    # in a font whose euro sign reads "Φ".
+    if open_code and ("€" in head or EXHIBIT_CLOSED.search(head)):
         found.append((REL_CONTINUED, open_code))
         if EXHIBIT_CLOSED.search(head):
             open_code = None
@@ -440,8 +447,8 @@ def page_text(page):
     """page.extract_text(), from the page cache when one is attached."""
     entry = _cached(page)
     if entry is not None:
-        return entry["text"]
-    return page.extract_text() or ""
+        return decipher(entry["text"])
+    return decipher(page.extract_text() or "")
 
 
 def read_page(page):
@@ -452,7 +459,8 @@ def read_page(page):
     """
     entry = _cached(page)
     if entry is not None:
-        return entry["text"], (tuple(entry["stamp"]) if entry["stamp"] else None)
+        return (decipher(entry["text"]),
+                tuple(entry["stamp"]) if entry["stamp"] else None)
     found = []
     try:
         height = float(page.mediabox.height)
@@ -469,7 +477,8 @@ def read_page(page):
         if stamp:
             found.append(stamp)
 
-    return page.extract_text(visitor_text=visit) or "", (found[0] if found else None)
+    text = page.extract_text(visitor_text=visit) or ""
+    return decipher(text), (found[0] if found else None)
 
 
 
@@ -494,6 +503,29 @@ def stamp_total(stamps, start, end):
         return 1, stamps[start][1]
     return 2, stamps[start][2]
 
+
+
+def stamp_code(lines):
+    """What the MAE export stamp names on this page: a code, a bare report word
+    ("VALORE"), or None when the page carries no stamp."""
+    for line in lines:
+        m = STAMP_LINE.search(line)
+        if m:
+            return m.group(1) or m.group(2)
+    return None
+
+
+def trim_foreign_stamp(start, end, codes, code):
+    """Drop trailing pages whose export stamp names another report.
+
+    2022 vol. I p798, the VALORE summary, prints no table code and follows E,
+    so E's span reached it; its stamp says VALORE. A page with no stamp is not
+    evidence either way and stops the walk. Returns (end, dropped).
+    """
+    keep = end
+    while keep > start and codes.get(keep) not in (None, code):
+        keep -= 1
+    return keep, end - keep
 
 
 def trim_trailing(start, end, stamps):
@@ -572,15 +604,43 @@ def is_garbled(text):
 
 
 
+def _ciphered_line(line):
+    if any(ord(c) < 32 and c != "\t" for c in line):
+        return True
+    letters = [c for c in line if c.isalpha()]
+    return (len(letters) >= 8
+            and sum(c in "aeiouAEIOU" for c in letters) < 0.08 * len(letters))
+
+
+def decipher(text):
+    """The page text with its shifted lines read back (patterns.CIPHER_SHIFT).
+
+    Only a page is_ciphered() flags is touched, and on it only the lines that
+    are shifted: the act's running header is set in a real font on the same
+    page. A real space stays a space; glyphs past the ASCII range stay as they
+    are.
+    """
+    if not is_ciphered(text):
+        return text
+    out = []
+    for line in text.split("\n"):
+        if _ciphered_line(line):
+            line = "".join(chr(ord(c) + CIPHER_SHIFT) if 3 <= ord(c) <= 93 and c != " "
+                           else c for c in line)
+        out.append(line)
+    return "\n".join(out)
+
+
 def is_ciphered(text):
     """True if the page text is a shifted alphabet rather than real text.
 
     2022 vol. I from p938 on is emitted by /Identity-H fonts (2-byte CIDs)
     with no ToUnicode AND no /Differences, so pypdf returns a substituted
-    alphabet: "/LFHQ]D 2SHUDWRUH" where the header reads "TABELLA N1 PER
-    OPERATORE". There is no mapping table anywhere in the PDF, only glyph
-    outlines, so this is not reversible either -- worse than the PUA case,
-    since the character count is intact and it reads as plausible text.
+    alphabet: "/LFHQ]D 2SHUDWRUH" for "Licenza Operatore". There is no
+    mapping table in the PDF, but none is needed: the glyph index is the
+    character code less 29, so decipher() reads the 2022 pages back (checked
+    on p938-950, 2026-10-19). Other years are not yet checked for the same
+    shift; a page decipher() cannot help still reads as ciphered.
 
     Measured: 2017 vol. I 287pp, 2022 vol. I 66pp, 2016 vol. I 28pp,
     2018 vol. II 7pp.

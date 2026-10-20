@@ -296,6 +296,14 @@ def test_bare_relation_exhibit_titles():
     assert relation_exhibits(annex, None) == ([], None)
     coded = MEF_BLOCK + "Tabella FG - Finanziamenti-Garanzie per intermediari - Riepilogo generale\n"
     assert relation_exhibits(coded, None)[0] == [("Tabella", "FG")]
+    # 2022 vol. II p9: LGP's last rows and its total open the page, in a font
+    # whose euro sign pypdf reads as "Φ"; the total row alone says it continues.
+    p9 = ("PIETRO ROSA TBM S.r.l. Φ\x03ϰϵ͘ϵϬϮ͕ϲϱ \nTotale Complessivo Φ\x03ϵϵϯ \n"
+          + MEF_BLOCK + "Intermediazioni per Aziende - Riepilogo generale\n")
+    assert relation_exhibits(p9, "LGP")[0] == [("Segue", "LGP"), ("Tabella", "IAA")]
+    # 2022 vol. II p10 names FG's intermediaries "istituti di credito".
+    fg2022 = MEF_BLOCK + "Finanziamenti-Garanzie per istituti di credito - Riepilogo generale\n"
+    assert relation_exhibits(fg2022, None)[0] == [("Tabella", "FG")]
 
 
 def test_a_scan_is_not_a_legible_page():
@@ -426,3 +434,85 @@ def test_a_credit_note_prints_its_sign_before_the_euro():
     assert parse_number("-€ 142.942,72") == Decimal("-142942.72")
     assert parse_number("€ -40,66") == Decimal("-40.66")
     assert value_shape("-€ 142.942,72") == "currency"
+
+
+def test_a_ciphered_page_is_read_back():
+    """2022 vol. I p938-950: Identity-H fonts with no ToUnicode hand pypdf each
+    glyph's index, the character code less 29. Read as lost, N1 to P2 vanished
+    into M1, which ran 26 pages where the index lists 12."""
+    from lib.pageio import decipher, is_ciphered
+    page = ("/LFHQ]D 9DORUH\x03ILQL 6SHGL]LRQL /LFHQ]H\n"
+            "0$(&,\x03\x108$0$\x03\x10\x03&(1752\x03,1)250$7,&2 3DJLQD\x03\x14\x03GL\x03\x17 7$%\x031\x14\n"
+            "Camera dei Deputati Senato della Repubblica\n"
+            "–    934    –")
+    assert is_ciphered(page)
+    assert decipher(page).splitlines() == [
+        "Licenza Valore fini Spedizioni Licenze",
+        "MAECI -UAMA - CENTRO INFORMATICO Pagina 1 di 4 TAB N1",
+        "Camera dei Deputati Senato della Repubblica",
+        "–    934    –"]
+    clear = "Tabella M1\nXIX LEGISLATURA\nTAB B4"
+    assert decipher(clear) == clear
+
+
+def test_the_export_stamp_names_a_one_page_table():
+    """2022 vol. I p558 (B5) and p937 (M2) are one page each and name their code
+    only in the MAECI export stamp. As a style-3 hit a single page reads as a
+    prose mention and both were dropped; the stamp is no prose."""
+    from lib.engine import page_code
+    from lib.patterns import STAMP_STYLE
+    b5 = ["PROGRAMMI DI COOPERAZIONE ELENCO PER PAESE DI DESTINAZIONE",
+          "MAECI - UAMA - CENTRO INFORMATICO Pagina di 11 TAB B5"]
+    assert page_code(b5, "\n".join(b5), set(), 2) == ("B5", STAMP_STYLE)
+    prose = ["come riportato nella TAB B5 allegata"]
+    assert page_code(prose, prose[0], set(), 2) == ("B5", 3)
+
+
+def test_a_trailing_page_stamped_for_another_report_is_dropped():
+    """2022 vol. I p798: the one-page VALORE summary follows E with no code of
+    its own and E took it (59 pages, index 58). Its stamp names VALORE, not E."""
+    from lib.pageio import stamp_code, trim_foreign_stamp
+    assert stamp_code(["MAECI - UAMA - CENTRO INFORMATICO Pagina di 11 VALORE"]) == "VALORE"
+    assert stamp_code(["MAECI - UAMA - CENTRO INFORMATICO Pagina di 58 58 TAB E"]) == "E"
+    assert stamp_code(["Pagina 3"]) is None
+    codes = {740: "E", 797: "E", 798: "VALORE"}
+    assert trim_foreign_stamp(740, 798, codes, "E") == (797, 1)
+    assert trim_foreign_stamp(740, 797, codes, "E") == (797, 0)
+    assert trim_foreign_stamp(740, 799, {799: None}, "E") == (799, 0)
+
+
+def test_dogane_codes_pass_a_mef_vocabulary():
+    """2022 vol. II p14 lists "Tabella AA" ... "Tabella DD2" one per line, so the
+    MEF ELENCO is read as the volume's index, and its twelve codes then threw
+    away every Dogane "TAB. M" header: no table from p592 to p816."""
+    from lib.engine import page_code
+    p593 = ["Tipo di operazione: Esportazione Definitiva (EX) TAB. M",
+            "Denominazione operatore Codice"]
+    assert page_code(p593, "\n".join(p593), {"AA", "BB", "CC"}, 1) == ("M", 3)
+    prose = ["come da elencazione sintetica della tabella KK1"]
+    assert page_code(prose, prose[0], {"AA", "BB"}, 1) == (None, None)
+
+
+def test_a_cover_code_glued_to_its_caption():
+    """2022 vol. II p927, p938, p941: "Riepilogo per operatoreTAB. M1". With a
+    word boundary required before TAB, M1, N1 and O1 of art. 1 comma 2 were
+    never found and P ran on over them. 2024's "MALTAB.M.A." (an uppercase
+    join) must still not read as a code."""
+    from lib.engine import page_code
+    from lib.patterns import INLINE_CODE
+    cover = ["Esportazione Definitiva", "(EX)Riepilogo per", "operatoreTAB. M1"]
+    assert page_code(cover, "\n".join(cover), set(), 1)[0] == "M1"
+    assert not INLINE_CODE.search("BANCA MALTAB.M.A. S.P.A.")
+    assert not INLINE_CODE.search("non accettabile M1")
+    from lib.ontology import classify_page
+    assert classify_page("\n".join(cover))[:2] == ("DOG", "A1C2")
+
+
+def test_the_printers_barcode_leaf_is_blank():
+    """2022 vol. II p1088, after "PAGINA BIANCA": only the printer's barcode
+    ("*190670036670*", twice). Not blank, it kept the volume's last table
+    (DOG/A10QUATER/MT13) running two pages past its data."""
+    from lib.pageio import is_blank
+    assert is_blank(["*190670036670*", "*190670036670*"])
+    assert is_blank(["PAGINA BIANCA"])
+    assert not is_blank(["*190670036670*", "Austria 16"])

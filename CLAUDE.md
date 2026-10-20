@@ -63,6 +63,7 @@ Decisions and their reasons are in `DECISIONS.md`; measurements live beside the 
 - 2025: verified clean, 156 tables (150 at tag `2025-clean`, plus the six MEF relation exhibits `MEF/REL/*`, 2026-10-18).
 - 2024: verified clean, 159 tables, MEF relation exhibits included (2026-10-18).
 - 2023: verified clean (2026-10-19), 159 tables in three volumes, all PASS. The scanned Difesa annexes (no text layer) are declared in `editions/y2023.py`; SQL extraction needs OCR for them.
+- 2022: verified clean (2026-10-20), 162 tables, all PASS. Scanned Difesa annexes declared in `editions/y2022.py` (OCR needed); MAE N1-P2 read back from a shifted font (`pageio.decipher`).
 - Glyph recovery (garbled MAE fonts, 2020–2025): built. SQL extraction reads MAE text through `lib/glyphs.py` (`page_text`, `decode_spans`). A new edition: run `tools/build_glyphmap.py` and commit the map; an outline it cannot name stays undecoded and goes to a person (`lib/data/glyph-decisions.tsv`).
 - Open defects, each needs an engine change and a re-run of every verified year:
   - 2016 vol. II: the bare `TAB. M` series (278 pages) is not detected.
