@@ -49,6 +49,8 @@ TOL = geo.RULE_TOL
 # A value-shaped cell: what tells a record's line from a wrapped text line.
 VALUE_SHAPES = {gra.SHAPE_NUMBER, gra.SHAPE_CURRENCY, gra.SHAPE_DATE,
                 gra.SHAPE_PERCENT, gra.SHAPE_CODE, gra.SHAPE_YEAR}
+# Columns of printed words: a value's shape there is text (`CAL. 5,56`).
+TEXT_TYPES = {"text", "group", "carry"}
 # A printed amount: what must never be lost outside a table's body.
 AMOUNT_WORD = re.compile(r"\d,\d{2}%?$")
 # A note printed under the table belongs to it (DECISIONS.md 2026-10-17).
@@ -81,6 +83,26 @@ class Column:
     else_col: str = None        # `sum else <col>@<col2>=<value>`
     else_when: tuple = None
     unless: str = None          # `unless <col>`: a row with <col> printed adds nothing
+    link: tuple = None          # `link`: (amount col, item col, opener col)
+
+    def sum_sql(self):
+        """The SQL a data row adds to this column's printed totals, or None.
+
+        Stored in `column_def.sum_sql`, so a query adds a column up the way
+        the table does: `SELECT total(<sum_sql>) FROM <table>` (facts only:
+        no subtotal or total row to leave out). The same rule as `_effective`,
+        which the checks use; a test holds the two together. `unless` names a valued column, one
+        with its printed text in `<col>_raw`."""
+        if not self.sum:
+            return None
+        expr = self.key
+        if self.else_col:
+            when_col, when_value = self.else_when
+            expr = (f"COALESCE({self.key}, CASE WHEN {when_col} = '{when_value}' "
+                    f"THEN {self.else_col} END, 0)")
+        if self.unless:
+            expr = f"CASE WHEN {self.unless}_raw IS NOT NULL THEN 0 ELSE {expr} END"
+        return expr
 
 
 @dataclass
@@ -92,11 +114,19 @@ class Spec:
     @property
     def printed(self):
         """The columns the header prints, in order (not the group heading)."""
-        return [c for c in self.columns if c.type != "group"]
+        return [c for c in self.columns if c.type not in ("group", "link", "unit")]
 
     @property
     def group(self):
         return next((c for c in self.columns if c.type == "group"), None)
+
+    @property
+    def link(self):
+        return next((c for c in self.columns if c.type == "link"), None)
+
+    @property
+    def unit(self):
+        return next((c for c in self.columns if c.type == "unit"), None)
 
     @property
     def years(self):
@@ -115,7 +145,9 @@ def specs():
         col = Column(row["col"], row["type"],
                      [x for x in (row["labels"] or "").split("|")])
         rule = (row["sum"] or "").split()
-        if rule[:1] == ["sum"]:
+        if col.type == "link":
+            col.link = tuple(rule)
+        elif rule[:1] == ["sum"]:
             col.sum = True
             if rule[1:2] == ["else"]:
                 target, cond = rule[2].split("@")
@@ -124,6 +156,12 @@ def specs():
             if "unless" in rule:
                 col.unless = rule[rule.index("unless") + 1]
         out.setdefault(row["table"], Spec(row["table"], [])).columns.append(col)
+    for spec in out.values():
+        valued = {c.key for c in spec.columns if c.type in ("amount", "number", "date")}
+        for col in spec.columns:
+            if col.unless and col.unless not in valued:
+                raise ValueError(f"{spec.table}.{col.key}: `unless {col.unless}` "
+                                 "must name an amount, number or date column")
     for row in _rows("totals.tsv"):
         out[row["table"]].totals.append((re.compile(row["label"]), row["expr"]))
     return out
@@ -169,17 +207,7 @@ def page_words(page, frame=None):
     frame = frame or geo.Frame(geo.dominant_direction(page)["right"])
     foreign = [d for d in ((1, 0), (0, 1), (-1, 0), (0, -1))
                if d != (round(frame.right[0]), round(frame.right[1]))]
-    words, seen = [], []
-    for w in geo.lines_of(page, frame, foreign_dirs=foreign):
-        if w.foreign:
-            continue
-        # A word printed twice in one place is one word: 2025 T2 overprints
-        # `Programmi intergovernativi (%)`, which read as two rows.
-        if any(w.text == x.text and abs(w.u0 - x.u0) < 1 and abs(w.v0 - x.v0) < 1
-               for x in seen):
-            continue
-        seen.append(w)
-        words.append(w)
+    words = [w for w in geo.lines_of(page, frame, foreign_dirs=foreign) if not w.foreign]
     return frame, words
 
 
@@ -224,6 +252,7 @@ class Reader:
         self.order = None           # header column index -> spec column
         self.year_of = {}           # header column index -> printed year (T2)
         self.group = None           # the current group heading
+        self.carried = {}           # column index -> text carried down (`carry`)
         self.frame = None           # the table's reading frame, from its header
         self.row_ord = 0
 
@@ -359,15 +388,43 @@ class Reader:
                     (sp.pdf_page, "outside", f"amount {w.text!r} outside the table"))
 
     def read_summary(self, sp, words):
+        """The table's printed summary, as (label, value) pairs.
+
+        MAE A1 p606: a label may run over several lines (`Di cui relativi a
+        trasformazione ... temporanee` / `relative a Programmi
+        Intergovernativi` / `:`), each line without a value continuing it until
+        a `:` closes it; a line without a value after a closed label heads the
+        lines under it (`Totali parziali per tipo valuta:` over `AED`, `BGN`,
+        ...: `Totali parziali per tipo valuta: AED`; the line with no currency,
+        `Totali parziali per tipo valuta`); a value followed by `%` is
+        labelled `<label> (%)`."""
         self.count("summary")
+        entries, section = [], ""          # [label, [(value, is_percent)]]
         for band in geo.row_bands(words):
-            label = " ".join(w.text for w in band
-                             if gra.value_shape(w.text) not in VALUE_SHAPES
-                             and w.text not in ("%", ":"))
-            label = gra.normalise_text(label.rstrip(" :"))
-            for w in band:
+            band = sorted(band, key=lambda w: w.u0)
+            values, text = [], []
+            for i, w in enumerate(band):
                 if gra.value_shape(w.text) in (gra.SHAPE_NUMBER, gra.SHAPE_CURRENCY):
-                    self.result.totals.append((sp.pdf_page, sp.printed_page, label, w.text))
+                    pct = i + 1 < len(band) and band[i + 1].text.strip() == "%"
+                    values.append((w.text, pct))
+                elif w.text.strip() != "%":
+                    text.append(w.text)
+            text = gra.normalise_text(" ".join(text))
+            if STAMP.search(text):
+                continue
+            if not values:
+                if entries and not entries[-1][0].endswith(":"):
+                    entries[-1][0] = f"{entries[-1][0]} {text}".strip()
+                else:
+                    section = text
+                continue
+            label = f"{section} {text}".strip() if section else text
+            entries.append([label, values])
+        for label, values in entries:
+            label = gra.normalise_text(re.sub(r"\s*:+$", "", label))
+            for raw, pct in values:
+                self.result.totals.append(
+                    (sp.pdf_page, sp.printed_page, f"{label} (%)" if pct else label, raw))
 
     # -- records --------------------------------------------------------------
 
@@ -413,7 +470,11 @@ class Reader:
         return out
 
     def has_value(self, row):
-        return any(gra.value_shape(t) in VALUE_SHAPES for t in row if t)
+        """A value in a column that holds values. In a text column a value's
+        shape is only a wrapped description's last line (DOG M `(CLIN` /
+        `5)`, MAE A1 `CAL.` / `5,56`): it does not make the line a record."""
+        return any(gra.value_shape(t) in VALUE_SHAPES
+                   for t, col in zip(row, self.order) if t and col.type not in TEXT_TYPES)
 
     def place(self, sp, row, band, first):
         """A record, a group heading, or the continuation of the record above."""
@@ -466,14 +527,41 @@ class Reader:
         return rows[-1] if rows else None
 
     def emit(self, sp, kind, row, group=None):
+        row, carried = self.carry(sp, kind, list(row) if row else [])
         self.row_ord += 1
         self.result.rows.append({
+            "carried": carried,
             "pdf_page": sp.pdf_page, "printed_page": sp.printed_page,
             "row_ord": self.row_ord, "kind": kind, "group": group,
             "cells": list(row) if row else [""] * len(self.order),
             "order": self.order, "year_of": self.year_of,
             "source_file": sp.doc.name.split("/")[-1],
         })
+
+
+    def carry(self, sp, kind, row):
+        """A `carry` column's text, printed on a group's first row only (MEF II
+        `Ditta`), filled into the rows under it. The group's subtotal names
+        it (`<name> Totale`): a different name is an issue, never overwritten.
+        Returns the row and the indices filled in, not printed."""
+        carried = set()
+        for i, col in enumerate(self.order or []):
+            if col.type != "carry" or i >= len(row):
+                continue
+            if kind == "data":
+                if row[i]:
+                    self.carried[i] = row[i]
+                elif i in self.carried:
+                    row[i] = self.carried[i]
+                    carried.add(i)
+            elif kind in ("subtotal", "total"):
+                named = SUBTOTAL_TAIL.match(row[i]) if kind == "subtotal" else None
+                if named and self.carried.get(i, named.group(1)) != named.group(1):
+                    self.result.issues.append(
+                        (sp.pdf_page, "carry", f"{col.key} {self.carried[i]!r} carried "
+                                               f"into a group closed by {row[i]!r}"))
+                self.carried.pop(i, None)
+        return row, carried
 
 
 class Refused(Exception):
@@ -487,7 +575,102 @@ def read_table(year, key, spec=None, root=".", pages=None):
     reader = Reader(year, key, spec)
     for sp in pages if pages is not None else source.table_pages(year, key, root):
         reader.read_page(sp)
+    if spec.link:
+        link_items(reader.result, spec)
     return reader.result
+
+
+def link_items(result, spec):
+    """Each item's amount, by the table's `link` rule (columns.tsv): sets
+    `link` (the amount row's `row_ord`) on every item it can decide, `unit`
+    (the opener row's `row_ord`) on every row, and
+    moves a wrapped description off an amount line to the item above.
+    Two conventions of the maintainer (2026-10-21) set more: an amount with
+    no item of its own, in a unit of more amounts than items, gets the item
+    above's description (`copied`: column indices, `notes`: the row's flag);
+    an item in a unit with no amount gets an amount of 0 (`implied`)."""
+    amount, item, opener = spec.link.link
+    # The item's side of the line: its text columns from <item> on (A1: Unita'
+    # Misura, Materiale). Valuta is the amount's, and stays with it.
+    side = [c.key for c in spec.printed]
+    side = side[side.index(item):]
+    text = [c.key for c in spec.printed if c.type in TEXT_TYPES and c.key in side]
+    described = [c.key for c in spec.printed if c.type in TEXT_TYPES | {"code"} and c.key in side]
+    units, unit, group = [], None, object()
+    for r in result.rows:
+        if r["kind"] != "data":
+            continue
+        if unit is None or _cell(r, opener) or r["group"] != group:
+            unit = []
+            units.append(unit)
+        group = r["group"]
+        r["unit"] = unit[0]["row_ord"] if unit else r["row_ord"]
+        unit.append(r)
+    for unit in units:
+        items = [r for r in unit if _cell(r, item)]
+        amounts = [r for r in unit if _cell(r, amount)]
+        for r in amounts:
+            if _cell(r, item):
+                continue
+            above = [x for x in items if x["row_ord"] < r["row_ord"]]
+            for i, col in enumerate(r["order"]):
+                if col.key in text and r["cells"][i]:
+                    if not above:
+                        result.issues.append((r["pdf_page"], "link", f"{col.key} "
+                                              f"{r['cells'][i]!r} on an amount line, no item above"))
+                        continue
+                    above[-1]["cells"][i] = f"{above[-1]['cells'][i]} {r['cells'][i]}".strip()
+                    r["cells"][i] = ""
+        where = f"{unit[0]['group'] or ''} {_cell(unit[0], opener)}".strip()
+        if not items:
+            result.issues.append((unit[0]["pdf_page"], "link",
+                                  f"{where}: {len(amounts)} amounts, no item"))
+            continue
+        if not amounts:
+            # LEONARDO p260: a dated item, its amount boxes printed empty.
+            for x in items:
+                x["link"] = x["row_ord"]
+                x["implied"] = {amount: "0"}
+                x.setdefault("notes", []).append(
+                    f"{amount} 0: amount boxes printed empty (maintainer, 2026-10-21)")
+            continue
+        if len(amounts) > len(items):
+            # FABARM p142: one item, a second amount box on a line of its own.
+            for a in amounts:
+                if _cell(a, item):
+                    continue
+                above = [x for x in items if x["row_ord"] < a["row_ord"]]
+                if not above:
+                    continue
+                src, a["copied"] = above[-1], []
+                for i, col in enumerate(a["order"]):
+                    if col.key in described and not a["cells"][i] and _cell(src, col.key):
+                        a["cells"][i] = _cell(src, col.key)
+                        a["copied"].append(i)
+                a.setdefault("notes", []).append(
+                    f"copied from row {src['row_ord']}: "
+                    + ", ".join(a["order"][i].key for i in a["copied"]))
+            items = [r for r in unit if _cell(r, item) or r.get("copied")]
+        if len(amounts) > len(items):
+            result.issues.append((unit[0]["pdf_page"], "link",
+                                  f"{where}: {len(amounts)} amounts, {len(items)} items"))
+            continue
+        if len(amounts) == len(items):
+            for a, x in zip(amounts, items):
+                x["link"] = a["row_ord"]
+            continue
+        for x in items:
+            cover = [a for a in amounts if a["row_ord"] <= x["row_ord"]]
+            if cover:
+                x["link"] = cover[-1]["row_ord"]
+            else:
+                result.issues.append((x["pdf_page"], "link",
+                                      f"{where}: item {_cell(x, item)} above the first amount"))
+        covered = {x.get("link") for x in items}
+        for a in amounts:
+            if a["row_ord"] not in covered:
+                result.issues.append((a["pdf_page"], "link",
+                                      f"{where}: amount {_cell(a, amount)} covers no item"))
 
 
 # --------------------------------------------------------------------------
@@ -500,7 +683,7 @@ def parse(col_type, raw):
     raw = raw or ""
     if raw == "":
         return None, None
-    if col_type in ("text", "code", "group"):
+    if col_type in ("text", "code", "group", "carry"):
         return raw, ("undecoded" if glyphs.undecoded(raw) else None)
     if col_type in ("amount", "number", "years"):
         if raw in gra.DASHES:
@@ -551,55 +734,8 @@ ROUNDING = __import__("decimal").Decimal("0.02")
 
 def checks(result, spec):
     """[(check, printed, computed, status)]: PASS, ROUNDING, FAIL, or
-    UNCHECKED for a printed total no rule recomputes (reported, never dropped)."""
-    out = []
-    additive = [c for c in spec.printed if c.sum]
-    data, since = [], []
-    for row in result.rows:
-        if row["kind"] == "data":
-            data.append(row)
-            since.append(row)
-        elif row["kind"] in ("subtotal", "total"):
-            scope = since if row["kind"] == "subtotal" else data
-            for col in additive:
-                printed = _cell(row, col.key)
-                value, _ = parse("amount", printed)
-                if value is None:
-                    continue
-                computed = sum(_effective(r, col, spec) for r in scope)
-                # The group names the subtotal: A1 p410 closes two operators.
-                whose = f" ({row['group']})" if row["kind"] == "subtotal" and row["group"] else ""
-                out.append((f"{row['kind']} p{row['pdf_page']} {col.key}{whose}", printed,
-                            computed, _status(computed, value)))
-            if row["kind"] == "subtotal":
-                since = []
-    for _page, _printed_page, label, raw in result.totals:
-        rule = next(((m, expr) for rx, expr in spec.totals if (m := rx.search(label))),
-                    None)
-        value, _ = parse("amount", raw)
-        if rule is None or value is None:
-            out.append((f"printed {label!r}", raw, None, "UNCHECKED"))
-            continue
-        m, expr = rule
-        words = expr.split()
-        if words[0] == "count":
-            computed = sum(1 for r in data if _cell(r, words[1]))
-            value = gra.parse_number(raw)
-        elif words[-2:] == ["over", "subtotal"]:
-            # The printed subtotals added up: A1's grand EURO total is theirs,
-            # each subtotal rounded, and the rows give the roundings' sum more.
-            computed = sum((parse("amount", _cell(r, words[1]))[0] or 0)
-                           for r in result.rows if r["kind"] == "subtotal")
-        else:
-            col = next(c for c in spec.printed if c.key == words[1])
-            scope = data
-            if "where" in words:
-                key, want = words[words.index("where") + 1].split("=")
-                want = m.group(1) if want == "$1" else want
-                scope = [r for r in scope if _cell(r, key) == want]
-            if "unless" in words:
-                skip = words[words.index("unless") + 1]
-                scope = [r for r in scope if not _cell(r, skip)]
-            computed = sum(_effective(r, col, spec) for r in scope)
-        out.append((f"printed {label!r}", raw, computed, _status(computed, value)))
-    return out
+    UNCHECKED for a printed total no rule recomputes (reported, never dropped).
+    The table rebuilt from its facts, compared with its printed figures
+    (`lib/views`)."""
+    from lib import views
+    return views.checks(*views.split(result), spec)

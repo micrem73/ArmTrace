@@ -750,6 +750,16 @@ def lines_of(page, frame=None, foreign_dirs=()):
         glyphs.sort(key=lambda g: g[1])
         current = []
         for glyph in glyphs:
+            # Bold faked by printing the text twice a hair apart (MAE B4
+            # `Area GeograficaArea Geografica` in one span, the copy 0.19 pt
+            # on): a letter repeated within half its own width is that letter
+            # once. A real double letter stands its whole width on: `zz` in
+            # `Autorizzazioni`, MEF II's `S.p.A..` (each stop 1.0 pt wide,
+            # the second 0.97 pt on).
+            prev = current[-1] if current else None
+            if (prev and glyph[0] == prev[0] and not glyph[0].isspace()
+                    and glyph[1] - prev[1] < 0.5 * (prev[2] - prev[1])):
+                continue
             if current:
                 gap = glyph[1] - current[-1][2]
                 em = current[-1][5] or glyph[5]
@@ -760,6 +770,15 @@ def lines_of(page, frame=None, foreign_dirs=()):
         if current:
             words.append(_join(current))
 
+    # A word printed twice in one place is one word: 2025 T2 overprints
+    # `Programmi intergovernativi (%)`; MAE B4 fakes bold with a second copy
+    # 0.2 pt off (`Area Geografica` twice).
+    kept = []
+    for w in sorted(words, key=lambda w: (w.v0, w.u0)):
+        if not any(w.text == x.text and abs(w.u0 - x.u0) < 1 and abs(w.v0 - x.v0) < 1
+                   for x in kept[-8:]):
+            kept.append(w)
+    words = kept
     words.sort(key=lambda w: (-w.v1, w.u0))     # top band first, left to right
     return words
 
@@ -871,7 +890,8 @@ def cell_matrix(bands, columns):
     rows = []
     for band in bands:
         cells = [""] * len(columns)
-        for word in band:
+        last = [None] * len(columns)
+        for word in _reading_order(band):
             best, best_overlap = None, CELL_OVERLAP
             for i, col in enumerate(columns):
                 overlap = min(word.u1, col["u1"]) - max(word.u0, col["u0"])
@@ -884,9 +904,30 @@ def cell_matrix(bands, columns):
                     range(len(columns)),
                     key=lambda i: min(abs(word.u0 - columns[i]["u0"]),
                                       abs(word.u1 - columns[i]["u1"])))
-            cells[best] = (cells[best] + " " + word.text).strip()
+            # Two words that touch on one line are one word, printed in two
+            # spans: Difesa 4 `THALES IT` + `ALIA.`, `MBDA ITALIA` + `.`.
+            prev = last[best]
+            # A word ending in its own printed space (T2 `Paesi `) is not.
+            touching = (prev is not None and not prev.text[-1:].isspace()
+                        and abs(word.v0 - prev.v0) < BASELINE_TOL
+                        and word.u0 - prev.u1 <= WORD_GAP_EM * (word.size or prev.size))
+            cells[best] = (cells[best] + ("" if touching else " ") + word.text).strip()
+            last[best] = word
         rows.append(cells)
     return rows
+
+
+def _reading_order(words):
+    """Line by line, left to right. A line is the words within `BASELINE_TOL`
+    of its first: a raised footnote marker (Difesa 4 `(Fincantieri)¹.`, 0.6 pt
+    higher) stays where it is printed, not ahead of its line."""
+    lines = []
+    for w in sorted(words, key=lambda w: w.v0):
+        if lines and w.v0 - lines[-1][0].v0 < BASELINE_TOL:
+            lines[-1].append(w)
+        else:
+            lines.append([w])
+    return [w for line in lines for w in sorted(line, key=lambda w: w.u0)]
 
 
 def page_text(page):

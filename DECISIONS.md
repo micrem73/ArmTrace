@@ -371,6 +371,114 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   header row; `<group> Totale` with an amount is a subtotal (MEF II); a continuation page
   may draw its inner walls in short pieces (MEF II p427). A2 agrees with A1 for each of its
   159 operators (authorisations, EURO, customs value): a cross-table witness for later.
+- **A year is imported by an agent loop, as step 1 checks its cuts** (maintainer, 2026-10-19).
+  `import-year` skill: one `table-importer` subagent per table drafts its columns or judges
+  its rows against the rendered pages; it never edits code or the agreed columns. The main
+  agent alone fixes code, test-first; escalation reuses `tools/recheck.py`'s rules. Each
+  table is extracted alone (`ExtractTables.py --out`) and the year assembled (`--merge`),
+  byte-identical to a single run. Why an agent at all: half the tables print no total, and
+  the first two trial runs found what the checks could not (Difesa 4's stray spaces, MAE B4's
+  doubled header letters). Scored by `tools/eval_importer.py` on broken copies of the pilot.
+- **Two words touching on one line are one word.** The source sets some words in two spans
+  (Difesa 4 `THALES IT` + `ALIA.`, `MBDA ITALIA` + `.`); joined with a space, 9 cells read
+  `IT ALIA`, `S.R.L . .`. A word that ends in its own printed space (T2 `Paesi `) is not
+  touching. T2 prints `UE-NATO`: the pilot test had asserted the spaces the old join invented.
+- **Open, for the maintainer: a word broken across two lines without a hyphen.** Difesa 4
+  prints `HYPERTAC/SMITHSINTE` / `RCONNECT` in a wrapped cell. Joining the lines with a space
+  (now) splits the word; joining without one would merge every pair of real words at a line
+  end. Kept as printed with a space until a convention is agreed.
+- **The sum rule is stored with the data** (`column_def.sum_sql`, 2026-10-19). The interface
+  worktree summed A1's `euro` as printed and got 385 M against a printed 7,72 bn: the rule
+  lived only in `columns.tsv` and the checks. Each summed column now carries the SQL a data
+  row adds (`CASE WHEN val_fini_dog_raw IS NOT NULL THEN 0 ELSE COALESCE(euro, CASE WHEN
+  valuta = 'EUR' THEN ammontare END, 0) END`), generated from the same `columns.tsv` line the
+  checks read, and a test runs it in SQLite against the checks' sum.
+- **The importer eval found two defects the checks could not** (first run: 10/10 broken
+  tables caught, 2 of 8 correct ones failed, both rightly). A value-shaped last line of a
+  wrapped description (`CAL.` / `5,56`, `(CLIN` / `5)`) was a row of its own: 45 in A1, 13 in
+  DOG M; only a value in a non-text column makes a line a record. A1's summary page cut a
+  three-line label to its first line, dropped `Totali parziali per tipo valuta:` and filed the
+  percentages under the amounts' labels: a label runs until its `:`, a line with no value
+  after a closed label heads the lines under it, a value before `%` is `<label> (%)`.
+- **A text printed twice a hair apart is printed once** (MAE B4 fakes bold so: `AArreeaa`,
+  or `Area Geografica` twice, by whether the 0.2 pt shift splits the run). A repeated glyph is
+  the same glyph only within half its own width: two real full stops (`S.p.A..`) stand a whole
+  width apart. Both forms are
+  dropped in `geometry.lines_of`, so the catalogue and the extractor read the same text.
+- **MEF II's `Ditta` is carried down** (maintainer, 2026-10-20: "table II is a visualisation,
+  not raw data"). The company is printed on its first line and in its `<Ditta> Totale`; every
+  line between is that company's. New column type `carry` (`columns.tsv`): the name fills the
+  lines under it up to the subtotal, which must name the same company, or an issue is recorded
+  and nothing is overwritten. 2025: all 3.991 lines named, no issue. (The 2 issues first
+  reported, `AVIO S.p.A.` vs `AVIO S.p.A.. Totale`, were mine: the overprinted-bold rule
+  dropped the second of two full stops. The importer eval caught it; the rule now compares a
+  repeated glyph with its own width, and M too reads `AVIO S.P.A..` as printed.)
+- **Tables are stored as facts; the printed table is rebuilt from them** (maintainer,
+  2026-10-20: "tables in reports are often visualisations of raw data; a total is generated,
+  not a row"). Each SQL table holds its data rows only; a group printed once is a column on
+  every row (`group`, `carry`). Every figure the table prints that is not a fact (subtotal,
+  total, summary line) is in `printed_figure`, at the place printed; `view_def` says how the
+  table is laid out. `lib/views.py` rebuilds the printed table from the database alone
+  (`from_db`, `render`): headings, carried names on their first row, subtotals and totals
+  showing the **printed** figure, flagged with the facts' sum where they differ (maintainer's
+  choice: the official figure is the printed one). The rebuild is the import's check: for the
+  8 pilot tables it reproduces the print row for row (29.000 rows, no difference), and a
+  plain `SUM` is right (MEF II `totale` = its `Totale Complessivo` to the cent). Why not
+  store the printed rows: a user summing a column counted subtotals and totals too, and the
+  official rounding (A1's total is the sum of rounded subtotals) cannot be regenerated.
+- **A summary table agrees with the table it summarises** (`lib/data/views.tsv`, checked when
+  the year is assembled). MAE A2 = A1 for all 159 operators (authorisations; EURO and customs
+  value equal to A1's *printed* subtotals, rounding included). DOG M1 = M in euro for all 200
+  M1 lines (190 names). A first comparison of mine said M1 disagreed: I had merged names M1
+  keeps apart, and misread `AVIO S.P.A..` (above).
+  What does not rebuild M1 from M: M1 splits some names over two lines (`CPM ELETTRONICA SRL`
+  twice) by a key M does not print, counts operations (17.806) where M prints lines (6.245),
+  and adds `Utilizzo anni precedenti` once per authorisation while M repeats it on each line.
+  So both are stored, and their agreement is a check, not a rebuild.
+- **MAE A1: which amount goes with which item** (maintainer, 2026-10-21, on the A1 matching
+  page: A.C.S.A. p66 and CERATIZIT p114). An authorisation (from a line printing a date, within
+  an operator) prints amounts on the left and items on the right, not always side by side. As
+  many amounts as items: the k-th goes with the k-th (CERATIZIT: four amounts stacked one line
+  apart beside four items three lines tall). Fewer: "one amount covers every item in line and
+  under it, until the next amount" (A.C.S.A.). A line printing an amount and no quantity is
+  the item above, wrapped: its Materiale moves to that item, its Valuta stays with the amount
+  (moving it too broke the EUR rule of the EURO sum). Stored as column `riga_importo` (type `link`,
+  `columns.tsv`): on each item, the `row_ord` of the row whose amount covers it; every amount
+  is still stored once, so sums are unchanged (every A1 check as before). 2025: 2.316
+  authorisations with one amount, 82 with as many amounts as items, 171 with fewer; 164
+  wrapped descriptions back on their items. The 7 the rule left open went back to the page
+  (same day). One item with two amount boxes, the second on a line of its own (FABARM p142,
+  LEONARDO p278 p302, MBDA p340 p346, RING MILL p391): "two rows, one per amount, keeping the
+  same item description for both"; the second row gets the item's Unita' Misura, Materiale,
+  Tipo and Cat, not its quantity (counted once), flagged `copied from row N`, and the
+  rebuilt view leaves them off that line as printed. LEONARDO p260 dates an item whose amount
+  boxes are empty: "a new row with an amount of 0", stored `ammontare` 0 with `_raw` NULL,
+  flagged. 2025: every one of 7.946 items linked, no issue.
+  Each row also names its authorisation (maintainer, same day, asked by the interface: rows
+  filtered by operator gave no clue how they group): column `riga_autorizzazione` (type `unit`),
+  the `row_ord` of the dated line that opens it. A1 prints no authorisation number, so it is
+  an id derived from the print, valid within one year's table, not an official reference.
+  2025: 2.576 authorisations; no amount spans two, none spans two operators.
+  Both named `riga_*` (maintainer, same day): a row of this table, not a value of the report,
+  and not to be joined with the authorisation code MEF prints (`numero_autorizzazione`).
+- **Nested rows keep an id** (maintainer, 2026-10-21, general rule): when a table's rows nest
+  (several lines under one printed unit), the import stores on every row the id of its unit,
+  a `riga_*` column (`row_ord` of the line that opens it), so the grouping the print shows by
+  layout is not lost when the table becomes rows. The unit and where it ends are agreed per
+  table, like any column. First: MAE A1 (`riga_autorizzazione`, `riga_importo`).
+  Nested means the layout shows the grouping (something printed once covering the lines under
+  it); such a table always gets the id. A table that prints every line complete is flat, even
+  when lines share an authorisation the print does not show (Dogane M): no id is invented.
+- **Dogane M: flat, no authorisation id** (maintainer, 2026-10-21, on the M authorisations page:
+  M is not a nested table).
+  M prints operator, currency and the authorisation's amount on every line, no authorisation
+  number, lines sorted by material: 891 of 2.895 operator+currency+amount groups are not on
+  consecutive lines, and in 71 the year's progress plus Utilizzo exceeds the amount (two
+  authorisations of the same amount: FIOCCHI 120,00, four lines adding up to 240,00). The
+  maintainer: "Tab M does not easily allow to connect to the source authorisation ... Store
+  no id." `Utilizzo anni precedenti` is "the amount already exported in previous year reports
+  for the same authorisation (or authorisation sub-amount)": a figure of the authorisation,
+  repeated on its lines, never added up across lines (it has no `sum` rule).
 
 ## 2026-10-19 — 2022: shifted fonts read back, export stamp as witness, Dogane outside the MEF vocabulary
 
