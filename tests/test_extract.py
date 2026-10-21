@@ -257,7 +257,8 @@ def printed_sequence(result):
                 out.append(("group", [x["group"]]))
             last = x["group"]
             continue
-        cells = [("" if i in x.get("carried", ()) else c) for i, c in enumerate(x["cells"])]
+        hidden = set(x.get("carried", ())) | set(x.get("copied", ()))
+        cells = [("" if i in hidden else c) for i, c in enumerate(x["cells"])]
         out.append((x["kind"], cells))
     return out
 
@@ -313,3 +314,100 @@ def test_two_full_stops_in_a_row_are_printed_not_overprinted(year, sources):
     names = {x["cells"][0] for x in r.rows if x["kind"] == "data"}
     assert {"AVIO S.p.A..", "FERRETTI S.p..A."} <= names
     assert not [i for i in r.issues if i[1] == "carry"]
+
+
+def links(result):
+    """[((qta, description start), its amount's `ammontare`)] of each item."""
+    data = [x for x in result.rows if x["kind"] == "data"]
+    by_ord = {x["row_ord"]: x for x in data}
+    return [((extract._cell(x, "qta"), extract._cell(x, "materiale_oggetto_del_contratto")[:16]),
+             extract._cell(by_ord[x["link"]], "ammontare") if x.get("link") else None)
+            for x in data if extract._cell(x, "qta")]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_mae_a1_amounts_cover_their_items_as_the_maintainer_reads_them(year, sources):
+    """A1 prints an authorisation's amounts on the left and its items on the
+    right, not always side by side (maintainer, 2026-10-21, matching page).
+    A.C.S.A. p66: one amount covers the items on its line and under it, up to
+    the next amount. CERATIZIT p114: four amounts stacked one line apart, four
+    items three lines tall: as many amounts as items, the k-th goes with the
+    k-th. A line with an amount and no quantity is the item above, wrapped."""
+    acsa = dict(links(read(VOL1, 70, 70, 66, "MAE/A1")))
+    assert acsa[("3.550", "P/N 10951089 - F")] == "887.145,00"
+    assert acsa[("3.550", "P/N 10951110 - F")] == "887.145,00"
+    assert acsa[("20.000", "P/N 0000139-1 PA")] == "2.844.000,00"
+    assert acsa[("30.000", "P/N SK-KV-5723-1")] == "2.844.000,00"
+    r = read(VOL1, 117, 118, 113, "MAE/A1")
+    got = [(q, a) for (q, d), a in links(r) if d.startswith("UTENSILE") and
+           a in ("10.656,22", "562,20", "295,17", "1.261,47")]
+    assert got == [("300", "10.656,22"), ("2", "562,20"), ("2", "295,17"), ("20", "1.261,47")]
+    data = [x for x in r.rows if x["kind"] == "data"]
+    assert not [x for x in data if not extract._cell(x, "qta")
+                and extract._cell(x, "materiale_oggetto_del_contratto")]
+    # The amount keeps its own side: `EUR` stays, so its EURO subtotal adds up.
+    assert extract._cell(next(x for x in data if extract._cell(x, "ammontare") == "562,20"),
+                         "valuta") == "EUR"
+    assert ("subtotal p118 euro (CERATIZIT COMO SPA)", "PASS") in [
+        (c[0], c[3]) for c in extract.checks(r, extract.specs()["MAE/A1"])]
+    item = next(x for x in data if extract._cell(x, "ammontare") == "10.656,22")
+    assert extract._cell(item, "materiale_oggetto_del_contratto").endswith("5,56MM")
+    # Stored: every amount once, and each item joins its amount.
+    db = stored(year, r, "MAE/A1")
+    joined = db.execute(
+        "SELECT i.qta_raw, a.ammontare_raw FROM mae_a1 i JOIN mae_a1 a "
+        "ON a.year = i.year AND a.row_ord = i.importo "
+        "WHERE i.operatore = 'CERATIZIT COMO SPA' AND i.pdf_page = 118 ORDER BY i.row_ord").fetchall()
+    assert joined == [("300", "10.656,22"), ("2", "562,20"), ("2", "295,17"), ("20", "1.261,47")]
+    # One authorisation, four amounts: every line of it names its dated line.
+    units = db.execute(
+        "SELECT i.autorizzazione, count(*), count(DISTINCT i.importo), o.data_raw FROM mae_a1 i "
+        "JOIN mae_a1 a ON a.year = i.year AND a.row_ord = i.importo "
+        "JOIN mae_a1 o ON o.year = i.year AND o.row_ord = i.autorizzazione "
+        "WHERE i.operatore = 'CERATIZIT COMO SPA' AND a.ammontare_raw IN "
+        "('10.656,22', '562,20', '295,17', '1.261,47') GROUP BY 1").fetchall()
+    assert len(units) == 1 and units[0][1:3] == (4, 4) and units[0][3]
+    assert not db.execute("SELECT 1 FROM mae_a1 WHERE autorizzazione IS NULL").fetchone()
+    acsa = stored(year, read(VOL1, 70, 70, 66, "MAE/A1"), "MAE/A1")
+    assert acsa.execute("SELECT count(DISTINCT autorizzazione) FROM mae_a1 "
+                        "WHERE operatore LIKE 'A.C.S.A.%'").fetchone() == (2,)
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_mae_a1_two_amounts_one_item_and_an_empty_amount(year, sources):
+    """The seven authorisations the matching rule could not decide (maintainer,
+    2026-10-21). One item, two amount boxes (FABARM p142, the second on a line
+    of its own): "two rows, one per amount, keeping the same item description
+    for both"; the quantity is not repeated, so it is not counted twice.
+    LEONARDO p260 prints a dated item with empty amount boxes: "a new row with
+    an amount of 0", stored as 0 with nothing printed (`_raw` NULL)."""
+    r = read(VOL1, 146, 146, 142, "MAE/A1")
+    data = [x for x in r.rows if x["kind"] == "data"]
+    item = next(x for x in data if extract._cell(x, "ammontare") == "20.925,00")
+    second = next(x for x in data if extract._cell(x, "ammontare") == "5.000,00")
+    for col in ("materiale_oggetto_del_contratto", "tipo", "cat"):
+        assert extract._cell(second, col) == extract._cell(item, col) != ""
+    assert extract._cell(second, "qta") == ""
+    assert (item["link"], second["link"]) == (item["row_ord"], second["row_ord"])
+    assert not [i for i in r.issues if i[1] == "link"]
+    db = stored(year, r, "MAE/A1")
+    flags, = db.execute("SELECT flags FROM mae_a1 WHERE ammontare_raw = '5.000,00'").fetchone()
+    assert f"copied from row {item['row_ord']}" in flags
+    # As printed, the second line shows its amount alone.
+    assert rebuilt_line(r, "5.000,00") == ["EUR", "5.000,00", "", "", "", "", "", "", "", ""]
+
+    r = read(VOL1, 264, 264, 260, "MAE/A1")
+    assert not [i for i in r.issues if i[1] == "link"]
+    db = stored(year, r, "MAE/A1")
+    got = db.execute("SELECT ammontare, ammontare_raw, importo = row_ord, flags FROM mae_a1 "
+                     "WHERE materiale_oggetto_del_contratto LIKE '%COVER ACCESS'").fetchone()
+    assert got[:3] == (0, None, 1) and got[3].startswith("ammontare 0: amount boxes printed empty")
+
+
+def rebuilt_line(result, amount):
+    """The cells of the rebuilt line printing `amount`, from the database."""
+    from lib import views
+    key = "MAE/A1"
+    db = stored("2025", result, key)
+    rows = views.render(*views.from_db(db, key, "2025"), extract.specs()[key])
+    return next(x["cells"] for x in rows if x["kind"] == "data" and amount in x["cells"])

@@ -12,6 +12,20 @@
 #   carry   text printed in its column on a group's first row only (MEF II `Ditta`); carried
 #           down to the rows under it, up to the group's `<name> Totale` subtotal, which must
 #           name the same (maintainer, 2026-10-20: the table is a visualisation, not raw data)
+#   link    not printed: on each item, the `row_ord` of the row whose amount covers it.
+#           sum field `<amount col> <item col> <opener col>`: a row printing <opener>
+#           opens a unit (MAE A1: an authorisation, its date); in a unit with as many
+#           amounts as items the k-th amount goes with the k-th item, else an amount
+#           covers the item on its line and those under it, up to the next amount. A row
+#           with an amount and no item continues the item above: its text from <item col>
+#           rightwards moves there, the amount's side stays. More amounts than items: an
+#           amount line with no item gets the item above's text and codes (not its
+#           quantity), flagged `copied from row N`, and is a row of its own. No amount: each
+#           item gets an amount of 0, nothing printed (`_raw` NULL), flagged. Anything else
+#           links nothing and is an issue (maintainer, 2026-10-21, A1 matching page).
+#   unit    not printed: on each row of a `link` table, the `row_ord` of the row that opens
+#           its unit (MAE A1: the dated line of its authorisation). Derived, not an
+#           official number: A1 prints none (maintainer, 2026-10-21)
 #   years   the printed year columns of a table that prints a year window (T2): one
 #           row per printed row and year, `anno` + `valore` (amount)
 # labels: the printed header, `|` between the forms seen in different editions; a year is
@@ -34,6 +48,8 @@ MAE/A1	unita_misura	text	Unita' Misura
 MAE/A1	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto
 MAE/A1	tipo	code	Tipo
 MAE/A1	cat	code	Cat.
+MAE/A1	importo	link		ammontare qta data
+MAE/A1	autorizzazione	unit		
 MEF/EE	numero_autorizzazione	code	Numero Autorizzazione|Numero
 MEF/EE	utilizzatore_finale	text	Utilizzatore Finale
 MEF/EE	causale	text	Causale

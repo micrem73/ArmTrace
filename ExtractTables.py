@@ -90,13 +90,17 @@ def columns_of(spec):
             out += [("anno", "year"), (col.key, "amount")]
         else:
             out.append((col.key, col.type))
+    if spec.link:
+        out.append((spec.link.key, "link"))
+    if spec.unit:
+        out.append((spec.unit.key, "link"))
     return out
 
 
 def create(db, name, spec):
     cols = list(META)
     for col, kind in columns_of(spec):
-        if kind == "year":
+        if kind in ("year", "link"):
             cols.append(f"{col} INTEGER")
         elif kind in ("amount", "number"):
             cols += [f"{col} DECIMAL", f"{col}_raw TEXT"]
@@ -118,6 +122,11 @@ def records(year, result, spec):
         values, flags = {}, []
         if spec.group:
             values[spec.group.key] = r["group"]
+        if spec.link:
+            values[spec.link.key] = r.get("link")
+        if spec.unit:
+            values[spec.unit.key] = r.get("unit")
+        flags += r.get("notes", [])
         years = []
         for i, col in enumerate(r["order"]):
             raw = r["cells"][i]
@@ -128,6 +137,8 @@ def records(year, result, spec):
             if problem:
                 flags.append(f"{col.key}: {problem}")
                 issues.append((r["pdf_page"], problem, f"{col.key} {raw!r}"))
+            if value is None and col.key in r.get("implied", {}):
+                value = r["implied"][col.key]
             if col.type in ("amount", "number", "date"):
                 values[col.key] = str(value) if value is not None else None
                 values[f"{col.key}_raw"] = raw or None
@@ -189,6 +200,11 @@ def view_def(spec, result):
         "subtotals": any(r["kind"] == "subtotal" for r in result.rows),
         "total": any(r["kind"] == "total" for r in result.rows),
         "summary": bool(result.totals),
+        # Each item's amount: JOIN ON amount.row_ord = item.<col> (same year);
+        # each row's unit (A1 authorisation): its opener row's row_ord in <unit_col>.
+        "link": ({"col": spec.link.key, "amount": spec.link.link[0], "item": spec.link.link[1],
+                  "unit": spec.link.link[2], "unit_col": spec.unit.key if spec.unit else None}
+                 if spec.link else None),
     }, sort_keys=True)
 
 

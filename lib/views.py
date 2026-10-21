@@ -63,7 +63,11 @@ def from_db(db, key, year, spec=None):
                 cells.append(row[f"{col.key}_raw"] or "")
             else:
                 cells.append(row[col.key] or "")
+        # A1: a description copied onto a second amount's row is not printed there.
+        copied = re.search(r"copied from row \d+: ([\w, ]+)", row.get("flags") or "")
+        keys = copied.group(1).split(", ") if copied else []
         facts.append({"kind": "data", "row_ord": row_ord, "pdf_page": row["pdf_page"],
+                      "copied": [i for i, c in enumerate(order) if c.key in keys],
                       "printed_page": row["printed_page"], "order": order, "cells": cells,
                       "year_of": year_of, "group": row[spec.group.key] if spec.group else None})
     figures = {}
@@ -122,7 +126,8 @@ def render(facts, figures, summary, spec):
                             "pdf_page": row["pdf_page"], "checks": []})
                 heading = group
             first = group != run or not scope
-            cells = [("" if i in carry and not first else c) for i, c in enumerate(row["cells"])]
+            blank = (carry if not first else set()) | set(row.get("copied", ()))
+            cells = [("" if i in blank else c) for i, c in enumerate(row["cells"])]
             out.append({"kind": "data", "group": group, "cells": cells,
                         "pdf_page": row["pdf_page"], "checks": []})
             scope.append(row)

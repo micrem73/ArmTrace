@@ -83,6 +83,7 @@ class Column:
     else_col: str = None        # `sum else <col>@<col2>=<value>`
     else_when: tuple = None
     unless: str = None          # `unless <col>`: a row with <col> printed adds nothing
+    link: tuple = None          # `link`: (amount col, item col, opener col)
 
     def sum_sql(self):
         """The SQL a data row adds to this column's printed totals, or None.
@@ -113,11 +114,19 @@ class Spec:
     @property
     def printed(self):
         """The columns the header prints, in order (not the group heading)."""
-        return [c for c in self.columns if c.type != "group"]
+        return [c for c in self.columns if c.type not in ("group", "link", "unit")]
 
     @property
     def group(self):
         return next((c for c in self.columns if c.type == "group"), None)
+
+    @property
+    def link(self):
+        return next((c for c in self.columns if c.type == "link"), None)
+
+    @property
+    def unit(self):
+        return next((c for c in self.columns if c.type == "unit"), None)
 
     @property
     def years(self):
@@ -136,7 +145,9 @@ def specs():
         col = Column(row["col"], row["type"],
                      [x for x in (row["labels"] or "").split("|")])
         rule = (row["sum"] or "").split()
-        if rule[:1] == ["sum"]:
+        if col.type == "link":
+            col.link = tuple(rule)
+        elif rule[:1] == ["sum"]:
             col.sum = True
             if rule[1:2] == ["else"]:
                 target, cond = rule[2].split("@")
@@ -564,7 +575,102 @@ def read_table(year, key, spec=None, root=".", pages=None):
     reader = Reader(year, key, spec)
     for sp in pages if pages is not None else source.table_pages(year, key, root):
         reader.read_page(sp)
+    if spec.link:
+        link_items(reader.result, spec)
     return reader.result
+
+
+def link_items(result, spec):
+    """Each item's amount, by the table's `link` rule (columns.tsv): sets
+    `link` (the amount row's `row_ord`) on every item it can decide, `unit`
+    (the opener row's `row_ord`) on every row, and
+    moves a wrapped description off an amount line to the item above.
+    Two conventions of the maintainer (2026-10-21) set more: an amount with
+    no item of its own, in a unit of more amounts than items, gets the item
+    above's description (`copied`: column indices, `notes`: the row's flag);
+    an item in a unit with no amount gets an amount of 0 (`implied`)."""
+    amount, item, opener = spec.link.link
+    # The item's side of the line: its text columns from <item> on (A1: Unita'
+    # Misura, Materiale). Valuta is the amount's, and stays with it.
+    side = [c.key for c in spec.printed]
+    side = side[side.index(item):]
+    text = [c.key for c in spec.printed if c.type in TEXT_TYPES and c.key in side]
+    described = [c.key for c in spec.printed if c.type in TEXT_TYPES | {"code"} and c.key in side]
+    units, unit, group = [], None, object()
+    for r in result.rows:
+        if r["kind"] != "data":
+            continue
+        if unit is None or _cell(r, opener) or r["group"] != group:
+            unit = []
+            units.append(unit)
+        group = r["group"]
+        r["unit"] = unit[0]["row_ord"] if unit else r["row_ord"]
+        unit.append(r)
+    for unit in units:
+        items = [r for r in unit if _cell(r, item)]
+        amounts = [r for r in unit if _cell(r, amount)]
+        for r in amounts:
+            if _cell(r, item):
+                continue
+            above = [x for x in items if x["row_ord"] < r["row_ord"]]
+            for i, col in enumerate(r["order"]):
+                if col.key in text and r["cells"][i]:
+                    if not above:
+                        result.issues.append((r["pdf_page"], "link", f"{col.key} "
+                                              f"{r['cells'][i]!r} on an amount line, no item above"))
+                        continue
+                    above[-1]["cells"][i] = f"{above[-1]['cells'][i]} {r['cells'][i]}".strip()
+                    r["cells"][i] = ""
+        where = f"{unit[0]['group'] or ''} {_cell(unit[0], opener)}".strip()
+        if not items:
+            result.issues.append((unit[0]["pdf_page"], "link",
+                                  f"{where}: {len(amounts)} amounts, no item"))
+            continue
+        if not amounts:
+            # LEONARDO p260: a dated item, its amount boxes printed empty.
+            for x in items:
+                x["link"] = x["row_ord"]
+                x["implied"] = {amount: "0"}
+                x.setdefault("notes", []).append(
+                    f"{amount} 0: amount boxes printed empty (maintainer, 2026-10-21)")
+            continue
+        if len(amounts) > len(items):
+            # FABARM p142: one item, a second amount box on a line of its own.
+            for a in amounts:
+                if _cell(a, item):
+                    continue
+                above = [x for x in items if x["row_ord"] < a["row_ord"]]
+                if not above:
+                    continue
+                src, a["copied"] = above[-1], []
+                for i, col in enumerate(a["order"]):
+                    if col.key in described and not a["cells"][i] and _cell(src, col.key):
+                        a["cells"][i] = _cell(src, col.key)
+                        a["copied"].append(i)
+                a.setdefault("notes", []).append(
+                    f"copied from row {src['row_ord']}: "
+                    + ", ".join(a["order"][i].key for i in a["copied"]))
+            items = [r for r in unit if _cell(r, item) or r.get("copied")]
+        if len(amounts) > len(items):
+            result.issues.append((unit[0]["pdf_page"], "link",
+                                  f"{where}: {len(amounts)} amounts, {len(items)} items"))
+            continue
+        if len(amounts) == len(items):
+            for a, x in zip(amounts, items):
+                x["link"] = a["row_ord"]
+            continue
+        for x in items:
+            cover = [a for a in amounts if a["row_ord"] <= x["row_ord"]]
+            if cover:
+                x["link"] = cover[-1]["row_ord"]
+            else:
+                result.issues.append((x["pdf_page"], "link",
+                                      f"{where}: item {_cell(x, item)} above the first amount"))
+        covered = {x.get("link") for x in items}
+        for a in amounts:
+            if a["row_ord"] not in covered:
+                result.issues.append((a["pdf_page"], "link",
+                                      f"{where}: amount {_cell(a, amount)} covers no item"))
 
 
 # --------------------------------------------------------------------------

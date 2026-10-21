@@ -400,3 +400,27 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   twice) by a key M does not print, counts operations (17.806) where M prints lines (6.245),
   and adds `Utilizzo anni precedenti` once per authorisation while M repeats it on each line.
   So both are stored, and their agreement is a check, not a rebuild.
+- **MAE A1: which amount goes with which item** (maintainer, 2026-10-21, on the A1 matching
+  page: A.C.S.A. p66 and CERATIZIT p114). An authorisation (from a line printing a date, within
+  an operator) prints amounts on the left and items on the right, not always side by side. As
+  many amounts as items: the k-th goes with the k-th (CERATIZIT: four amounts stacked one line
+  apart beside four items three lines tall). Fewer: "one amount covers every item in line and
+  under it, until the next amount" (A.C.S.A.). A line printing an amount and no quantity is
+  the item above, wrapped: its Materiale moves to that item, its Valuta stays with the amount
+  (moving it too broke the EUR rule of the EURO sum). Stored as column `importo` (type `link`,
+  `columns.tsv`): on each item, the `row_ord` of the row whose amount covers it; every amount
+  is still stored once, so sums are unchanged (every A1 check as before). 2025: 2.316
+  authorisations with one amount, 82 with as many amounts as items, 171 with fewer; 164
+  wrapped descriptions back on their items. The 7 the rule left open went back to the page
+  (same day). One item with two amount boxes, the second on a line of its own (FABARM p142,
+  LEONARDO p278 p302, MBDA p340 p346, RING MILL p391): "two rows, one per amount, keeping the
+  same item description for both"; the second row gets the item's Unita' Misura, Materiale,
+  Tipo and Cat, not its quantity (counted once), flagged `copied from row N`, and the
+  rebuilt view leaves them off that line as printed. LEONARDO p260 dates an item whose amount
+  boxes are empty: "a new row with an amount of 0", stored `ammontare` 0 with `_raw` NULL,
+  flagged. 2025: every one of 7.946 items linked, no issue.
+  Each row also names its authorisation (maintainer, same day, asked by the interface: rows
+  filtered by operator gave no clue how they group): column `autorizzazione` (type `unit`),
+  the `row_ord` of the dated line that opens it. A1 prints no authorisation number, so it is
+  an id derived from the print, valid within one year's table, not an official reference.
+  2025: 2.576 authorisations; no amount spans two, none spans two operators.
