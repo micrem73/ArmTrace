@@ -10,20 +10,17 @@ Reads, never writes, what the pipeline published under <root>/Out/:
 
 and <root>/In/manifest.tsv for the official URL of each source volume. Writes
 
-    site/                 a copy of web/, domande.json included
+    site/                 a copy of web/
     site/armtrace.sqlite  the rows of every year, plus
         catalogo          one row per table found, with the SQL table holding it
         fonte             one row per source volume: official URL, SHA-256
 
 A row is traced to its page by (source_file, pdf_page) -> fonte.url#page=N; the
-page builds the link, so no column is added to the printed rows. Every curated
-question in web/domande.json must run on the result and return rows, or the
-build fails: a question that stopped working is found here, not by a reader. Same inputs
+page builds the link, so no column is added to the printed rows. Same inputs
 give a byte-identical database: fixed order, no timestamps, VACUUM. Decided
 2026-10-19 (DECISIONS.md).
 """
 import argparse
-import json
 import re
 import shutil
 import sqlite3
@@ -36,7 +33,6 @@ sys.path.insert(0, str(ROOT))
 from lib.layout import index_sqlite, out_dir  # noqa: E402
 
 WEB = ROOT / "web"
-QUESTIONS = "domande.json"
 DB_NAME = "armtrace.sqlite"
 DATA_DB = re.compile(r"armtrace-(\d{4})\.sqlite$")
 
@@ -153,26 +149,6 @@ def add_sources(dst, root):
     dst.commit()
 
 
-def check_questions(db, questions):
-    """Each question runs, returns rows, and charts columns it returns."""
-    ids = [d["id"] for d in questions]
-    if len(ids) != len(set(ids)):
-        sys.exit(f"{QUESTIONS}: duplicate ids")
-    for d in questions:
-        try:
-            cur = db.execute("\n".join(d["sql"]))
-        except sqlite3.Error as e:
-            sys.exit(f"{QUESTIONS} {d['id']}: {e}")
-        cols = [c[0] for c in cur.description]
-        if not cur.fetchall():
-            sys.exit(f"{QUESTIONS} {d['id']}: no rows")
-        chart = d.get("grafico") or {}
-        wanted = [c for v in chart.values() for c in ([v] if isinstance(v, str) else v)]
-        missing = [c for c in wanted if c not in cols]
-        if missing:
-            sys.exit(f"{QUESTIONS} {d['id']}: chart column {missing} not in {cols}")
-
-
 def build(root, out):
     years = data_dbs(root)
     if not years:
@@ -190,7 +166,6 @@ def build(root, out):
     add_sources(dst, root)
     dst.commit()
     dst.execute("VACUUM")
-    check_questions(dst, json.loads((out / QUESTIONS).read_text()))
     dst.close()
     return db_path, sorted(years)
 

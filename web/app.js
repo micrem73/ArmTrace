@@ -1,27 +1,24 @@
 "use strict";
 // ArmTrace explorer: the whole database runs in the browser (sql.js), read-only.
-// Views by #hash: #domande, #domanda/<id>, #tabelle[/tutte], #tabella/<year>/<key>,
-// #sql[=<query>], #metodo.
+// Views by #hash: #tabelle[/tutte], #tabella/<year>/<key>, #sql[=<query>].
 
 const SQLJS = "https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/";
 const PAGE = 500;                       // rows rendered at a time
 // Columns every printed row carries: they place the row in its source, and
 // are shown as the "Fonte" link, not as data (tools/build_site.py).
-const PLACE = ["year", "source_file", "pdf_page", "printed_page", "row_ord", "row_kind"];
+const PLACE = ["year", "source_file", "pdf_page", "printed_page", "row_ord"];
 // Numbers that are identities, not amounts: never 2.025 for a year.
 const PLAIN = /^(year|anno|pdf_page|printed_page|row_ord|ordinal|pages|nr)$/;
 
 let db;
-let domande = [];                       // web/domande.json, checked by tools/build_site.py
 const fonti = new Map();                // source file -> official URL (names carry the year)
 const labels = new Map();               // "sql_table.col" -> printed Italian label
 const main = document.getElementById("main");
-// What a table's columns cannot say by themselves. Goes when the database
-// carries the rule (columns.tsv in the extractor).
+// What a table's columns cannot say by themselves.
 const AVVERTENZE = {
   mae_a1: "La colonna EURO è stampata vuota per le licenze in euro: lì il valore è l'Ammontare. " +
     "Le licenze con un Valore ai fini doganali non entrano nel totale EURO. Il valore è sulla prima riga " +
-    "di ogni licenza; le righe seguenti ne descrivono i materiali. Per i totali per azienda usa la Tabella A2.",
+    "di ogni licenza; le righe seguenti ne descrivono i materiali.",
 };
 
 // ---------- helpers ----------
@@ -82,11 +79,43 @@ function setView(name) {
     a.classList.toggle("on", a.dataset.view === name);
 }
 
+// ---------- column filters ----------
+// A filter is text to find in the cell as shown, or, on a number column, a
+// comparison: >1000, <=5, =0, 10-20. Numbers are written the Italian way
+// (1.000,5) or plainly (1000.5).
+
+function parseNumber(s) {
+  s = s.trim().replace(/\s/g, "");
+  if (/,/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+  return s === "" ? NaN : Number(s);
+}
+
+function makeTest(text) {
+  const t = text.trim().toLowerCase();
+  if (!t) return null;
+  const cmp = t.match(/^(>=|<=|>|<|=)\s*(.+)$/);
+  const range = t.match(/^(-?[\d.,]+)\s*-\s*(-?[\d.,]+)$/);
+  if (cmp && !Number.isNaN(parseNumber(cmp[2]))) {
+    const n = parseNumber(cmp[2]);
+    const op = { ">": x => x > n, "<": x => x < n, ">=": x => x >= n, "<=": x => x <= n, "=": x => x === n }[cmp[1]];
+    return (value) => typeof value === "number" && op(value);
+  }
+  if (range && !Number.isNaN(parseNumber(range[1])) && !Number.isNaN(parseNumber(range[2]))) {
+    const lo = parseNumber(range[1]), hi = parseNumber(range[2]);
+    return (value) => typeof value === "number" && value >= lo && value <= hi;
+  }
+  return (value, shown) => shown != null && shown.toLowerCase().includes(t);
+}
+
 // ---------- result grid ----------
-// One renderer for every view. Options:
-//   printed  pair X with X_raw: show the printed text, sort by the parsed value
+// One renderer for every view. Each header sorts (click) and filters (the box
+// under it). Options:
+//   printed  pair X with X_raw: show the printed text, sort and compare by the parsed value
 //   hide     column names not shown (still exported)
-//   cell     (col, value, row) -> Node | undefined, to override a cell
+//   headers  {col: label} for the header
+//   table    the SQL table, for its printed labels
+//   cell     (col, value, row, at) -> Node | undefined, to override a cell
 
 function grid(result, opts = {}) {
   const { columns, values } = result;
@@ -98,33 +127,35 @@ function grid(result, opts = {}) {
   }
   const shown = columns.filter(c => !hide.has(c));
   const hasFonte = at.source_file != null && at.pdf_page != null;
-  const kindAt = at.row_kind;
+
+  // the text a cell shows, which is what a text filter searches
+  const text = (c, row) => {
+    const v = row[at[c]];
+    if (raw[c] != null && row[raw[c]] != null) return row[raw[c]];
+    if (v == null) return null;
+    if (v instanceof Uint8Array) return `[${v.length} byte]`;
+    return PLAIN.test(c) ? String(v) : fmt(v);
+  };
 
   let rows = values.slice();
   let limit = PAGE;
-  let filter = "";
-  let dataOnly = false;
+  const tests = {};                     // col -> test
   let sortCol = null, sortDir = 1;
 
   const body = el("tbody");
   const count = el("span", { class: "count" });
   const more = el("button", { onclick: () => { limit += PAGE; paint(); } }, "Mostra altre righe");
+  const arrows = {};
 
-  function matches(row) {
-    if (dataOnly && kindAt != null && row[kindAt] !== "data") return false;
-    if (!filter) return true;
-    return row.some(v => v != null && String(v).toLowerCase().includes(filter));
-  }
+  const matches = row => Object.entries(tests).every(([c, test]) => test(row[at[c]], text(c, row)));
 
   function cellFor(c, row) {
     const v = row[at[c]];
     const custom = opts.cell && opts.cell(c, v, row, at);
     if (custom !== undefined) return el("td", {}, custom);
-    if (raw[c] != null && row[raw[c]] != null) return el("td", { class: "num" }, row[raw[c]]);
-    if (v == null) return el("td", { class: "null" }, "—");
-    if (v instanceof Uint8Array) return el("td", { class: "null" }, `[${v.length} byte]`);
-    if (PLAIN.test(c)) return el("td", { class: "num" }, String(v));
-    return el("td", { class: typeof v === "number" ? "num" : null }, fmt(v));
+    const s = text(c, row);
+    if (s == null) return el("td", { class: "null" }, "—");
+    return el("td", { class: typeof v === "number" || raw[c] != null ? "num" : null }, s);
   }
 
   function fonteCell(row) {
@@ -136,13 +167,12 @@ function grid(result, opts = {}) {
   function paint() {
     const picked = rows.filter(matches);
     body.replaceChildren(...picked.slice(0, limit).map(row =>
-      el("tr", { class: kindAt != null ? row[kindAt] : null },
-        hasFonte && fonteCell(row), shown.map(c => cellFor(c, row)))));
+      el("tr", {}, hasFonte && fonteCell(row), shown.map(c => cellFor(c, row)))));
     count.textContent = picked.length === values.length
       ? `${nf0.format(values.length)} righe`
       : `${nf0.format(picked.length)} di ${nf0.format(values.length)} righe`;
     more.hidden = picked.length <= limit;
-    return picked;
+    for (const [c, a] of Object.entries(arrows)) a.textContent = c === sortCol ? (sortDir > 0 ? " ▲" : " ▼") : "";
   }
 
   function sortBy(c) {
@@ -160,20 +190,28 @@ function grid(result, opts = {}) {
     paint();
   }
 
+  const label = c => {
+    const name = (opts.headers && opts.headers[c]) || (opts.table && labels.get(`${opts.table}.${c}`)) || c;
+    return [name, !opts.headers && name !== c && el("small", {}, c)];
+  };
   const head = el("tr", {}, hasFonte && el("th", {}, "Fonte"), shown.map(c => {
-    const label = (opts.headers && opts.headers[c]) || (opts.table && labels.get(`${opts.table}.${c}`));
-    return el("th", { title: "Ordina", onclick: () => sortBy(c) }, label || c,
-      label && !opts.headers && el("small", {}, c));
+    arrows[c] = el("span", { class: "arrow" });
+    return el("th", {},
+      el("button", { class: "sort", title: "Ordina", onclick: () => sortBy(c) }, label(c), arrows[c]),
+      el("input", { type: "search", class: "colfilter", placeholder: "filtra",
+        title: "Testo da cercare; sui numeri anche >1000, <=5, =0, 10-20",
+        "aria-label": `Filtra ${c}`,
+        oninput: e => {
+          const test = makeTest(e.target.value);
+          if (test) tests[c] = test; else delete tests[c];
+          limit = PAGE;
+          paint();
+        } }));
   }));
 
   const controls = el("div", { class: "controls" },
-    el("input", { type: "search", placeholder: "Filtra le righe…",
-      oninput: e => { filter = e.target.value.trim().toLowerCase(); limit = PAGE; paint(); } }),
-    kindAt != null && el("label", {},
-      el("input", { type: "checkbox", onchange: e => { dataOnly = e.target.checked; limit = PAGE; paint(); } }),
-      " solo righe di dati"),
     el("button", { onclick: () => { sortCol = null; rows = values.slice(); paint(); } }, "Ordine stampato"),
-    el("button", { onclick: () => csv(columns, values.filter(matches), at, opts.name) }, "Scarica CSV"),
+    el("button", { onclick: () => csv(columns, rows.filter(matches), at, opts.name) }, "Scarica CSV"),
     count);
 
   paint();
@@ -200,66 +238,7 @@ function csv(columns, values, at, name) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// ---------- chart ----------
-// One series, horizontal bars, value at the bar's end; the table below is the
-// full view. Only the first rows: a chart of 160 bars reads as texture.
-
-const compact = new Intl.NumberFormat("it-IT", { notation: "compact", maximumFractionDigits: 1 });
-
-function bars(result, { etichetta, valore }, max = 15) {
-  const lis = [].concat(etichetta).map(c => result.columns.indexOf(c));
-  const vi = result.columns.indexOf(valore);
-  const rows = result.values.filter(r => typeof r[vi] === "number" && r[vi] >= 0).slice(0, max);
-  if (lis.includes(-1) || vi < 0 || !rows.length) return null;
-  const label = r => lis.map(i => (r[i] == null ? "—" : String(r[i]))).join(" · ");
-  const top = Math.max(...rows.map(r => r[vi])) || 1;
-  return el("figure", { class: "bars" },
-    el("figcaption", {}, valore.replace(/_/g, " ")),
-    rows.map(r => el("div", { class: "bar-row", title: `${label(r)}: ${fmt(r[vi])}` },
-      el("span", { class: "bar-label" }, label(r)),
-      el("span", { class: "bar-track" },
-        // the value label sits after the bar: keep 72px for it
-        el("span", { class: "bar", style: `width:calc((100% - 72px) * ${(r[vi] / top).toFixed(4)})` }),
-        el("span", { class: "bar-value" }, compact.format(r[vi]))))),
-    result.values.length > rows.length &&
-      el("p", { class: "count" }, `Le prime ${rows.length} righe di ${result.values.length}: tutte nella tabella.`));
-}
-
 // ---------- views ----------
-
-function viewDomande() {
-  setView("domande");
-  const gruppi = [...new Set(domande.map(d => d.gruppo))];
-  show(
-    el("h1", {}, "Che cosa si può chiedere"),
-    el("p", { class: "lead" },
-      "Le relazioni sull'export di armamenti sono migliaia di pagine di tabelle. Trasformate in un database, " +
-      "rispondono a domande come queste in un attimo. Ogni risposta mostra la query che la produce, " +
-      "da modificare, e rimanda alla pagina della relazione da cui viene ogni riga."),
-    gruppi.map(g => [
-      el("h2", {}, g),
-      el("div", { class: "cards" }, domande.filter(d => d.gruppo === g).map(d =>
-        el("a", { class: "card", href: `#domanda/${d.id}` },
-          el("strong", {}, d.titolo), el("span", {}, d.spiegazione))))]));
-}
-
-function viewDomanda(id) {
-  setView("domande");
-  const d = domande.find(x => x.id === id);
-  if (!d) return show(el("p", { class: "error" }, `Domanda ${id}: non trovata.`));
-  const sql = d.sql.join("\n");
-  const result = q(sql);
-  show(
-    el("p", {}, el("a", { href: "#domande" }, "← Tutte le domande")),
-    el("p", { class: "count" }, d.gruppo),
-    el("h1", {}, d.titolo),
-    el("p", { class: "lead" }, d.spiegazione),
-    d.grafico && bars(result, d.grafico),
-    el("details", { class: "query" }, el("summary", {}, "La query"),
-      el("pre", {}, sql),
-      el("p", {}, el("a", { href: "#sql=" + encodeURIComponent(sql) }, "Modificala nell'editor SQL"))),
-    grid(result, { hide: [...PLACE, "prima_riga", "prima_voce"], name: d.id }));
-}
 
 function viewTabelle(tutte) {
   setView("tabelle");
@@ -282,13 +261,10 @@ function viewTabelle(tutte) {
       headers: { year: "Anno", key: "Tabella", authority: "Autorità", code: "Codice",
                  printed: "Pagine stampate", pages: "Pagine", check_verdict: "Verifica del taglio" },
       cell: (c, v, row, at) => {
-        if (c === "key") {
-          const sqlTable = row[at.sql_table];
-          return sqlTable
-            ? el("a", { href: `#tabella/${row[at.year]}/${encodeURIComponent(v)}` }, v)
-            : el("span", {}, v, " ", el("span", { class: "badge" }, "da estrarre"));
-        }
-        return undefined;
+        if (c !== "key") return undefined;
+        return row[at.sql_table]
+          ? el("a", { href: `#tabella/${row[at.year]}/${encodeURIComponent(v)}` }, v)
+          : el("span", {}, v, " ", el("span", { class: "badge" }, "da estrarre"));
       },
     }));
 }
@@ -300,34 +276,20 @@ function viewTabella(year, key) {
     show(el("p", { class: "error" }, `Tabella ${key} ${year}: non ancora estratta.`));
     return;
   }
-  const sql = `SELECT * FROM ${ident(meta.sql_table)}\nWHERE year = ${Number(year)}\nORDER BY source_file, pdf_page, row_ord`;
+  const sql = `SELECT * FROM ${ident(meta.sql_table)}\nWHERE year = ${Number(year)}\nORDER BY row_ord`;
   const result = q(sql);
-  const checks = objects(`SELECT status, count(*) AS n FROM check_result
-                          WHERE year = ? AND table_key = ? GROUP BY status ORDER BY status`, [year, key]);
-  const totals = objects(`SELECT label, value_raw, printed_page, pdf_page FROM printed_total
-                          WHERE year = ? AND table_key = ? ORDER BY pdf_page, rowid`, [year, key]);
-  const notes = objects(`SELECT text FROM table_note WHERE year = ? AND table_key = ? ORDER BY pdf_page, rowid`,
-                        [year, key]);
   const flags = result.columns.indexOf("flags");
   const hide = [...PLACE];
   if (flags >= 0 && result.values.every(r => r[flags] == null)) hide.push("flags");
-  const firstFile = result.values.length ? result.values[0][result.columns.indexOf("source_file")] : null;
+  const file = result.values.length ? result.values[0][result.columns.indexOf("source_file")] : null;
   show(
     el("p", {}, el("a", { href: "#tabelle" }, "← Tutte le tabelle")),
     el("h1", {}, `${key} · ${year}`),
     el("dl", { class: "facts" },
       el("dt", {}, "Pagine stampate"), el("dd", {}, meta.printed || "—"),
-      el("dt", {}, "Volume"), el("dd", {}, firstFile || "—"),
-      el("dt", {}, "Tabella SQL"), el("dd", {}, el("code", {}, meta.sql_table)),
-      el("dt", {}, "Totali stampati"), el("dd", {},
-        checks.length ? checks.map(c => `${c.status} ${c.n}`).join(" · ") : "nessuno",
-        " ", el("span", { class: "count" }, "(somme delle righe confrontate con i totali che la tabella stampa)")),
-      meta.notes && [el("dt", {}, "Note"), el("dd", {}, meta.notes)]),
+      el("dt", {}, "Volume"), el("dd", {}, file || "—"),
+      el("dt", {}, "Tabella SQL"), el("dd", {}, el("code", {}, meta.sql_table))),
     AVVERTENZE[meta.sql_table] && el("p", { class: "warn" }, AVVERTENZE[meta.sql_table]),
-    notes.length > 0 && el("p", { class: "lead" }, notes.map(n => n.text).join(" ")),
-    totals.length > 0 && el("details", {}, el("summary", {}, "Totali come stampati"),
-      el("ul", {}, totals.map(t => el("li", {}, `${t.label}: ${t.value_raw} `,
-        el("a", { href: fonteUrl(firstFile, t.pdf_page), target: "_blank", rel: "noopener" }, `p. ${t.printed_page}`))))),
     el("p", {}, el("a", { href: "#sql=" + encodeURIComponent(sql) }, "Apri questa tabella nell'editor SQL")),
     grid(result, { printed: true, hide, table: meta.sql_table, name: key.replace(/\//g, "_") + "_" + year }));
 }
@@ -337,7 +299,7 @@ function viewSql(initial) {
   const text = el("textarea", { spellcheck: "false", "aria-label": "Query SQL" });
   text.value = initial || `SELECT operatore, autorizzazioni, valore_euro, source_file, pdf_page
 FROM mae_a2
-WHERE year = 2025 AND row_kind = 'data'
+WHERE year = 2025
 ORDER BY valore_euro DESC
 LIMIT 20`;
   const out = el("div");
@@ -368,8 +330,7 @@ LIMIT 20`;
     el("h1", {}, "SQL"),
     el("p", { class: "lead" },
       "Interroga direttamente il database. Gira tutto nel tuo browser, in sola lettura: nessuna query può cambiare i dati. " +
-      "Le righe con source_file e pdf_page ricevono il link alla pagina della relazione. " +
-      "Nelle tabelle le righe hanno un tipo (row_kind: data, group, subtotal, total): per sommare, filtra row_kind = 'data'."),
+      "Le righe con source_file e pdf_page ricevono il link alla pagina della relazione."),
     el("div", { class: "sqlgrid" },
       schema(text, run),
       el("div", {}, text,
@@ -381,12 +342,12 @@ LIMIT 20`;
 }
 
 function schema(text, run) {
-  const tables = objects(`SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY
-                          name IN ('catalogo', 'fonte', 'source_file', 'column_def', 'printed_total',
-                                   'table_note', 'extract_issue', 'check_result'), name`);
   const keys = new Map(objects("SELECT DISTINCT sql_table, table_key FROM column_def")
     .map(r => [r.sql_table, r.table_key]));
-  return el("aside", { class: "schema" }, el("h2", {}, "Tabelle"), tables.map(({ name }) => {
+  // printed tables first, then the bookkeeping
+  const tables = objects("SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name")
+    .map(r => r.name).sort((a, b) => (keys.has(b) - keys.has(a)) || a.localeCompare(b));
+  return el("aside", { class: "schema" }, el("h2", {}, "Tabelle"), tables.map(name => {
     const cols = objects(`PRAGMA table_info(${ident(name)})`);
     return el("details", {},
       el("summary", {}, name, keys.has(name) && el("span", { class: "count" }, ` ${keys.get(name)}`),
@@ -394,49 +355,6 @@ function schema(text, run) {
       el("ul", {}, cols.map(c => el("li", { title: c.type }, c.name,
         labels.has(`${name}.${c.name}`) && el("span", {}, ` · ${labels.get(`${name}.${c.name}`)}`)))));
   }));
-}
-
-function viewMetodo() {
-  setView("metodo");
-  const [c] = objects(`SELECT count(*) AS tot, count(sql_table) AS done,
-                       group_concat(DISTINCT year) AS years FROM catalogo`);
-  const sqlTables = objects("SELECT DISTINCT sql_table FROM column_def ORDER BY sql_table").map(r => r.sql_table);
-  const nrows = sqlTables.reduce((n, t) => n + q(`SELECT count(*) FROM ${ident(t)}`).values[0][0], 0);
-  const checks = objects("SELECT status, count(*) AS n FROM check_result GROUP BY status ORDER BY n DESC");
-  const issues = q("SELECT count(*) FROM extract_issue").values[0][0];
-  const vols = objects("SELECT year, volume, pages, url, sha256 FROM fonte ORDER BY year DESC, file");
-  show(
-    el("h1", {}, "Metodo"),
-    el("p", { class: "lead" },
-      "ArmTrace legge le relazioni annuali al Parlamento sull'export di armamenti (legge 185/1990) " +
-      "e ne trasforma le tabelle in un database. Solo fonti ufficiali; nessun valore è corretto, completato o stimato."),
-    el("dl", { class: "facts" },
-      el("dt", {}, "Anni"), el("dd", {}, c.years),
-      el("dt", {}, "Tabelle trovate"), el("dd", {}, nf0.format(c.tot)),
-      el("dt", {}, "Tabelle estratte"), el("dd", {}, `${nf0.format(c.done)} (${nf0.format(nrows)} righe)`),
-      el("dt", {}, "Totali stampati verificati"), el("dd", {}, checks.map(x => `${x.status} ${nf0.format(x.n)}`).join(" · ")),
-      el("dt", {}, "Problemi di lettura registrati"), el("dd", {}, nf0.format(issues))),
-    el("h2", {}, "Come si legge una riga"),
-    el("p", {}, "Ogni tabella SQL corrisponde a un codice di tabella stampato (MAE/A1 → mae_a1) ed è condivisa fra gli anni. " +
-      "Ogni riga porta l'anno, il file della relazione, la pagina del PDF e il numero di pagina stampato: il link «Fonte» " +
-      "apre quella pagina sul sito della Camera. Accanto a ogni valore numerico c'è il testo come stampato (colonne _raw); " +
-      "un trattino stampato è vuoto, mai zero."),
-    el("p", {}, "Le tabelle stampano i propri totali: per ogni totale, la somma delle righe estratte è confrontata con il valore stampato " +
-      "(PASS: uguale; ROUNDING: entro 2 centesimi di arrotondamento; UNCHECKED: non confrontabile)."),
-    el("h2", {}, "Limiti"),
-    el("ul", {},
-      el("li", {}, "Le tabelle non ancora estratte compaiono nell'elenco ma non hanno righe."),
-      el("li", {}, "I nomi (aziende, paesi, banche) sono come stampati: la stessa azienda può comparire scritta in modi diversi."),
-      el("li", {}, "Parte delle tabelle MAE è stampata con caratteri senza mappa: il testo è ricostruito glifo per glifo; " +
-        "quello che non si può riconoscere resta segnalato in flags, non indovinato."),
-      el("li", {}, "Le relazioni prima del 2011 non hanno testo selezionabile e non sono incluse.")),
-    el("h2", {}, "Fonti"),
-    el("ul", {}, vols.map(v => el("li", {}, `${v.year} ${v.volume}, ${v.pages} pagine: `,
-      el("a", { href: v.url, target: "_blank", rel: "noopener" }, "PDF ufficiale"),
-      " ", el("small", { class: "count" }, `SHA-256 ${v.sha256.slice(0, 12)}…`)))),
-    el("h2", {}, "Scarica"),
-    el("p", {}, el("a", { href: "armtrace.sqlite", download: true }, "armtrace.sqlite"),
-      " — il database intero, apribile con qualsiasi client SQLite."));
 }
 
 // ---------- routing ----------
@@ -449,10 +367,7 @@ function route() {
       const [, year, ...key] = h.split("/");
       return viewTabella(Number(year), key.join("/"));
     }
-    if (h === "metodo") return viewMetodo();
-    if (h.startsWith("domanda/")) return viewDomanda(h.slice(8));
-    if (h.startsWith("tabelle")) return viewTabelle(h === "tabelle/tutte");
-    return viewDomande();
+    return viewTabelle(h === "tabelle/tutte");
   } catch (e) {
     show(el("p", { class: "error" }, e.message));
   } finally {
@@ -467,10 +382,12 @@ async function start() {
     if (!res.ok) throw new Error(`armtrace.sqlite: ${res.status}`);
     db = new SQL.Database(new Uint8Array(await res.arrayBuffer()));
     db.exec("PRAGMA query_only = ON");
-    domande = await (await fetch("domande.json")).json();
     for (const r of objects("SELECT file, url FROM fonte")) fonti.set(r.file, r.url);
-    for (const r of objects("SELECT DISTINCT sql_table, col, label_it FROM column_def"))
-      labels.set(`${r.sql_table}.${r.col}`, r.label_it);
+    // A column printed under one label per year (T2: 2021 … 2025) has no
+    // single label: its name is its header.
+    for (const r of objects(`SELECT sql_table, col, max(label_it) AS label FROM column_def
+                             GROUP BY sql_table, col HAVING count(DISTINCT label_it) = 1 AND max(label_it) != ''`))
+      labels.set(`${r.sql_table}.${r.col}`, r.label);
   } catch (e) {
     show(el("p", { class: "error" }, `Il database non si è caricato: ${e.message}`));
     return;

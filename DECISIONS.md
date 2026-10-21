@@ -442,3 +442,14 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
 - **Published from a local build to the `gh-pages` branch, one commit with no history**
   (`tools/publish_site.sh`). CI cannot build it: the sources and `Out/` are not in git. The code
   history stays on the code branches; the published data is reproducible from them.
+
+## 2026-10-21 — explorer: two views, per-column filters
+
+- **Only Tabelle and SQL remain; the Domande and Metodo views are removed** (`web/domande.json`
+  with them). By the maintainer. The checks made for the questions stay recorded above.
+- **Every column header sorts and filters**, in the table list and in each table: text is
+  searched as shown; on numbers `>1000`, `<=5`, `=0`, `10-20`, Italian or plain notation.
+- **A table page shows its rows only: no printed totals, no notes.** By the maintainer.
+- **A column printed under several labels (T2: one per year) is headed by its SQL name.**
+- **Built on the regenerated 2025 database** (`sql` branch, 2026-10-20): data rows only, no
+  `row_kind`; headings, subtotals and totals live in `printed_figure`, the layout in `view_def`.
