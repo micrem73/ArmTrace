@@ -356,20 +356,20 @@ def test_mae_a1_amounts_cover_their_items_as_the_maintainer_reads_them(year, sou
     db = stored(year, r, "MAE/A1")
     joined = db.execute(
         "SELECT i.qta_raw, a.ammontare_raw FROM mae_a1 i JOIN mae_a1 a "
-        "ON a.year = i.year AND a.row_ord = i.importo "
+        "ON a.year = i.year AND a.row_ord = i.riga_importo "
         "WHERE i.operatore = 'CERATIZIT COMO SPA' AND i.pdf_page = 118 ORDER BY i.row_ord").fetchall()
     assert joined == [("300", "10.656,22"), ("2", "562,20"), ("2", "295,17"), ("20", "1.261,47")]
     # One authorisation, four amounts: every line of it names its dated line.
     units = db.execute(
-        "SELECT i.autorizzazione, count(*), count(DISTINCT i.importo), o.data_raw FROM mae_a1 i "
-        "JOIN mae_a1 a ON a.year = i.year AND a.row_ord = i.importo "
-        "JOIN mae_a1 o ON o.year = i.year AND o.row_ord = i.autorizzazione "
+        "SELECT i.riga_autorizzazione, count(*), count(DISTINCT i.riga_importo), o.data_raw FROM mae_a1 i "
+        "JOIN mae_a1 a ON a.year = i.year AND a.row_ord = i.riga_importo "
+        "JOIN mae_a1 o ON o.year = i.year AND o.row_ord = i.riga_autorizzazione "
         "WHERE i.operatore = 'CERATIZIT COMO SPA' AND a.ammontare_raw IN "
         "('10.656,22', '562,20', '295,17', '1.261,47') GROUP BY 1").fetchall()
     assert len(units) == 1 and units[0][1:3] == (4, 4) and units[0][3]
-    assert not db.execute("SELECT 1 FROM mae_a1 WHERE autorizzazione IS NULL").fetchone()
+    assert not db.execute("SELECT 1 FROM mae_a1 WHERE riga_autorizzazione IS NULL").fetchone()
     acsa = stored(year, read(VOL1, 70, 70, 66, "MAE/A1"), "MAE/A1")
-    assert acsa.execute("SELECT count(DISTINCT autorizzazione) FROM mae_a1 "
+    assert acsa.execute("SELECT count(DISTINCT riga_autorizzazione) FROM mae_a1 "
                         "WHERE operatore LIKE 'A.C.S.A.%'").fetchone() == (2,)
 
 
@@ -399,7 +399,7 @@ def test_mae_a1_two_amounts_one_item_and_an_empty_amount(year, sources):
     r = read(VOL1, 264, 264, 260, "MAE/A1")
     assert not [i for i in r.issues if i[1] == "link"]
     db = stored(year, r, "MAE/A1")
-    got = db.execute("SELECT ammontare, ammontare_raw, importo = row_ord, flags FROM mae_a1 "
+    got = db.execute("SELECT ammontare, ammontare_raw, riga_importo = row_ord, flags FROM mae_a1 "
                      "WHERE materiale_oggetto_del_contratto LIKE '%COVER ACCESS'").fetchone()
     assert got[:3] == (0, None, 1) and got[3].startswith("ammontare 0: amount boxes printed empty")
 

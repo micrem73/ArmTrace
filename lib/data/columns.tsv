@@ -26,6 +26,9 @@
 #   unit    not printed: on each row of a `link` table, the `row_ord` of the row that opens
 #           its unit (MAE A1: the dated line of its authorisation). Derived, not an
 #           official number: A1 prints none (maintainer, 2026-10-21)
+#   Rule (maintainer, 2026-10-21): a table whose rows nest (lines under one printed unit)
+#   gets a `riga_*` column naming each row's unit, so the nesting is never lost; `riga_`
+#   marks a row of the same table, never a value or code the report prints.
 #   years   the printed year columns of a table that prints a year window (T2): one
 #           row per printed row and year, `anno` + `valore` (amount)
 # labels: the printed header, `|` between the forms seen in different editions; a year is
@@ -48,8 +51,8 @@ MAE/A1	unita_misura	text	Unita' Misura
 MAE/A1	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto
 MAE/A1	tipo	code	Tipo
 MAE/A1	cat	code	Cat.
-MAE/A1	importo	link		ammontare qta data
-MAE/A1	autorizzazione	unit		
+MAE/A1	riga_importo	link		ammontare qta data
+MAE/A1	riga_autorizzazione	unit		
 MEF/EE	numero_autorizzazione	code	Numero Autorizzazione|Numero
 MEF/EE	utilizzatore_finale	text	Utilizzatore Finale
 MEF/EE	causale	text	Causale

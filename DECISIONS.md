@@ -407,7 +407,7 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   apart beside four items three lines tall). Fewer: "one amount covers every item in line and
   under it, until the next amount" (A.C.S.A.). A line printing an amount and no quantity is
   the item above, wrapped: its Materiale moves to that item, its Valuta stays with the amount
-  (moving it too broke the EUR rule of the EURO sum). Stored as column `importo` (type `link`,
+  (moving it too broke the EUR rule of the EURO sum). Stored as column `riga_importo` (type `link`,
   `columns.tsv`): on each item, the `row_ord` of the row whose amount covers it; every amount
   is still stored once, so sums are unchanged (every A1 check as before). 2025: 2.316
   authorisations with one amount, 82 with as many amounts as items, 171 with fewer; 164
@@ -420,7 +420,14 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   boxes are empty: "a new row with an amount of 0", stored `ammontare` 0 with `_raw` NULL,
   flagged. 2025: every one of 7.946 items linked, no issue.
   Each row also names its authorisation (maintainer, same day, asked by the interface: rows
-  filtered by operator gave no clue how they group): column `autorizzazione` (type `unit`),
+  filtered by operator gave no clue how they group): column `riga_autorizzazione` (type `unit`),
   the `row_ord` of the dated line that opens it. A1 prints no authorisation number, so it is
   an id derived from the print, valid within one year's table, not an official reference.
   2025: 2.576 authorisations; no amount spans two, none spans two operators.
+  Both named `riga_*` (maintainer, same day): a row of this table, not a value of the report,
+  and not to be joined with the authorisation code MEF prints (`numero_autorizzazione`).
+- **Nested rows keep an id** (maintainer, 2026-10-21, general rule): when a table's rows nest
+  (several lines under one printed unit), the import stores on every row the id of its unit,
+  a `riga_*` column (`row_ord` of the line that opens it), so the grouping the print shows by
+  layout is not lost when the table becomes rows. The unit and where it ends are agreed per
+  table, like any column. First: MAE A1 (`riga_autorizzazione`, `riga_importo`).
