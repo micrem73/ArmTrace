@@ -95,3 +95,8 @@ dl.facts dd { margin: 0; }
 .foot { max-width: 1200px; margin: 24px auto; padding: 0 16px; color: var(--muted); font-size: 13px; }
 
 .warn { background: var(--warn-bg); border-radius: 6px; padding: 8px 12px; max-width: 80ch; }
+
+table.printed tr.page td { background: var(--bg); color: var(--muted); font-size: 12px; padding-top: 10px; }
+table.printed tr.heading td { font-weight: 600; background: var(--warn-bg); }
+table.printed tr.subtotal td, table.printed tr.total td { font-weight: 600; background: var(--line); }
+dl.summary { margin-top: 16px; }

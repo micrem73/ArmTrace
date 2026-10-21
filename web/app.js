@@ -1,6 +1,6 @@
 "use strict";
 // ArmTrace explorer: the whole database runs in the browser (sql.js), read-only.
-// Views by #hash: #tabelle[/tutte], #tabella/<year>/<key>, #sql[=<query>].
+// Views by #hash: #tabelle[/tutte], #tabella/<year>/<key>[/stampa], #sql[=<query>].
 
 const SQLJS = "https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/";
 const PAGE = 500;                       // rows rendered at a time
@@ -269,7 +269,113 @@ function viewTabelle(tutte) {
     }));
 }
 
-function viewTabella(year, key) {
+// ---------- the table as printed ----------
+// The rows are facts; headings, subtotals, totals and summary lines are the
+// report's layout, stored apart (view_def, printed_figure). This rebuilds the
+// printed table from them, as `render` in the extractor's lib/views.py does:
+// a change to one is a change to the other (DECISIONS.md 2026-10-21).
+
+function printedRows(year, key) {
+  const [def] = objects("SELECT definition FROM view_def WHERE year = ? AND table_key = ?", [year, key]);
+  if (!def) return null;
+  const view = JSON.parse(def.definition);
+  const order = objects(`SELECT ordinal, col, type, label_it FROM column_def
+                         WHERE year = ? AND table_key = ? ORDER BY ordinal`, [year, key]);
+  const [{ sql_table: table }] = objects("SELECT sql_table FROM view_def WHERE year = ? AND table_key = ?", [year, key]);
+  const raw = new Set(["amount", "number", "date"]);
+  const carry = new Set(order.map((c, i) => (c.type === "carry" ? i : -1)).filter(i => i >= 0));
+
+  // facts: one per row_ord (T2 stores one row per year of a printed line)
+  const lines = new Map();
+  for (const r of objects(`SELECT * FROM ${ident(table)} WHERE year = ? ORDER BY row_ord`, [year])) {
+    if (!lines.has(r.row_ord)) lines.set(r.row_ord, []);
+    lines.get(r.row_ord).push(r);
+  }
+  const facts = [...lines.entries()].map(([rowOrd, rs]) => {
+    const r = rs[0];
+    const copied = (r.flags || "").match(/copied from row \d+: ([\w, ]+)/);
+    const blank = new Set(copied ? copied[1].split(", ") : []);
+    const cells = order.map(c => {
+      if (blank.has(c.col)) return "";
+      if (c.type === "years") {
+        const hit = rs.find(x => x[view.years.year_col] === Number(c.label_it));
+        return (hit && hit[c.col + "_raw"]) || "";
+      }
+      return (raw.has(c.type) ? r[c.col + "_raw"] : r[c.col]) ?? "";
+    });
+    return { kind: "data", rowOrd, page: r.pdf_page, printed: r.printed_page,
+             group: view.group ? r[view.group] : null, cells };
+  });
+
+  const figs = new Map();
+  for (const f of objects(`SELECT kind, row_ord, pdf_page, printed_page, grp, ordinal, value_raw
+                           FROM printed_figure WHERE year = ? AND table_key = ? AND kind != 'summary'
+                           ORDER BY row_ord, ordinal`, [year, key])) {
+    if (!figs.has(f.row_ord))
+      figs.set(f.row_ord, { kind: f.kind, rowOrd: f.row_ord, page: f.pdf_page, printed: f.printed_page,
+                            group: f.grp, cells: order.map(() => "") });
+    if (f.ordinal != null) figs.get(f.row_ord).cells[f.ordinal] = f.value_raw ?? "";
+  }
+
+  const rows = [];
+  let heading = {}, run = {}, scope = 0;
+  for (const row of [...facts, ...figs.values()].sort((a, b) => a.rowOrd - b.rowOrd)) {
+    if (row.kind === "data") {
+      if (view.group_prints === "heading" && row.group !== heading) {
+        rows.push({ kind: "group", group: row.group, cells: [row.group], page: row.page, printed: row.printed });
+        heading = row.group;
+      }
+      const first = row.group !== run || !scope;
+      rows.push({ ...row, cells: row.cells.map((c, i) => (!first && carry.has(i) ? "" : c)) });
+      scope += 1;
+      run = row.group;
+    } else {
+      rows.push(row);
+      if (row.kind === "subtotal") { scope = 0; run = {}; }
+    }
+  }
+  const summary = objects(`SELECT label, value_raw, pdf_page, printed_page FROM printed_figure
+                           WHERE year = ? AND table_key = ? AND kind = 'summary' ORDER BY rowid`, [year, key]);
+  return { order, rows, summary };
+}
+
+function printedView(year, key, file) {
+  const built = printedRows(year, key);
+  const { order, rows, summary } = built;
+  const n = order.length;
+  const body = el("tbody");
+  let limit = PAGE;
+  const more = el("button", { onclick: () => { limit += PAGE; paint(); } }, "Mostra altre righe");
+  const pageLink = r => {
+    const url = fonteUrl(file, r.page);
+    return url ? el("a", { href: url, target: "_blank", rel: "noopener" }, `p. ${r.printed ?? r.page}`) : `p. ${r.printed ?? r.page}`;
+  };
+  function paint() {
+    const out = [];
+    let page = null;
+    for (const r of rows.slice(0, limit)) {
+      if (r.page !== page) {
+        out.push(el("tr", { class: "page" }, el("td", { colspan: n }, pageLink(r))));
+        page = r.page;
+      }
+      if (r.kind === "group") out.push(el("tr", { class: "heading" }, el("td", { colspan: n }, r.group)));
+      else out.push(el("tr", { class: r.kind === "data" ? null : r.kind },
+        r.cells.map((c, i) => el("td", { class: order[i].type === "text" || order[i].type === "carry" ? null : "num" }, c))));
+    }
+    body.replaceChildren(...out);
+    more.hidden = rows.length <= limit;
+  }
+  paint();
+  return el("div", {},
+    el("div", { class: "scroll" }, el("table", { class: "printed" },
+      // the header as printed: T2 prints none over its first column
+      el("thead", {}, el("tr", {}, order.map(c => el("th", { title: c.col }, c.label_it ?? c.col)))), body)),
+    more,
+    summary.length > 0 && el("dl", { class: "facts summary" }, summary.map(s =>
+      [el("dt", {}, s.label), el("dd", {}, s.value_raw, " ", el("span", { class: "count" }, pageLink({ page: s.pdf_page, printed: s.printed_page })))])));
+}
+
+function viewTabella(year, key, stampa) {
   setView("tabelle");
   const [meta] = objects("SELECT * FROM catalogo WHERE year = ? AND key = ?", [year, key]);
   if (!meta || !meta.sql_table) {
@@ -282,6 +388,8 @@ function viewTabella(year, key) {
   const hide = [...PLACE];
   if (flags >= 0 && result.values.every(r => r[flags] == null)) hide.push("flags");
   const file = result.values.length ? result.values[0][result.columns.indexOf("source_file")] : null;
+  const printable = objects("SELECT 1 FROM view_def WHERE year = ? AND table_key = ?", [year, key]).length > 0;
+  const here = `#tabella/${year}/${encodeURIComponent(key)}`;
   show(
     el("p", {}, el("a", { href: "#tabelle" }, "← Tutte le tabelle")),
     el("h1", {}, `${key} · ${year}`),
@@ -291,7 +399,13 @@ function viewTabella(year, key) {
       el("dt", {}, "Tabella SQL"), el("dd", {}, el("code", {}, meta.sql_table))),
     AVVERTENZE[meta.sql_table] && el("p", { class: "warn" }, AVVERTENZE[meta.sql_table]),
     el("p", {}, el("a", { href: "#sql=" + encodeURIComponent(sql) }, "Apri questa tabella nell'editor SQL")),
-    grid(result, { printed: true, hide, table: meta.sql_table, name: key.replace(/\//g, "_") + "_" + year }));
+    printable && el("p", {}, el("label", {},
+      el("input", { type: "checkbox", checked: stampa,
+        onchange: e => { location.hash = here + (e.target.checked ? "/stampa" : ""); } }),
+      " come stampata")),
+    printable && stampa
+      ? printedView(year, key, file)
+      : grid(result, { printed: true, hide, table: meta.sql_table, name: key.replace(/\//g, "_") + "_" + year }));
 }
 
 function viewSql(initial) {
@@ -365,7 +479,9 @@ function route() {
     if (h.startsWith("sql")) return viewSql(h.startsWith("sql=") ? h.slice(4) : "");
     if (h.startsWith("tabella/")) {
       const [, year, ...key] = h.split("/");
-      return viewTabella(Number(year), key.join("/"));
+      const stampa = key[key.length - 1] === "stampa";
+      if (stampa) key.pop();
+      return viewTabella(Number(year), key.join("/"), stampa);
     }
     return viewTabelle(h === "tabelle/tutte");
   } catch (e) {

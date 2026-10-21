@@ -453,3 +453,10 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
 - **A column printed under several labels (T2: one per year) is headed by its SQL name.**
 - **Built on the regenerated 2025 database** (`sql` branch, 2026-10-20): data rows only, no
   `row_kind`; headings, subtotals and totals live in `printed_figure`, the layout in `view_def`.
+- **"Come stampata": the table rebuilt as printed, in the browser.** A switch on the table page
+  swaps the rows for the printed layout: group headings, a name carried on its group's first row
+  only, subtotals, totals and summary lines from `printed_figure`, a band at each page linked to
+  the PDF. `printedRows` in `web/app.js` ports `render` in the extractor's `lib/views.py`; the
+  database stores nothing twice. Checked row for row against `render` on the 8 pilot tables
+  (23,202 rows, identical). A change to `render` or to `view_def`'s keys changes `printedRows`
+  too. By the maintainer: a switch, not a separate view.
