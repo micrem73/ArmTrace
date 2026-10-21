@@ -431,3 +431,16 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   a `riga_*` column (`row_ord` of the line that opens it), so the grouping the print shows by
   layout is not lost when the table becomes rows. The unit and where it ends are agreed per
   table, like any column. First: MAE A1 (`riga_autorizzazione`, `riga_importo`).
+  Nested means the layout shows the grouping (something printed once covering the lines under
+  it); such a table always gets the id. A table that prints every line complete is flat, even
+  when lines share an authorisation the print does not show (Dogane M): no id is invented.
+- **Dogane M: flat, no authorisation id** (maintainer, 2026-10-21, on the M authorisations page:
+  M is not a nested table).
+  M prints operator, currency and the authorisation's amount on every line, no authorisation
+  number, lines sorted by material: 891 of 2.895 operator+currency+amount groups are not on
+  consecutive lines, and in 71 the year's progress plus Utilizzo exceeds the amount (two
+  authorisations of the same amount: FIOCCHI 120,00, four lines adding up to 240,00). The
+  maintainer: "Tab M does not easily allow to connect to the source authorisation ... Store
+  no id." `Utilizzo anni precedenti` is "the amount already exported in previous year reports
+  for the same authorisation (or authorisation sub-amount)": a figure of the authorisation,
+  repeated on its lines, never added up across lines (it has no `sum` rule).

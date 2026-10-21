@@ -73,7 +73,25 @@ Started on 2025 before Phase 2 ends (2026-10-19): 2024 and 2025 are catalogued a
 3. Write the extractor with its verification: printed totals against the sum of the rows, row counts, text coverage against the source page (D7). Values parsed exactly (D4). Anything that cannot be read with confidence is recorded as unknown with a reason, not guessed.
 4. MAE text goes through `lib/glyphs.py`; undecoded glyphs are carried flagged (D8).
 5. Compare reading tools last, against the ground truth the verification gives.
-6. Normalise recurring entities (companies, recipient countries, banks, authorities), keeping the original spelling (D3). Record uncertain matches as uncertain. **[decide]** matching policy, ask before going beyond exact matches.
+6. Normalise recurring entities (companies, recipient countries, banks, authorities), keeping the original spelling (D3). Record uncertain matches as uncertain. Companies, agreed 2026-10-21 (not yet built):
+   - **The id:**
+     - A company list (`lib/data/companies.tsv`: `id`, `name`; DB `company`) gives each company ArmTrace's own stable id, never reused.
+     - `lib/data/company-names.tsv` maps every printed spelling to its id, with `how`: `spelling` (automatic) or `maintainer, <date>`.
+   - **The tables:**
+     - Each table with a company name gets an id column (type `company` in `columns.tsv`): MAE A1/A2 `operatore`, MEF II `ditta`, DOG M/M1 `denominazione_operatore`.
+     - The printed name stays as printed.
+     - A name with no id is stored NULL with an issue, never guessed.
+     - The operator groups need no row id: the company id is their grouping (nested-rows rule, DECISIONS.md).
+   - **Matching:**
+     - Automatic only for spelling: case, punctuation, spacing, one legal form written differently (`S.P.A.` = `S.p.A.` = `SPA`).
+     - A name with no candidate is a new company.
+     - Everything else goes to the maintainer on a review page: another legal form (`BERCELLA S.R.L.` / `BERCELLA SPA`), a cut name (M1), a merger.
+   - **DIFESA/A5/2:**
+     - Imported as its own table: register lists, `elenco`, `n`, `denominazione`, `numero_registro`, `data`, `motivazione`, company id.
+     - Its counts (2025: 75 registered, 20 cancelled) are checked.
+     - The register number stays only there; join on the company id. In 2024+2025 it names 15 of 2025's 219 companies.
+   - **Cross-check:** M1 ↔ M is grouped by company id instead of matching names as text.
+   - **Later:** Difesa 4 `ditte_italiane_partecipanti` (several companies in one cell), Difesa 3A, A5/2 of earlier years.
 7. Write the data dictionary (D5) and add data release versioning (D6).
 
 **Done when:** the tables of the verified years load into the database, each row points to its source page, the printed totals match, and the maintainer has checked a sample against the source pages.

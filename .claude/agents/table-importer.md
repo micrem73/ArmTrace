@@ -53,7 +53,9 @@ in the format of `lib/data/totals.tsv` for each total the table prints outside i
   covering lines under it, a value printed once for its group): propose a `riga_<unit>`
   column (type `unit` or `link`) holding the `row_ord` of the line that opens the unit, so
   the nesting survives as an id (maintainer, 2026-10-21). Say in `cause` which line opens a
-  unit and where it ends. The nesting rule is a convention: never decide it.
+  unit and where it ends. Nested means the layout shows the grouping; a table printing
+  every line complete is flat, even when lines share a key the print does not show (Dogane
+  M): no id. The nesting rule is a convention: never decide it.
 
 Then the verdict is FAIL, kind `convention`, cause `columns drafted`: columns are agreed
 with the maintainer, never by you. If `header` disagrees with the printed labels (letters
