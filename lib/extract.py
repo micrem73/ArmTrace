@@ -598,6 +598,7 @@ LIST_ITEM = re.compile(r"^(\d+)\.\s*(.*)$")
 REGISTER_NO = re.compile(r"^(?:(Nr\.?)\s*)?(\d{5})$")
 DATE_WORD = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 REASON = "Motivazione:"
+TOUCH = 0.5         # pt between two spans of one word
 
 
 def read_list(year, key, spec, pages):
@@ -676,8 +677,12 @@ def read_list(year, key, spec, pages):
             if item is None:
                 result.issues.append((sp.pdf_page, "list", f"line {text[:60]!r} outside an item"))
                 continue
+            prev = None
             for w in band:
                 t = " ".join(w.text.split())
+                # Two spans that touch are one word (p1276: bold `S.r.l`, then `.`).
+                touching = prev is not None and w.u0 - prev.u1 < TOUCH and not w.text[:1].isspace()
+                prev = w
                 if (m := REGISTER_NO.match(t)) and item["code"] is None:
                     item["code"] = m.group(2)
                     if m.group(1):
@@ -690,7 +695,11 @@ def read_list(year, key, spec, pages):
                     if t[len(REASON):].strip():
                         item["reason"].append(t[len(REASON):].strip())
                 elif t:
-                    item["reason" if item["in_reason"] else "name"].append(t)
+                    words = item["reason" if item["in_reason"] else "name"]
+                    if touching and words:
+                        words[-1] += t
+                    else:
+                        words.append(t)
         result.pages[("header" if started else "cover")] = \
             result.pages.get("header" if started else "cover", 0) + 1
     close()

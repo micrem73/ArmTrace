@@ -73,7 +73,7 @@ Started on 2025 before Phase 2 ends (2026-10-19): 2024 and 2025 are catalogued a
 3. Write the extractor with its verification: printed totals against the sum of the rows, row counts, text coverage against the source page (D7). Values parsed exactly (D4). Anything that cannot be read with confidence is recorded as unknown with a reason, not guessed.
 4. MAE text goes through `lib/glyphs.py`; undecoded glyphs are carried flagged (D8).
 5. Compare reading tools last, against the ground truth the verification gives.
-6. Normalise recurring entities (companies, recipient countries, banks, authorities), keeping the original spelling (D3). Record uncertain matches as uncertain. Companies, agreed 2026-10-21 (built 2026-10-22 for 2025: the id, the tables, matching, A5/2 with its register witness; the M1 ↔ M cross-check still to do):
+6. Normalise recurring entities (companies, recipient countries, banks, authorities), keeping the original spelling (D3). Record uncertain matches as uncertain. Companies, agreed 2026-10-21 (built 2026-10-22 for 2025: the id, the tables, matching, A5/2 with its register witness, the cross-checks by company id):
    - **The id:**
      - A company list (`lib/data/companies.tsv`: `id`, `name`; DB `company`) gives each company ArmTrace's own stable id, never reused.
      - `lib/data/company-names.tsv` maps every printed spelling to its id, with `how`: `spelling` (automatic) or `maintainer, <date>`.
@@ -91,7 +91,7 @@ Started on 2025 before Phase 2 ends (2026-10-19): 2024 and 2025 are catalogued a
      - Its counts (2025: 75 registered, 20 cancelled) are checked.
      - The register number stays only there; join on the company id. In 2024+2025 it names 15 of 2025's 219 companies.
      - **A witness to the company decisions** (maintainer, 2026-10-22): the register number identifies a company. When A5/2 is imported, warn the maintainer, never correct by itself, wherever it contradicts `company-names.tsv`: one register number under two company ids (two ids are one company), or one company id under two register numbers (a merge was wrong). The A5/2 import is not done until this check runs.
-   - **Cross-check:** M1 ↔ M is grouped by company id instead of matching names as text.
+   - **Cross-check:** M1 ↔ M and A2 ↔ A1 are grouped by company id instead of matching names as text (done 2026-10-22: 157 + 477 PASS).
    - **Later:** Difesa 4 `ditte_italiane_partecipanti` (several companies in one cell), Difesa 3A, A5/2 of earlier years.
 7. Write the data dictionary (D5) and add data release versioning (D6).
 

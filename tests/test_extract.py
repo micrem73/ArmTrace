@@ -294,7 +294,8 @@ def test_the_printed_table_is_rebuilt_from_its_facts(year, sources, key, volume,
 def test_a_summary_agrees_with_the_table_it_summarises():
     """MAE A2 restates A1 per operator; DOG M1 restates M (maintainer: "when a
     corresponding table exists, data should match"). Checked on the year's
-    database; an M1 name may cover several lines, or be cut short in print."""
+    database, per company id (`id_ditta`), not per name as printed: an M1 name
+    may cover several lines, be cut short, or be spelled otherwise than in M."""
     import sqlite3
     path = ROOT / "Out" / "2025" / "armtrace-2025.sqlite"
     if not path.exists():
@@ -304,9 +305,10 @@ def test_a_summary_agrees_with_the_table_it_summarises():
     a2 = [c for c in got if c[1] == "MAE/A2"]
     assert len(a2) == 3 * 159 and all(c[5] == "PASS" for c in a2)
     m1 = [c for c in got if c[1] == "DOG/A1C2/M1"]
-    assert len(m1) == 190 and all(c[5] == "PASS" for c in m1)
-    # M1 prints `CPM ELETTRONICA SRL` twice: its two lines add up to M's one name.
-    assert any(c[2].endswith("(CPM ELETTRONICA SRL)") for c in m1)
+    assert len(m1) == 157 and all(c[5] == "PASS" for c in m1)
+    # M1 prints `CPM ELETTRONICA SRL` twice and `C.P.M. ELETTRONICA S.R.L.`: one company.
+    cpm = [c[2] for c in m1 if "CPM ELETTRONICA SRL" in c[2]]
+    assert len(cpm) == 1 and "C.P.M. ELETTRONICA S.R.L." in cpm[0]
 
 
 @pytest.mark.parametrize("year", ["2025"])
@@ -488,6 +490,8 @@ def test_difesa_a5_2_register_lists_by_place_not_text_order(year, sources):
     assert (gemelli["numero_iscrizione"], gemelli["data_cancellazione"]) == ("00832", "07/11/2025")
     assert gemelli["motivazione"] == "la Società è stata incorporata dalla LOGIC S.p.A.."
     assert rows["CANTIERE NAVALE VITTORIA S.p.A."]["numero_iscrizione"] == "00437"
+    # p1276 prints `S.r.l` bold and `.` regular, touching: one word (importer, 2026-10-22).
+    assert rows["GESTIONE SILO S.r.l."]["numero_iscrizione"] == "00866"
     assert rows["ESPLODENTI SABINO S.p.A."]["numero_iscrizione"] == "00126"
     assert not rows["ESPLODENTI SABINO S.p.A."]["data_iscrizione"]
     assert statuses(r, key) == ["PASS", "PASS"]

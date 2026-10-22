@@ -206,26 +206,6 @@ def _summary_check(label, raw, facts, figures, spec):
     return (f"printed {label!r}", raw, computed, extract._status(computed, value))
 
 
-def _compact(name):
-    return re.sub(r"[^A-Z0-9]", "", name.upper())
-
-
-def _match(names, detail):
-    """{summary name: detail name}. The name as printed; else the one detail
-    name it begins or ends (print cuts long names: M `CORDON ... S.R.L. CON`,
-    M1 `... CON UNICO SOCIO`) among those no summary name has exactly; else
-    the same letters and digits (M `ALMAVIVA S.P..A.`, M1 `ALMAVIVA S.P. A.`).
-    No match: None."""
-    out = {n: n for n in names if n in detail}
-    free = [d for d in detail if d not in out.values()]
-    for n in (n for n in names if n not in out):
-        hits = [d for d in free if d.startswith(n) or n.startswith(d)]
-        if len(hits) != 1:
-            hits = [d for d in detail if _compact(d) == _compact(n)]
-        out[n] = hits[0] if len(hits) == 1 else None
-    return out
-
-
 def cross_checks(db, year):
     """[(year, table_key, check, printed, computed, status)]: each summary table
     in `lib/data/views.tsv` against the table it summarises, per group."""
@@ -236,7 +216,8 @@ def cross_checks(db, year):
         if not all(db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (n,)).fetchone()
                    for n in (s_name, d_name)):
             continue
-        s_group, d_group = row["group"].split("=")
+        s_group, d_group = row["group"].split("=")     # company ids (`id_ditta`)
+        d_names = extract.specs()[of].company.of
         sums = dict(db.execute("SELECT col, sum_sql FROM column_def WHERE table_key=? "
                                "AND year=? AND sum_sql IS NOT NULL", (of, int(year))))
         ordinal = dict(db.execute("SELECT col, ordinal FROM column_def WHERE table_key=? "
@@ -245,10 +226,13 @@ def cross_checks(db, year):
             s_col, d_expr = pair.split("=")
             fn, _, inner = d_expr.rstrip(")").partition("(")
             if fn == "subtotal":
-                # The detail table's printed subtotals: A2 restates A1's, rounding and all.
-                found = db.execute(
+                # The detail table's printed subtotals: A2 restates A1's, rounding and
+                # all. A subtotal names its group as printed: its id is that name's.
+                id_of = dict(db.execute(f"SELECT DISTINCT {d_names}, {d_group} FROM {d_name} "
+                                        "WHERE year=?", (int(year),)))
+                found = [(id_of.get(grp), value) for grp, value in db.execute(
                     "SELECT grp, value FROM printed_figure WHERE table_key=? AND year=? "
-                    "AND kind='subtotal' AND ordinal=?", (of, int(year), ordinal[inner]))
+                    "AND kind='subtotal' AND ordinal=?", (of, int(year), ordinal[inner]))]
             elif fn == "count":
                 found = db.execute(f"SELECT {d_group}, count({inner}_raw) FROM {d_name} "
                                    "WHERE year=? GROUP BY 1", (int(year),))
@@ -256,27 +240,21 @@ def cross_checks(db, year):
                 found = db.execute(f"SELECT {d_group}, round(total({sums.get(fn, fn)}), 2) "
                                    f"FROM {d_name} WHERE year=? GROUP BY 1", (int(year),))
             detail = {}
-            for name, value in found:
-                name = " ".join((name or "").split())
-                detail[name] = detail.get(name, Decimal(0)) + Decimal(str(value or 0))
-            summary = {}
-            for name, raw in db.execute(f"SELECT {s_group}, {s_col}_raw FROM {s_name} "
-                                        "WHERE year=? ORDER BY row_ord", (int(year),)):
-                name = " ".join((name or "").split())
-                summary[name] = summary.get(name, Decimal(0)) + (gra.parse_number(raw) or 0)
-            matched = _match(list(summary), detail)
-            per = {}
-            for name, value in summary.items():
-                per.setdefault(matched[name], []).append((name, value))
-            for target, lines in per.items():
-                names = " + ".join(n for n, _v in lines)
-                value = sum(v for _n, v in lines)
-                check = f"same as {of} {s_col} ({names})"
-                if target is None:
-                    out += [(int(year), key, f"same as {of} {s_col} ({n})", str(v), None, "FAIL")
-                            for n, v in lines]
+            for cid, value in found:
+                detail[cid] = detail.get(cid, Decimal(0)) + Decimal(str(value or 0))
+            summary, names = {}, {}
+            s_names = extract.specs()[key].company.of
+            for cid, name, raw in db.execute(f"SELECT {s_group}, {s_names}, {s_col}_raw "
+                                             f"FROM {s_name} WHERE year=? ORDER BY row_ord",
+                                             (int(year),)):
+                summary[cid] = summary.get(cid, Decimal(0)) + (gra.parse_number(raw) or 0)
+                names.setdefault(cid, []).append(" ".join(name.split()))
+            for cid, value in summary.items():
+                check = f"same as {of} {s_col} ({' + '.join(names[cid])})"
+                if cid is None or cid not in detail:
+                    out.append((int(year), key, check, str(value), None, "FAIL"))
                     continue
-                got = detail[target]
+                got = detail[cid]
                 out.append((int(year), key, check, str(value), str(got),
                             extract._status(got, value)))
     return out

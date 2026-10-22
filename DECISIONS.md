@@ -516,6 +516,11 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   grid, each value known by its shape and placed by position (the text layer of p1278 gives
   numbers after the last reason); the count in each list heading is checked, a gap in the
   numbering is an issue. 2025: 95 lines, 2024: 65 (one suspension), all counts PASS.
+- **Summaries checked per company id** (2026-10-22): MAE A2 against A1 and Dogane M1 against
+  M are grouped by `id_ditta` (`lib/data/views.tsv`), no longer by the name as printed with
+  its cut-name and same-letters fallbacks (`views._match`, removed): a company's lines add up
+  whatever their spelling. 2025: 477 + 157 PASS (667 per printed name before: M1's 190
+  names are 157 companies).
 - **The register number identifies a company first** (maintainer, 2026-10-22): a name
   printed beside a register number that already has an id takes it before any name
   matching (`how` = `register <number>`); name matching only covers what no number settles.
