@@ -468,3 +468,6 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   publish, a browser kept the older database and showed A1 without `riga_autorizzazione`.
 - **`publish_site.sh` refuses a `site/` not built from the current `web/`** (stamps taken out
   before comparing). A `site/` left from 19 October went out labelled with that day's HEAD.
+- **The rows view hides the import's link columns** (`view_def.link.col`, `.unit_col`: A1
+  `riga_importo`, `riga_autorizzazione`); they are not printed. CSV and SQL keep them. By the
+  maintainer.

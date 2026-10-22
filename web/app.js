@@ -388,7 +388,11 @@ function viewTabella(year, key, stampa) {
   const hide = [...PLACE];
   if (flags >= 0 && result.values.every(r => r[flags] == null)) hide.push("flags");
   const file = result.values.length ? result.values[0][result.columns.indexOf("source_file")] : null;
-  const printable = objects("SELECT 1 FROM view_def WHERE year = ? AND table_key = ?", [year, key]).length > 0;
+  const [view] = objects("SELECT definition FROM view_def WHERE year = ? AND table_key = ?", [year, key]);
+  const printable = !!view;
+  // Row ids linking items to their amount and authorisation: the import's, not printed.
+  const link = view ? JSON.parse(view.definition).link : null;
+  if (link) hide.push(...[link.col, link.unit_col].filter(Boolean));
   const here = `#tabella/${year}/${encodeURIComponent(key)}`;
   show(
     el("p", {}, el("a", { href: "#tabelle" }, "← Tutte le tabelle")),
