@@ -10,7 +10,7 @@ Reads, never writes, what the pipeline published under <root>/Out/:
 
 and <root>/In/manifest.tsv for the official URL of each source volume. Writes
 
-    site/                 a copy of web/
+    site/                 a copy of web/, files addressed by content (stamp)
     site/armtrace.sqlite  the rows of every year, plus
         catalogo          one row per table found, with the SQL table holding it
         fonte             one row per source volume: official URL, SHA-256
@@ -21,6 +21,7 @@ give a byte-identical database: fixed order, no timestamps, VACUUM. Decided
 2026-10-19 (DECISIONS.md).
 """
 import argparse
+import hashlib
 import re
 import shutil
 import sqlite3
@@ -167,7 +168,30 @@ def build(root, out):
     dst.commit()
     dst.execute("VACUUM")
     dst.close()
+    stamp(out)
     return db_path, sorted(years)
+
+
+def stamp(out):
+    """Address the database, app.js and style.css by content (`name?v=<hash>`).
+
+    Pages lets browsers reuse a file for 10 minutes; a page that kept an older
+    database or script after a publish showed columns that no longer exist.
+    A new address on every change makes the browser fetch the new copy.
+    """
+    def version(name):
+        return hashlib.sha256((out / name).read_bytes()).hexdigest()[:12]
+
+    def point(name, ref, ver):
+        path = out / name
+        text = path.read_text()
+        if f'"{ref}"' not in text:
+            sys.exit(f"web/{name}: no \"{ref}\" to version")
+        path.write_text(text.replace(f'"{ref}"', f'"{ref}?v={ver}"'))
+
+    point("app.js", DB_NAME, version(DB_NAME))   # before app.js is hashed below
+    for ref in (DB_NAME, "style.css", "app.js"):
+        point("index.html", ref, version(ref))
 
 
 def main():

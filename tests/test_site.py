@@ -65,6 +65,21 @@ def test_same_input_same_bytes(tmp_path):
     assert len(digests) == 1
 
 
+def test_files_addressed_by_content(tmp_path):
+    """A browser holding an older database or script must not reuse it."""
+    make_year(tmp_path, 2025)
+    site = tmp_path / "site"
+    build_site.build(tmp_path, site)
+
+    def v(name):
+        return hashlib.sha256((site / name).read_bytes()).hexdigest()[:12]
+
+    assert f'fetch("armtrace.sqlite?v={v("armtrace.sqlite")}")' in (site / "app.js").read_text()
+    index = (site / "index.html").read_text()
+    for name in ("armtrace.sqlite", "style.css", "app.js"):
+        assert f'"{name}?v={v(name)}"' in index
+
+
 def test_years_join_into_one_table(tmp_path):
     make_year(tmp_path, 2024)
     make_year(tmp_path, 2025)
