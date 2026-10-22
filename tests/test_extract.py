@@ -445,3 +445,24 @@ def test_importer_eval_relink_moves_one_item_to_another_amount(year, sources, tm
     amounts = {r[0] for r in db.execute("SELECT row_ord FROM mae_a1 WHERE ammontare_raw IS NOT NULL")}
     assert moved != importo and moved in amounts
     assert unit == dict((r[0], r[2]) for r in before)[moved]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_company_name_is_stored_with_its_id_or_null_and_an_issue(year, sources, tmp_path,
+                                                                  monkeypatch):
+    """`id_ditta` is the id `lib/data/company-names.tsv` gives the printed name;
+    a name with none is NULL and one issue per name, never guessed."""
+    import ExtractTables as E
+    from lib import companies
+    monkeypatch.setattr(companies, "LIST", tmp_path / "companies.tsv")
+    monkeypatch.setattr(companies, "NAMES", tmp_path / "company-names.tsv")
+    companies.write({1: "A.C.S.A. STEEL FORGINGS S.P.A."},
+                    {"A.C.S.A. STEEL FORGINGS S.P.A.": (1, "spelling")})
+    key = "DOG/A1C2/M1"
+    db = stored(year, read(VOL2, 858, 867, 1896, key), key)
+    ids = dict(db.execute("SELECT denominazione_operatore, id_ditta FROM dog_a1c2_m1"))
+    assert ids["A.C.S.A. STEEL FORGINGS S.P.A."] == 1
+    assert sum(1 for v in ids.values() if v is None) == len(ids) - 1
+    _, issues = E.records(year, read(VOL2, 858, 858, 1896, key), extract.specs()[key])
+    named = [d for _p, kind, d in issues if kind == "company"]
+    assert len(named) == len(set(named)) and all("denominazione_operatore" in d for d in named)

@@ -31,6 +31,9 @@
 #   marks a row of the same table, never a value or code the report prints.
 #   Nested = the layout shows the grouping. A table printing every line complete is flat,
 #   even if lines share a key the print does not show (Dogane M): no id (DECISIONS.md).
+#   company not printed: ArmTrace's id of the company named in the column the sum field
+#           gives (`lib/companies.py`; names: lib/data/company-names.tsv), NULL with an
+#           issue when the name has none yet (maintainer, 2026-10-21, plan.md Phase 3)
 #   years   the printed year columns of a table that prints a year window (T2): one
 #           row per printed row and year, `anno` + `valore` (amount)
 # labels: the printed header, `|` between the forms seen in different editions; a year is
@@ -55,6 +58,7 @@ MAE/A1	tipo	code	Tipo
 MAE/A1	cat	code	Cat.
 MAE/A1	riga_importo	link		ammontare qta data
 MAE/A1	riga_autorizzazione	unit		
+MAE/A1	id_ditta	company		operatore
 MEF/EE	numero_autorizzazione	code	Numero Autorizzazione|Numero
 MEF/EE	utilizzatore_finale	text	Utilizzatore Finale
 MEF/EE	causale	text	Causale
@@ -71,6 +75,7 @@ DOG/A1C2/M1	denominazione_operatore	text	Denominazione operatore
 DOG/A1C2/M1	numero_operazioni_svolte	number	Numero di operazioni svolte	sum
 DOG/A1C2/M1	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
 DOG/A1C2/M1	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	sum
+DOG/A1C2/M1	id_ditta	company		denominazione_operatore
 MAE/A2	operatore	text	Operatore
 MAE/A2	autorizzazioni	number	Autorizzazioni	sum
 MAE/A2	valore_euro	amount	Valore (EURO)	sum
@@ -78,11 +83,13 @@ MAE/A2	valore_euro_cooperazione	amount	di cui, per Prog. di Cooperazione	sum
 MAE/A2	val_fini_dog	amount	Valore Fini Dog.	sum
 MAE/A2	val_fini_dog_cooperazione	amount	di cui, per Prog. di Cooperazione	sum
 MAE/A2	incidenza_percento	number	Incidenza % su totale
+MAE/A2	id_ditta	company		operatore
 MEF/II	ditta	carry	Ditta
 MEF/II	numero_autorizzazione	code	Numero Autorizzazione
 MEF/II	utilizzatore_finale	text	Utilizzatore Finale
 MEF/II	causale	text	Causale
 MEF/II	totale	amount	Totale	sum
+MEF/II	id_ditta	company		ditta
 DOG/A1C2/M	denominazione_operatore	text	Denominazione operatore
 DOG/A1C2/M	codice_valuta	text	Codice valuta
 DOG/A1C2/M	ammontare_in_valuta	amount	Ammontare in valuta
@@ -90,3 +97,4 @@ DOG/A1C2/M	quantita	number	Quantità
 DOG/A1C2/M	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto
 DOG/A1C2/M	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
 DOG/A1C2/M	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)
+DOG/A1C2/M	id_ditta	company		denominazione_operatore

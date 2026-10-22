@@ -37,6 +37,8 @@ Shared tables:
                    row only), the summed columns with their `sum_sql`, the year
                    window
     table_note     notes printed under a table
+    company        ArmTrace's id and name of each company a table of the year names
+                   (its `id_ditta`: `lib/companies.py`)
     extract_issue  what could not be read with confidence, with its reason
     check_result   every printed figure against the facts (D7): the table
                    rebuilt, compared with what it prints
@@ -55,7 +57,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib import extract, layout, source, views  # noqa: E402
+from lib import companies, extract, layout, source, views  # noqa: E402
 
 SQL_TYPE = {"text": "TEXT", "code": "TEXT", "group": "TEXT", "carry": "TEXT", "date": "TEXT",
             "amount": "DECIMAL", "number": "DECIMAL"}
@@ -77,9 +79,11 @@ CREATE TABLE extract_issue (year INTEGER, table_key TEXT, pdf_page INTEGER,
     kind TEXT, detail TEXT);
 CREATE TABLE check_result (year INTEGER, table_key TEXT, check_name TEXT,
     printed TEXT, computed DECIMAL, status TEXT);
+CREATE TABLE company (id INTEGER PRIMARY KEY, name TEXT);
 """
 SHARED_TABLES = {"source_file", "column_def", "printed_figure", "view_def", "table_note",
-                 "extract_issue", "check_result"}
+                 "extract_issue", "check_result", "company"}
+YEAR_WIDE = {"source_file", "company"}     # not per table: `finish` writes them
 
 
 def columns_of(spec):
@@ -94,6 +98,8 @@ def columns_of(spec):
         out.append((spec.link.key, "link"))
     if spec.unit:
         out.append((spec.unit.key, "link"))
+    if spec.company:
+        out.append((spec.company.key, "link"))
     return out
 
 
@@ -115,6 +121,7 @@ def create(db, name, spec):
 def records(year, result, spec):
     """The facts of one table as SQL rows, and the issues their values raise."""
     rows, issues = [], []
+    ids, unknown = companies.load()[1], set()
     for r in result.rows:
         if r["kind"] != "data":
             continue
@@ -144,6 +151,13 @@ def records(year, result, spec):
                 values[f"{col.key}_raw"] = raw or None
             else:
                 values[col.key] = value
+        if spec.company:
+            name = values.get(spec.company.of)
+            values[spec.company.key] = ids.get(name)
+            if name and name not in ids and name not in unknown:
+                unknown.add(name)
+                issues.append((r["pdf_page"], "company", f"{spec.company.of} {name!r}: no id "
+                               "in lib/data/company-names.tsv"))
         flag = "; ".join(flags) or None
         if years:
             for anno, raw in years:
@@ -255,7 +269,7 @@ def merge(db, year, part):
     for name, sql in db.execute("SELECT name, sql FROM part.sqlite_master "
                                 "WHERE type='table'").fetchall():
         if name in SHARED_TABLES:
-            if name != "source_file":
+            if name not in YEAR_WIDE:
                 db.execute(f"INSERT INTO {name} SELECT * FROM part.{name}")
             continue
         # `main.`: unqualified, SQLite would find and drop the part's own table.
@@ -277,6 +291,15 @@ def finish(db, year, out_dir):
     db.execute("DELETE FROM source_file")
     for name, sha in sorted(files.items()):
         db.execute("INSERT INTO source_file VALUES (?,?,?)", (int(year), name, sha))
+    named, used = companies.load()[0], set()
+    for key, spec in extract.specs().items():
+        name = extract.sql_name(key)
+        if spec.company and db.execute("SELECT 1 FROM sqlite_master WHERE name=?",
+                                       (name,)).fetchone():
+            used |= {i for (i,) in db.execute(f"SELECT DISTINCT {spec.company.key} "
+                                              f"FROM {name}") if i}
+    db.execute("DELETE FROM company")
+    db.executemany("INSERT INTO company VALUES (?,?)", [(i, named[i]) for i in sorted(used)])
     db.commit()
     dump = out_dir / f"armtrace-{year}.sql"
     with open(dump, "w", encoding="utf-8", newline="\n") as fh:
@@ -332,7 +355,7 @@ def main(argv=None):
             db = sqlite3.connect(tmp)
             for key in keys:
                 db.execute(f"DROP TABLE IF EXISTS {extract.sql_name(key)}")
-                for table in SHARED_TABLES - {"source_file"}:
+                for table in SHARED_TABLES - YEAR_WIDE:
                     db.execute(f"DELETE FROM {table} WHERE table_key=?", (key,))
         else:
             db.executescript(SHARED)

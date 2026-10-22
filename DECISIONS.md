@@ -480,6 +480,26 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   for the same authorisation (or authorisation sub-amount)": a figure of the authorisation,
   repeated on its lines, never added up across lines (it has no `sum` rule).
 
+- **Companies: ArmTrace's own id** (maintainer, 2026-10-21/22; design in plan.md Phase 3
+  step 6). `lib/data/companies.tsv` (`id`, `name`; DB table `company`) and
+  `company-names.tsv` (each printed spelling, its id, `how`). A table naming a company gets
+  `id_ditta` (type `company` in `columns.tsv`): MAE A1/A2, MEF II, Dogane M/M1. The printed
+  name stays as printed; a name with no id is NULL with an issue. `tools/companies.py`
+  matches only spelling by itself (`lib/companies.fold`: case, accents, punctuation, spacing,
+  a legal form dotted or written out); a company with no candidate gets a new id; a cluster
+  of candidates (another legal form, a cut name, all of one name's words in another, a near
+  spelling) goes to the maintainer (`--same`, `--apart`). 2025: 340 printed names, 192
+  companies, 25 clusters decided by the maintainer. Not the same company: TEKNE / TEKNEL,
+  PRAVISANI S.P.A. / DOTT. MARIANO PRAVISANI & C., FINCANTIERI / FINCANTIERI NEXTECH,
+  LEONARDO / LEONARDO CAE ADVANCED JET TRAINING; AVIO S.P.A. / GE AVIO S.R.L. and THALES
+  ALENIA SPACE ITALIA / THALES ITALIA on Claude's knowledge of the companies (Avio's aero
+  business sold to GE in 2013; Thales Alenia Space is the Thales-Leonardo space venture),
+  the maintainer agreeing. The same company under another legal form (BERCELLA SPA /
+  S.R.L., SECONDO MONA, UMBRIA AEROSPACE SYSTEMS) is one id.
+  These decisions are open to a witness: when Difesa A5/2 (the national register of
+  companies, with register numbers) is imported, any register number under two ids, or id
+  under two register numbers, is reported to the maintainer (maintainer, 2026-10-22).
+
 ## 2026-10-19 — 2022: shifted fonts read back, export stamp as witness, Dogane outside the MEF vocabulary
 
 - **Scanned Difesa annexes are declared, as in 2023** (`editions/y2022.py`): vol. I

@@ -84,6 +84,7 @@ class Column:
     else_when: tuple = None
     unless: str = None          # `unless <col>`: a row with <col> printed adds nothing
     link: tuple = None          # `link`: (amount col, item col, opener col)
+    of: str = None              # `company`: the column printing the name
 
     def sum_sql(self):
         """The SQL a data row adds to this column's printed totals, or None.
@@ -114,7 +115,7 @@ class Spec:
     @property
     def printed(self):
         """The columns the header prints, in order (not the group heading)."""
-        return [c for c in self.columns if c.type not in ("group", "link", "unit")]
+        return [c for c in self.columns if c.type not in ("group", "link", "unit", "company")]
 
     @property
     def group(self):
@@ -127,6 +128,10 @@ class Spec:
     @property
     def unit(self):
         return next((c for c in self.columns if c.type == "unit"), None)
+
+    @property
+    def company(self):
+        return next((c for c in self.columns if c.type == "company"), None)
 
     @property
     def years(self):
@@ -147,6 +152,8 @@ def specs():
         rule = (row["sum"] or "").split()
         if col.type == "link":
             col.link = tuple(rule)
+        elif col.type == "company":
+            col.of = rule[0]
         elif rule[:1] == ["sum"]:
             col.sum = True
             if rule[1:2] == ["else"]:
