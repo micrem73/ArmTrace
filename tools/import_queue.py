@@ -134,8 +134,10 @@ def render(year, key, dpi=110):
                            "png": str(png.relative_to(ROOT))})
             if agreed:
                 # The page as the database rebuilds it: what the importer judges.
-                images[-1]["rebuilt"] = [[r["kind"]] + list(r["cells"]) for r in view
-                                         if r["pdf_page"] == sp.pdf_page]
+                # A `link` table's data rows end with what they join: `→ amount · date`.
+                images[-1]["rebuilt"] = [[r["kind"]] + list(r["cells"])
+                                         + ([r["linked"]] if r.get("linked") else [])
+                                         for r in view if r["pdf_page"] == sp.pdf_page]
     out["images"] = images
     print(json.dumps(out, ensure_ascii=False, indent=1, default=str))
 

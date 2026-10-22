@@ -22,7 +22,9 @@ Run from the repo root:
 
 It prints JSON: `images` (PNG per page, with PDF and printed page), and, in `check` mode,
 for each image `rebuilt`: that page's rows as the database rebuilds the printed table
-(`[kind, cell, cell, ...]`, kind `group` | `data` | `subtotal` | `total` | `summary`); and
+(`[kind, cell, cell, ...]`, kind `group` | `data` | `subtotal` | `total` | `summary`; in a
+table with a `link` column, MAE A1, a data row ends with one more cell, `→ <amount> · <date>`:
+the amount it is joined to and the date opening its authorisation); and
 `db` and `sql_table` (the table's own SQLite database), `columns` (SQL column, type, label
 read from the header), `rows` by kind, `checks` by status, `not_pass` (every check that is
 not a PASS), `issues`, `notes`, `summary`. In `columns` mode, `header`: the labels read off
@@ -74,6 +76,7 @@ BY row_ord`; the printed figures are in `printed_figure`):
 | `rows` | each printed line of the image is one rebuilt row, in order: none missing, none extra, none split in two or merged with its neighbour; a cell wrapped over several lines is one cell; a name printed once for its group (a heading, or a first line) is rebuilt where it is printed |
 | `cells` | each value sits in the column it is printed under, with its printed text in `<col>_raw` |
 | `kinds` | group headings are `group`, subtotals `subtotal`, the total `total`, everything else `data` |
+| `links` | in a table with a `link` column (else pass, seen `no link column`), each data row's `→` cell names the amount and the date the page gives it under the rule in the `link` note of the `columns.tsv` header (A1: as many amounts as items, the k-th with the k-th; fewer, an amount covers the items on its line and under it, up to the next) |
 | `totals` | every `not_pass` check explained: `ROUNDING` (within 2 cents) passes; a `FAIL` is a reading defect unless the printed table itself does not add up (show the figures) |
 | `outside` | every `issue` and `note` is what the page prints there: a footnote kept as a note, nothing of the table lost |
 
@@ -99,6 +102,7 @@ a second opinion (then do not read `verdict.json` first):
     "rows":    {"result": "fail", "seen": "p393: 'Beni e Servizi ...' row missing", "page": 393},
     "cells":   {"result": "pass", "seen": ""},
     "kinds":   {"result": "pass", "seen": "157 subtotals `<Ditta> Totale`"},
+    "links":   {"result": "pass", "seen": "no link column"},
     "totals":  {"result": "pass", "seen": "158 PASS"},
     "outside": {"result": "pass", "seen": "no issues"}
   },

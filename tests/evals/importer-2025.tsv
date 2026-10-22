@@ -9,6 +9,9 @@
 #   wrong-value=<col>  a value misread (a digit, a word)
 #   kind=<kind>        a data row read as layout (a subtotal): gone from the facts
 #   label=<col>:<text> a column's printed label misread
+#   relink             an item joins the nearest other amount (a link table: MAE A1)
+#   columns            the table's columns are not agreed: Mode columns, the importer drafts
+#                      them; expect `riga` (a riga_* id proposed: nested) or `flat` (none)
 # Add a case for every miss a person finds.
 case	key	mutation	expect	note
 pass-t2	MAE/T2	none	PASS	year window, wrapped labels, footnote
@@ -29,3 +32,7 @@ value-m	DOG/A1C2/M	wrong-value=stato_avanzamento_annuale_euro	FAIL
 value-difesa	DIFESA/4	wrong-value=paesi_partecipanti	FAIL	text misread
 kind-ii	MEF/II	kind=subtotal	FAIL	a transaction read as a subtotal
 label-difesa	DIFESA/4	label=tipologia:TIPO	FAIL	header misread
+relink-a1	MAE/A1	relink	FAIL	an item joined to the wrong amount
+cols-a1	MAE/A1	columns	riga	nested: authorisation and amount ids
+cols-m	DOG/A1C2/M	columns	flat	every line complete (maintainer, 2026-10-21)
+cols-t2	MAE/T2	columns	flat	year window, no nesting

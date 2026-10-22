@@ -4,6 +4,8 @@ Read from the sources directly (the pages are given here, as the table index
 records them), so the test does not need `Out/`. MAE A1 (537 pages, ~1 min)
 is left to `ExtractTables.py`; the four here cover the other record shapes.
 """
+import sqlite3
+import sys
 from decimal import Decimal
 from pathlib import Path
 
@@ -187,6 +189,8 @@ def test_the_database_alone_rebuilds_the_printed_table(year, sources, key, volum
     assert "row_kind" not in cols
     from_pages = views.render(*views.split(r), spec)
     from_db = views.render(*views.from_db(db, key, year), spec)
+    for row in from_db + from_pages:        # what a row joins is not printed (A1 link test below)
+        row.pop("linked", None)
     assert from_db == from_pages
 
 
@@ -368,6 +372,12 @@ def test_mae_a1_amounts_cover_their_items_as_the_maintainer_reads_them(year, sou
         "('10.656,22', '562,20', '295,17', '1.261,47') GROUP BY 1").fetchall()
     assert len(units) == 1 and units[0][1:3] == (4, 4) and units[0][3]
     assert not db.execute("SELECT 1 FROM mae_a1 WHERE riga_autorizzazione IS NULL").fetchone()
+    # The importer judges the links from the rebuilt rows: each item names its amount and date.
+    from lib import views
+    rebuilt = views.render(*views.from_db(db, "MAE/A1", year), extract.specs()["MAE/A1"])
+    items = [x for x in rebuilt if x["kind"] == "data" and x["group"] == "CERATIZIT COMO SPA"
+             and x["pdf_page"] == 118 and x["cells"][5] in ("300", "20")]
+    assert [x["linked"] for x in items] == ["→ 10.656,22 · 01/12/2025", "→ 1.261,47 · 01/12/2025"]
     acsa = stored(year, read(VOL1, 70, 70, 66, "MAE/A1"), "MAE/A1")
     assert acsa.execute("SELECT count(DISTINCT riga_autorizzazione) FROM mae_a1 "
                         "WHERE operatore LIKE 'A.C.S.A.%'").fetchone() == (2,)
@@ -411,3 +421,27 @@ def rebuilt_line(result, amount):
     db = stored("2025", result, key)
     rows = views.render(*views.from_db(db, key, "2025"), extract.specs()[key])
     return next(x["cells"] for x in rows if x["kind"] == "data" and amount in x["cells"])
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_importer_eval_relink_moves_one_item_to_another_amount(year, sources, tmp_path):
+    """The eval's `relink` mutation: one item of the first page joins the wrong
+    amount (a misplaced unit boundary), and nothing else changes."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import eval_importer
+    db = stored(year, read(VOL1, 70, 70, 66, "MAE/A1"), "MAE/A1")
+    path = tmp_path / "a1.sqlite"
+    db.commit()                 # an open transaction makes backup() wait forever
+    copy = sqlite3.connect(path)
+    db.backup(copy)
+    copy.close()
+    cols = "row_ord, riga_importo, riga_autorizzazione"
+    before = db.execute(f"SELECT {cols} FROM mae_a1 ORDER BY row_ord").fetchall()
+    eval_importer.mutate(path, "MAE/A1", "relink")
+    after = sqlite3.connect(path).execute(f"SELECT {cols} FROM mae_a1 ORDER BY row_ord").fetchall()
+    changed = [(b, a) for b, a in zip(before, after) if b != a]
+    assert len(changed) == 1
+    (_, importo, _), (_, moved, unit) = changed[0]
+    amounts = {r[0] for r in db.execute("SELECT row_ord FROM mae_a1 WHERE ammontare_raw IS NOT NULL")}
+    assert moved != importo and moved in amounts
+    assert unit == dict((r[0], r[2]) for r in before)[moved]

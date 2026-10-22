@@ -16,6 +16,10 @@ they are now, In/ linked, the table index, and only that case's table folder.
 ExtractTables.py there is a stub, so the importer judges the rows it is given.
 The real agent runs headless (`claude --agent table-importer -p`).
 
+A `columns` case takes the table's lines out of columns.tsv and totals.tsv and
+asks for a draft: `riga` expects a `riga_*` id (type unit or link) in
+columns-proposal.tsv, `flat` expects none.
+
 A FAIL case is caught by FAIL or UNSURE; a PASS case must get PASS. Writes
 Out/.work/<year>/eval-importer/results.tsv and each verdict beside it. Exit 1
 when broken rows got PASS. Costs tokens and minutes, so it is not part of
@@ -134,6 +138,20 @@ def mutate(db_path, key, mutation):
             new["operatore"] = row["operatore"]
         db.execute(f"INSERT INTO {name} ({', '.join(cols)}) VALUES "
                    f"({', '.join('?' * len(cols))})", [new[c] for c in cols])
+    elif kind == "relink":
+        # A misplaced unit boundary: an item joins the nearest other amount (A1).
+        spec = extract.specs()[key]
+        link, unit = spec.link.key, spec.unit.key
+        amount = spec.link.link[0]
+        _, rows = target_row(db, name)
+        items = [r for r in rows if r[link] is not None]
+        row = items[min(PICK, len(items) - 1)]
+        others = [r for r in rows if r[f"{amount}_raw"] and r["row_ord"] != row[link]]
+        to = min(others, key=lambda r: abs(r["row_ord"] - row["row_ord"]))
+        db.execute(f"UPDATE {name} SET {link}=?, {unit}=? WHERE rowid=?",
+                   (to["row_ord"], to[unit], row["rowid"]))
+    elif kind == "columns":
+        return          # make_tree takes the table's columns away instead
     elif kind == "merge-rows":
         row, rows = target_row(db, name)
         nxt = rows[rows.index(row) + 1] if rows.index(row) + 1 < len(rows) else rows[0]
@@ -157,6 +175,13 @@ def make_tree(year, case, work):
         ".git", "Out", "In", "__pycache__", ".pytest_cache"))
     (tree / "In").symlink_to(ROOT / "In")
     (tree / "ExtractTables.py").write_text(STUB)
+    if case["mutation"] == "columns":
+        # Columns not yet agreed: the importer drafts them from the page.
+        for tsv in ("columns.tsv", "totals.tsv"):
+            path = tree / "lib" / "data" / tsv
+            lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+            path.write_text("".join(x for x in lines if x.split("\t")[0] != case["key"]),
+                            encoding="utf-8")
     index = layout.index_sqlite(year, tree)
     index.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(layout.index_sqlite(year, ROOT), index)
@@ -171,7 +196,8 @@ def make_tree(year, case, work):
 
 def run_case(year, case, work, model):
     tree, folder = make_tree(year, case, work)
-    prompt = f"Year: {year}. Table key: {case['key']}. Mode: check."
+    mode = "columns" if case["mutation"] == "columns" else "check"
+    prompt = f"Year: {year}. Table key: {case['key']}. Mode: {mode}."
     cmd = ["claude", "-p", prompt, "--agent", "table-importer",
            "--allowedTools", "Bash,Read,Write", "--output-format", "json"]
     if model:
@@ -189,10 +215,25 @@ def run_case(year, case, work, model):
         verdict = json.loads((folder / "verdict.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         verdict = {}
+    if mode == "columns":
+        # Scored on the proposal: a `riga_*` id (type unit or link), or none.
+        try:
+            lines = (folder / "columns-proposal.tsv").read_text(encoding="utf-8").splitlines()
+        except OSError:
+            lines = None
+        ids = [x.split("\t")[1] for x in lines or [] if len(x.split("\t")) > 2
+               and x.split("\t")[1].startswith("riga_") and x.split("\t")[2] in ("unit", "link")]
+        verdict = {**verdict, "verdict": ("none" if lines is None else
+                                          "riga" if ids else "flat"),
+                   "checks": {"proposal": {"result": "pass", "seen": " ".join(ids)}}}
     return case, verdict, result
 
 
 def outcome(expect, got):
+    if expect in ("riga", "flat"):
+        if got not in ("riga", "flat"):
+            return "error"
+        return "ok" if got == expect else "MISSED" if expect == "riga" else "false-alarm"
     if got not in ("PASS", "FAIL", "UNSURE"):
         return "error"
     if expect == "PASS":
@@ -260,7 +301,7 @@ def main():
 
     count = {k: sum(r["outcome"] == k for r in results)
              for k in ("ok", "MISSED", "false-alarm", "error")}
-    wrong = [r for r in results if r["expect"] == "FAIL"]
+    wrong = [r for r in results if r["expect"] in ("FAIL", "riga")]
     cost = sum(r["cost"] for r in results if r["cost"] != "")
     print(f"caught {sum(r['outcome'] == 'ok' for r in wrong)}/{len(wrong)} broken tables; "
           f"missed {count['MISSED']}; false alarms {count['false-alarm']}/"

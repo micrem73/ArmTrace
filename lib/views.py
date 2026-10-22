@@ -51,6 +51,7 @@ def from_db(db, key, year, spec=None):
     for values in cur.fetchall():
         row = dict(zip(names, values))
         lines.setdefault(row["row_ord"], []).append(row)
+    linked = _linked(lines, spec)
     facts = []
     for row_ord, rows in lines.items():
         row = rows[0]
@@ -69,7 +70,8 @@ def from_db(db, key, year, spec=None):
         facts.append({"kind": "data", "row_ord": row_ord, "pdf_page": row["pdf_page"],
                       "copied": [i for i, c in enumerate(order) if c.key in keys],
                       "printed_page": row["printed_page"], "order": order, "cells": cells,
-                      "year_of": year_of, "group": row[spec.group.key] if spec.group else None})
+                      "year_of": year_of, "group": row[spec.group.key] if spec.group else None,
+                      "linked": linked.get(row_ord)})
     figures = {}
     for kind, row_ord, pdf_page, printed_page, grp, i, raw in db.execute(
             "SELECT kind, row_ord, pdf_page, printed_page, grp, ordinal, value_raw "
@@ -84,6 +86,26 @@ def from_db(db, key, year, spec=None):
         "SELECT pdf_page, printed_page, label, value_raw FROM printed_figure "
         "WHERE table_key=? AND year=? AND kind='summary' ORDER BY rowid", (key, int(year)))]
     return facts, list(figures.values()), summary
+
+
+def _linked(lines, spec):
+    """{row_ord: '→ <amount> · <opener>'}: what each row of a `link` table joins
+    (A1: its amount and the date opening its authorisation), as printed, so the
+    links can be judged against the page."""
+    if not spec.link:
+        return {}
+    amount, _item, opener = spec.link.link
+    first = {k: rows[0] for k, rows in lines.items()}
+    def raw(row_ord, col):
+        row = first.get(row_ord) or {}
+        return row.get(f"{col}_raw") or row.get(col) or "(none printed)"
+    out = {}
+    for k, row in first.items():
+        if row.get(spec.link.key) is not None:
+            unit = row.get(spec.unit.key) if spec.unit else None
+            out[k] = f"→ {raw(row[spec.link.key], amount)}" + (
+                f" · {raw(unit, opener)}" if unit is not None else "")
+    return out
 
 
 def _group_of(row, spec):
@@ -129,7 +151,7 @@ def render(facts, figures, summary, spec):
             blank = (carry if not first else set()) | set(row.get("copied", ()))
             cells = [("" if i in blank else c) for i, c in enumerate(row["cells"])]
             out.append({"kind": "data", "group": group, "cells": cells,
-                        "pdf_page": row["pdf_page"], "checks": []})
+                        "pdf_page": row["pdf_page"], "checks": [], "linked": row.get("linked")})
             scope.append(row)
             everything.append(row)
             run = group
