@@ -55,13 +55,15 @@ def from_db(db, key, year, spec=None):
     facts = []
     for row_ord, rows in lines.items():
         row = rows[0]
-        cells = []
+        cells, implied = [], {}
         for i, col in enumerate(order):
             if col.type == "years":
                 hit = next((r for r in rows if r["anno"] == year_of[i]), {})
                 cells.append(hit.get(f"{col.key}_raw") or "")
             elif col.type in ("amount", "number", "date"):
                 cells.append(row[f"{col.key}_raw"] or "")
+                if row[f"{col.key}_raw"] is None and row[col.key] is not None:
+                    implied[col.key] = row[col.key]     # stored, not printed
             else:
                 cells.append(row[col.key] or "")
         # A1: a description copied onto a second amount's row is not printed there.
@@ -71,7 +73,7 @@ def from_db(db, key, year, spec=None):
                       "copied": [i for i, c in enumerate(order) if c.key in keys],
                       "printed_page": row["printed_page"], "order": order, "cells": cells,
                       "year_of": year_of, "group": row[spec.group.key] if spec.group else None,
-                      "linked": linked.get(row_ord)})
+                      "linked": linked.get(row_ord), "implied": implied})
     figures = {}
     for kind, row_ord, pdf_page, printed_page, grp, i, raw in db.execute(
             "SELECT kind, row_ord, pdf_page, printed_page, grp, ordinal, value_raw "
@@ -182,7 +184,8 @@ def _summary_check(label, raw, facts, figures, spec):
     m, expr = rule
     words = expr.split()
     if words[0] == "count":
-        computed = sum(1 for r in facts if extract._cell(r, words[1]))
+        computed = sum(1 for r in facts if extract._cell(r, words[1])
+                       or words[1] in r.get("implied", {}))
         value = gra.parse_number(raw)
     elif words[-2:] == ["over", "subtotal"]:
         # The printed subtotals added up: A1's grand EURO total is theirs,
@@ -277,3 +280,29 @@ def cross_checks(db, year):
                 out.append((int(year), key, check, str(value), str(got),
                             extract._status(got, value)))
     return out
+
+
+# The register of companies across years (maintainer, 2026-10-22): one row per
+# register number, from the lines of Difesa A5/2 each year prints (a registration,
+# a suspension, a cancellation), each of which stays traceable to its page.
+# The name and id are those printed last; `motivazione`, the last one printed.
+REGISTER = """
+CREATE VIEW IF NOT EXISTS registro_imprese AS
+SELECT d.numero_iscrizione,
+       (SELECT denominazione FROM difesa_a5_2 x WHERE x.numero_iscrizione = d.numero_iscrizione
+        ORDER BY year DESC, row_ord DESC LIMIT 1) AS denominazione,
+       (SELECT id_ditta FROM difesa_a5_2 x WHERE x.numero_iscrizione = d.numero_iscrizione
+        ORDER BY year DESC, row_ord DESC LIMIT 1) AS id_ditta,
+       max(d.data_iscrizione) AS data_iscrizione,
+       max(d.data_sospensione) AS data_sospensione,
+       max(d.data_cancellazione) AS data_cancellazione,
+       (SELECT motivazione FROM difesa_a5_2 x WHERE x.numero_iscrizione = d.numero_iscrizione
+        AND motivazione IS NOT NULL ORDER BY year DESC, row_ord DESC LIMIT 1) AS motivazione
+FROM difesa_a5_2 d GROUP BY d.numero_iscrizione
+"""
+
+
+def add_register(db):
+    """`registro_imprese`, where Difesa A5/2 is in `db`."""
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='difesa_a5_2'").fetchone():
+        db.execute(REGISTER)

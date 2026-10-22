@@ -5,7 +5,9 @@ Phase 3 step 6, maintainer 2026-10-21).
 never reused; `lib/data/company-names.tsv` (`printed`, `id`, `how`) maps every
 spelling a report prints to it. `how` is `spelling` (automatic: the names are
 the same once case, accents, punctuation, spacing and the way a legal form is
-written are set aside: `S.P.A.` = `S.p.A.` = `SPA`) or `maintainer, <date>`.
+written are set aside: `S.P.A.` = `S.p.A.` = `SPA`), `register <number>` (the
+name printed in Difesa A5/2 beside a register number that already has an id:
+the number identifies a company before its name does), or `maintainer, <date>`.
 Anything else, another legal form (`BERCELLA SPA` / `BERCELLA S.R.L.`), a name
 the print cut, a near spelling, goes to the maintainer: `propose` lists it,
 nothing is guessed. A printed name with no id is stored NULL, with an issue.
@@ -156,7 +158,7 @@ def write(companies, names):
             fh.write(f"{cid}\t{companies[cid]}\n")
     with open(NAMES, "w", encoding="utf-8", newline="") as fh:
         fh.write("# lib/companies.py: every printed spelling and its company; how: "
-                 "spelling (automatic) or maintainer, <date>.\nprinted\tid\thow\n")
+                 "spelling (automatic), register <number>, or maintainer, <date>.\nprinted\tid\thow\n")
         for printed in sorted(names, key=lambda n: (names[n][0], n)):
             cid, how = names[printed]
             fh.write(f"{printed}\t{cid}\t{how}\n")

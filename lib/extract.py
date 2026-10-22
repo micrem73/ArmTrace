@@ -85,6 +85,7 @@ class Column:
     unless: str = None          # `unless <col>`: a row with <col> printed adds nothing
     link: tuple = None          # `link`: (amount col, item col, opener col)
     of: str = None              # `company`: the column printing the name
+    event: str = None           # `event <WORD>`: filled on the list headed <WORD>
 
     def sum_sql(self):
         """The SQL a data row adds to this column's printed totals, or None.
@@ -154,6 +155,8 @@ def specs():
             col.link = tuple(rule)
         elif col.type == "company":
             col.of = rule[0]
+        elif rule[:1] == ["event"]:
+            col.event = rule[1]
         elif rule[:1] == ["sum"]:
             col.sum = True
             if rule[1:2] == ["else"]:
@@ -579,12 +582,120 @@ def read_table(year, key, spec=None, root=".", pages=None):
     """`pages` (SourcePage list) instead of the table index: the tests read
     the sources directly, since `Out/` is not in git."""
     spec = spec or specs()[key]
+    if any(c.event for c in spec.columns):
+        return read_list(year, key, spec,
+                         pages if pages is not None else source.table_pages(year, key, root))
     reader = Reader(year, key, spec)
     for sp in pages if pages is not None else source.table_pages(year, key, root):
         reader.read_page(sp)
     if spec.link:
         link_items(reader.result, spec)
     return reader.result
+
+
+LIST_HEADING = re.compile(r"^SOCIET\S*\s+([A-Z]+)\s+(\d{4})\s*\((\d+)\)\s*:?$")
+LIST_ITEM = re.compile(r"^(\d+)\.\s*(.*)$")
+REGISTER_NO = re.compile(r"^(?:(Nr\.?)\s*)?(\d{5})$")
+DATE_WORD = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+REASON = "Motivazione:"
+
+
+def read_list(year, key, spec, pages):
+    """A register list (Difesa A5/2): under a heading `SOCIETA' <WORD> <year>
+    (<n>)`, numbered items, each a name (over one or more lines), a register
+    number, perhaps a date, perhaps `Motivazione: ...`. No grid: each value is
+    known by its shape and taken from the item's lines in page order, never
+    the text layer's (it gives p1278's numbers after the last reason). The
+    heading's WORD names the `event` column the date fills; with no date
+    printed, the edition's year (implied, flagged). The count in the heading
+    is checked (`totals.tsv`); a gap in the numbering is an issue."""
+    result = Result(key)
+    order = spec.printed
+    by_event = {c.event: c for c in order if c.event}
+    label_of = {lab.lower(): c.key for c in order for lab in c.labels if lab}
+    seen_labels = {}
+    event, number, row_ord, item = None, 0, 0, None
+
+    def close():
+        if item is None:
+            return
+        name, reason, code, date, sp = (item[k] for k in ("name", "reason", "code", "date",
+                                                            "sp"))
+        cells = {"denominazione": " ".join(name), "motivazione": " ".join(reason),
+                 "numero_iscrizione": code or ""}
+        row = {"kind": "data", "group": None, "carried": [], "order": order,
+               "year_of": {}, "row_ord": item["row_ord"], "pdf_page": sp.pdf_page,
+               "printed_page": sp.printed_page, "source_file": sp.doc.name.split("/")[-1]}
+        col = by_event[event]
+        cells[col.key] = date or ""
+        if not date:
+            row["implied"] = {col.key: str(year)}
+            row["notes"] = [f"{col.key}: no date printed, the edition's year"]
+        row["cells"] = [cells.get(c.key, "") for c in order]
+        result.rows.append(row)
+
+    for sp in pages:
+        _frame, words = page_words(sp)
+        started = False
+        for band in geo.row_bands(words):
+            band = [w for w in sorted(band, key=lambda w: w.u0) if w.text.strip()]
+            text = " ".join(w.text.strip() for w in band)
+            if not text:
+                continue
+            heading = LIST_HEADING.match(text)
+            first = LIST_ITEM.match(band[0].text.strip())
+            if heading:
+                close()
+                item, number = None, 0
+                event = heading.group(1)
+                if event not in by_event:
+                    raise Refused(f"list `{text}`: no `event {event}` column in columns.tsv")
+                result.totals.append((sp.pdf_page, sp.printed_page,
+                                      f"SOCIETA' {event} {heading.group(2)}", heading.group(3)))
+                started = True
+                continue
+            if not started and not (first and event):
+                continue            # above the list on this page: furniture, prose
+            started = True
+            labels = [label_of.get(w.text.strip().lower()) for w in band]
+            if all(labels):
+                seen_labels.update({k: w.text.strip() for k, w in zip(labels, band)})
+                continue
+            if first:
+                close()
+                n = int(first.group(1))
+                if n != number + 1:
+                    result.issues.append((sp.pdf_page, "list", f"item {n} after {number}"))
+                number = n
+                row_ord += 1
+                item = {"name": [], "reason": [], "code": None, "date": None, "sp": sp,
+                        "row_ord": row_ord, "in_reason": False}
+                band = band[1:]
+                if first.group(2).strip():          # `13. VULKAN ...` as one word
+                    item["name"].append(first.group(2).strip())
+            if item is None:
+                result.issues.append((sp.pdf_page, "list", f"line {text[:60]!r} outside an item"))
+                continue
+            for w in band:
+                t = " ".join(w.text.split())
+                if (m := REGISTER_NO.match(t)) and item["code"] is None:
+                    item["code"] = m.group(2)
+                    if m.group(1):
+                        seen_labels.setdefault("numero_iscrizione", m.group(1))
+                elif DATE_WORD.match(t) and item["date"] is None:
+                    item["date"] = t
+                elif t.startswith(REASON):
+                    item["in_reason"] = True
+                    seen_labels.setdefault("motivazione", REASON.rstrip(":"))
+                    if t[len(REASON):].strip():
+                        item["reason"].append(t[len(REASON):].strip())
+                elif t:
+                    item["reason" if item["in_reason"] else "name"].append(t)
+        result.pages[("header" if started else "cover")] = \
+            result.pages.get("header" if started else "cover", 0) + 1
+    close()
+    result.labels = [seen_labels.get(c.key, "") for c in order]
+    return result
 
 
 def link_items(result, spec):

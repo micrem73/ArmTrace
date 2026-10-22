@@ -175,6 +175,7 @@ def stored(year, result, key):
     ("MAE/A1", VOL1, 184, 186, 180, None),
     ("MAE/T2", VOL1, 27, 27, 23, [0.0, 295.84, 595.28, 513.41]),     # the year window
     ("DOG/A1C2/M1", VOL2, 858, 867, 1896, None),
+    ("DIFESA/A5/2", VOL2, 236, 240, 1274, None),     # a year stored, not printed
 ])
 def test_the_database_alone_rebuilds_the_printed_table(year, sources, key, volume, first,
                                                         last, printed, clip):
@@ -466,3 +467,27 @@ def test_a_company_name_is_stored_with_its_id_or_null_and_an_issue(year, sources
     _, issues = E.records(year, read(VOL2, 858, 858, 1896, key), extract.specs()[key])
     named = [d for _p, kind, d in issues if kind == "company"]
     assert len(named) == len(set(named)) and all("denominazione_operatore" in d for d in named)
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_difesa_a5_2_register_lists_by_place_not_text_order(year, sources):
+    """Two numbered lists, no grid, after a page of prose (maintainer, 2026-10-22).
+    Each value is placed by where it stands: on p1278 the text layer gives
+    GEMELLI's number and date after the last reason."""
+    key = "DIFESA/A5/2"
+    r = read(VOL2, 236, 240, 1274, key)
+    rows = {x["cells"][1]: dict(zip([c.key for c in x["order"]], x["cells"]),
+                                implied=x.get("implied", {}))
+            for x in r.rows if x["kind"] == "data"}
+    assert len(rows) == 95 and not r.issues
+    assert rows["SITAEL S.p.A."]["numero_iscrizione"] == "00977"
+    assert rows["SITAEL S.p.A."]["implied"] == {"data_iscrizione": "2025"}
+    assert rows["SOCIETà INGEGNERIA SUPPORTO LOGISTICO INTEGRATO S.r.l. In sigla SISLI S.r.l."][
+        "numero_iscrizione"] == "01035"
+    gemelli = rows["GEMELLI S.r.l."]
+    assert (gemelli["numero_iscrizione"], gemelli["data_cancellazione"]) == ("00832", "07/11/2025")
+    assert gemelli["motivazione"] == "la Società è stata incorporata dalla LOGIC S.p.A.."
+    assert rows["CANTIERE NAVALE VITTORIA S.p.A."]["numero_iscrizione"] == "00437"
+    assert rows["ESPLODENTI SABINO S.p.A."]["numero_iscrizione"] == "00126"
+    assert not rows["ESPLODENTI SABINO S.p.A."]["data_iscrizione"]
+    assert statuses(r, key) == ["PASS", "PASS"]

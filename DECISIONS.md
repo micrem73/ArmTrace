@@ -499,6 +499,26 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   These decisions are open to a witness: when Difesa A5/2 (the national register of
   companies, with register numbers) is imported, any register number under two ids, or id
   under two register numbers, is reported to the maintainer (maintainer, 2026-10-22).
+  Every decision, a merge or a split, stays open: when a later table shows otherwise it is
+  reported, never changed by itself. So is a table grouped by company (MAE A1's operator,
+  MEF II's `Ditta`) printing one id as two groups: 2025, MEF II prints BERCELLA S.R.L. /
+  BERCELLA SPA and FINCANTIERI S.P.A. / FINCANTIERI CANTIERI NAVALI ITALIANI as separate
+  groups (a bank may report a company under an old and a new name: a doubt, not a proof).
+- **Difesa A5/2: the register of companies, by event** (maintainer, 2026-10-22). Each printed
+  line is a row of its year, traceable to its page: `numero_iscrizione`, `denominazione`, one
+  of `data_iscrizione` / `data_sospensione` / `data_cancellazione` (the list it is printed in:
+  `event <WORD>` in columns.tsv; with no date printed, the edition's year, flagged),
+  `motivazione`, `id_ditta`. No list column and no item number (maintainer: "if a company is
+  in this table, it means in some year it was inscribed"). The register across years, one
+  row per company, is the view `registro_imprese` (name, id and reason printed last), built
+  in the year database and again on the site, where the years meet: so no row holds two
+  years and no year's database is edited by another. Read by `lib/extract.read_list`: no
+  grid, each value known by its shape and placed by position (the text layer of p1278 gives
+  numbers after the last reason); the count in each list heading is checked, a gap in the
+  numbering is an issue. 2025: 95 lines, 2024: 65 (one suspension), all counts PASS.
+- **The register number identifies a company first** (maintainer, 2026-10-22): a name
+  printed beside a register number that already has an id takes it before any name
+  matching (`how` = `register <number>`); name matching only covers what no number settles.
 
 ## 2026-10-19 — 2022: shifted fonts read back, export stamp as witness, Dogane outside the MEF vocabulary
 

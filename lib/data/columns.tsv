@@ -36,6 +36,11 @@
 #           issue when the name has none yet (maintainer, 2026-10-21, plan.md Phase 3)
 #   years   the printed year columns of a table that prints a year window (T2): one
 #           row per printed row and year, `anno` + `valore` (amount)
+# event: a `date` column with sum field `event <WORD>` is filled on the rows of the list
+#   headed `SOCIETA' <WORD> <year> (<n>)`: with the date the row prints, else the edition's
+#   year (`2025`, nothing printed, flagged). A table with event columns is a register list
+#   (`lib/extract.read_list`): numbered items, no grid (Difesa A5/2; maintainer, 2026-10-22:
+#   no list column, no item number; the register across years is `registro_imprese`)
 # labels: the printed header, `|` between the forms seen in different editions; a year is
 #   written relative to the edition (`Y`, `Y-1`). Empty: the column prints no label.
 # sum: `sum` when the column adds up to the table's printed totals and subtotals;
@@ -98,3 +103,10 @@ DOG/A1C2/M	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto
 DOG/A1C2/M	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
 DOG/A1C2/M	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)
 DOG/A1C2/M	id_ditta	company		denominazione_operatore
+DIFESA/A5/2	numero_iscrizione	code	N. Iscr.|Nr.	
+DIFESA/A5/2	denominazione	text	Società	
+DIFESA/A5/2	data_iscrizione	date		event ISCRITTE
+DIFESA/A5/2	data_sospensione	date		event SOSPESE
+DIFESA/A5/2	data_cancellazione	date	Data Canc.	event CANCELLATE
+DIFESA/A5/2	motivazione	text	Motivazione	
+DIFESA/A5/2	id_ditta	company		denominazione

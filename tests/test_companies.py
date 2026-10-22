@@ -45,3 +45,48 @@ def test_a_common_word_alone_links_nothing():
              "ELETTRONICA MARITTIMA SRL"]
     _, new, review = C.propose(dict.fromkeys(names, 1), ({}, {}))
     assert not review and len(new) == 4
+
+
+def test_the_register_warns_where_it_contradicts_the_ids(tmp_path):
+    """Difesa A5/2's register number identifies a company: the same number
+    under two ids, or one id under two numbers, is a warning for the
+    maintainer (2026-10-22), whatever the years."""
+    import sqlite3
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+    import companies as tool
+    for year, rows in (("2024", [("00001", 1, "A SRL"), ("00002", 2, "B SPA")]),
+                       ("2025", [("00001", 3, "A S.R.L."), ("00004", 2, "B S.P.A."),
+                                 ("00005", 5, "C SRL"), ("00005", 5, "C SRL")])):
+        (tmp_path / "Out" / year).mkdir(parents=True)
+        db = sqlite3.connect(tmp_path / "Out" / year / f"armtrace-{year}.sqlite")
+        db.execute("CREATE TABLE difesa_a5_2 (numero_iscrizione, id_ditta, denominazione, year)")
+        db.executemany("INSERT INTO difesa_a5_2 VALUES (?,?,?,?)",
+                       [r + (int(year),) for r in rows])
+        # MEF II groups its rows by `Ditta`: one id as two groups is a doubt.
+        db.execute("CREATE TABLE mef_ii (ditta, id_ditta, year)")
+        db.executemany("INSERT INTO mef_ii VALUES (?,?,?)",
+                       [("B SPA", 2, int(year)), ("B S.R.L.", 2, int(year))])
+        db.commit()
+    out = tool.witness(tmp_path)
+    assert len(out) == 4
+    assert out[0].startswith("id 2 is printed as separate groups in MEF/II 2024")
+    assert out[2].startswith("register number 00001 is under ids 1, 3")
+    assert out[3].startswith("id 2 is under register numbers 00002, 00004")
+
+
+def test_a_register_number_names_its_company_before_any_name_matching():
+    """A renamed company, printed with its register number, keeps its id
+    without going to the maintainer (2026-10-22)."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+    import companies as tool
+    rows = [("00938", 280, "VALTRO S.r.l.", 2024), ("00938", None, "VALTRO GROUP S.p.A.", 2025),
+            ("00001", 1, "A SRL", 2024), ("00001", 2, "A' SRL", 2025),     # two ids: no
+            ("00002", None, "B SRL", 2025)]
+    names = {"VALTRO S.r.l.": (280, "spelling")}
+    tool.by_register(rows, names)
+    assert names["VALTRO GROUP S.p.A."] == (280, "register 00938")
+    assert "B SRL" not in names and len(names) == 2

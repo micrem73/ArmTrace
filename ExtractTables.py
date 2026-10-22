@@ -298,6 +298,7 @@ def finish(db, year, out_dir):
                                        (name,)).fetchone():
             used |= {i for (i,) in db.execute(f"SELECT DISTINCT {spec.company.key} "
                                               f"FROM {name}") if i}
+    views.add_register(db)
     db.execute("DELETE FROM company")
     db.executemany("INSERT INTO company VALUES (?,?)", [(i, named[i]) for i in sorted(used)])
     db.commit()

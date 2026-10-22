@@ -31,6 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from lib import views  # noqa: E402
 from lib.layout import index_sqlite, out_dir  # noqa: E402
 
 WEB = ROOT / "web"
@@ -167,6 +168,7 @@ def build(root, out):
         copy_rows(dst, year, path)
     add_catalogue(dst, root, years)
     add_sources(dst, root)
+    views.add_register(dst)
     dst.commit()
     dst.execute("VACUUM")
     dst.close()

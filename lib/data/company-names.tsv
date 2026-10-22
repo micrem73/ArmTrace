@@ -1,4 +1,4 @@
-# lib/companies.py: every printed spelling and its company; how: spelling (automatic) or maintainer, <date>.
+# lib/companies.py: every printed spelling and its company; how: spelling (automatic), register <number>, or maintainer, <date>.
 printed	id	how
 BERCELLA S.R.L.	1	maintainer, 2026-10-22
 BERCELLA SPA	1	maintainer, 2026-10-22
@@ -31,6 +31,7 @@ BAI - BRESCIA  ANTINCENDI INTERNATIONAL S.r.l.	19	spelling
 BAI - BRESCIA ANTINCENDI INTERNATIONAL S.r.l.	19	spelling
 BATTAGGION S.P.A.	20	spelling
 BAYKAR PIAGGIO AEROSPACE S.P.A.	21	spelling
+BAYKAR PIAGGIO AEROSPACE S.p.A.	21	spelling
 BAYKAR PIAGGIO AEROSPACE SPA	21	spelling
 BE ITALIA S.R.L.	22	spelling
 BE ITALIA SRL	22	spelling
@@ -46,6 +47,7 @@ CARPRESSE S.R.L.	28	spelling
 CENTRO COSTRUZIONI S.R.L.	29	spelling
 CERATIZIT COMO SPA	30	spelling
 CETENA S.p.A.	31	spelling
+CHIAPPA FIREARMS S.r.l.	32	spelling
 CHIAPPA FIREARMS SRL	32	spelling
 CMF 2 LAVORAZIONI MECCANICHE S.R.L.	33	spelling
 CMF 2 LAVORAZIONI MECCANICHE S.r.l.	33	spelling
@@ -238,7 +240,8 @@ SO.MA.CI.S. S.P.A.	149	spelling
 SO.MA.CI.S. S.p.A.	149	spelling
 STAM SRL	150	spelling
 TASTITALIA S.R.L.	151	spelling
-TECNIKABEL SPA	152	spelling
+TECNIKABEL S.r.l.	152	maintainer, 2026-10-22
+TECNIKABEL SPA	152	maintainer, 2026-10-22
 TELEGI S.R.L.	153	spelling
 TELESPAZIO  S.P.A.	154	spelling
 TELESPAZIO S.P.A.	154	spelling
@@ -340,3 +343,95 @@ GE AVIO S.R.L.	190	maintainer, 2026-10-22
 THALES ALENIA SPACE ITALIA S.P.A.	191	maintainer, 2026-10-22
 THALES ALENIA SPACE ITALIA SPA	191	maintainer, 2026-10-22
 THALES ITALIA S.P.A.	192	maintainer, 2026-10-22
+ABET HIGH TECH SOLUTIONS S.r.l.	193	spelling
+A.E. PETSCHE ITALIA S.r.l.	194	spelling
+AIKO S.r.l.	195	spelling
+AISENT S.r.l.	196	spelling
+ALPAR INGEGNERIA S.r.l.	197	spelling
+ARES TACTICAL Di Catania Daniele	198	spelling
+ARGO ARMS S.r.l.	199	spelling
+ARGOTEC S.r.l.	200	spelling
+ARMERIA CONCARI S.a.S.	201	spelling
+ARSENAL FIREARMS S.r.l.	202	spelling
+AURORA MARINE S.r.l.	203	spelling
+BATS ITALIA S.r.l.	204	spelling
+BIGNAMI S.p.A.	205	spelling
+BLUE ENGINEERING S.r.l.	206	spelling
+BUTTERFLY DECISIONS S.r.l.	207	spelling
+CANAVERA & AUDI S.p.A.	208	spelling
+CANTIERE NAVALE VITTORIA S.p.A.	209	spelling
+CARRARO DRIVE TECH ITALIA S.p.A.	210	spelling
+CATAPANO S.r.l.	211	spelling
+C.I.R.A. S.c.p.A.	212	spelling
+CISTELAIER S.p.A.	213	spelling
+C.P.S. DI FRANCESCO D’AURIA	214	spelling
+DEAS – DIFESA E ANALISI SISTEMI S.p.A.	215	spelling
+DRIVESERVICE S.r.l.	216	spelling
+ECOR INTERNATIONAL S.p.A.	217	spelling
+EL.COM. S.r.l.	218	spelling
+ELECTRO ADDA S.p.A.	219	spelling
+ELETTRONICA MELARA S.r.l.	220	spelling
+ENGINEERING – INGEGNERIA INFORMATICA S.p.A.	221	spelling
+ESPLODENTI SABINO S.p.A.	222	spelling
+E.S.T.E. S.r.l.	223	spelling
+FABBRICA D’ARMI OLMI GIUSEPPE DI OLMI DARIO & C. S.A.S.	224	spelling
+FLEXTRONICS MANUFACTURING S.r.l.	225	spelling
+FONDERIA TARONI S.r.l.	226	spelling
+FORGIATURA A.VIENNA	227	spelling
+GEMELLI S.r.l.	228	spelling
+GENERAL DEFENCE S.r.l.	229	spelling
+GESTIONE SILO S.r.l .	230	spelling
+GEVEN S.p.A.	231	spelling
+GRUPPO ATURIA S.p.A.	232	spelling
+HIDROMEC S.r.l.	233	spelling
+ISMEC S.r.l.	234	spelling
+ISSEL NORD S.r.l.	235	spelling
+ITRES S.r.l.	236	spelling
+L.G.M. S.n.c.	237	spelling
+LORENZONI 28 S.r.l.	238	spelling
+MAHLE COMPONENTI MOTORI S.r.l.	239	spelling
+MARTE ARMAMENTI S.r.l.	240	spelling
+MB ELETTRONICA S.r.l.	241	spelling
+MECCANICA TONEL SERGIO S.r.l. siglabile M.T.S. S.r.l.	242	spelling
+MEPIT S.r.l.	243	spelling
+MERLETTI S.r.l.	244	spelling
+METAL TECHNOLOGY S.r.l.	245	spelling
+METALBA ALUMINIUM S.p.A.	246	spelling
+MILANO TELEPORT S.r.l.	247	spelling
+MOSCA ENGINEERING S.r.l.	248	spelling
+MY PART MECCANICA S.r.l.	249	spelling
+NEXI SISTEMI S.r.l.	250	spelling
+NOBEL SPORT ITALIA S.r.l.	251	spelling
+NOVAMARINE S.p.A.	252	spelling
+OFFICINE MECCANICHE B.B.M. S.p.A.	253	spelling
+O.M.S. S.p.A.	254	spelling
+PENTAGONO GV S.r.l.	255	spelling
+PITECH S.r.l.	256	spelling
+PORTO AVIATION GROUP S.r.l.	257	spelling
+PRIMA ELECTRO S.p.A.	258	spelling
+PRODIT ENGINEERING S.r.l.	259	spelling
+REMOSA S.r.l.	260	spelling
+R.G.M. S.r.l.	261	spelling
+SEL SAFETY DI SLODONEANU LUIZA COSMINA	262	spelling
+SFERANET S.r.l.	263	spelling
+SIGINT S.r.l.	264	spelling
+SIMOL S.p.A.	265	spelling
+SITAEL S.p.A.	266	spelling
+SKF SEALS ITALY S.p.A.	267	spelling
+SKY TECNO S.r.l.	268	spelling
+SOCIETà INGEGNERIA SUPPORTO LOGISTICO INTEGRATO S.r.l. In sigla SISLI S.r.l.	269	spelling
+SPECIAL EQUIPMENT S.r.l.	270	spelling
+SSE – SOFITER SYSTEM E3NGINEERING S.p.A. IN BREVE SSE S.p.A.	271	spelling
+STELIAU TECHNOLOGY ITALIA S.p.A.	272	spelling
+STELLANTIS EUROPE S.p.A.	273	spelling
+TACTITAL 73 S.r.l.	274	spelling
+TECHNOPARTNER S.r.l.	275	spelling
+TEMA ENERGY S.r.l.	276	spelling
+TMT INTERNATIONAL S.r.l.	277	spelling
+UP CAELI VIA S.r.l.	278	spelling
+VALCOM’S S.p.A.	279	spelling
+VALTRO S.r.l.	280	spelling
+VULKAN ITALIA S.r.l.	281	spelling
+WSENSE S.r.l.	282	spelling
+ZUCCHETTI MARIO S.p.A.	283	spelling
+LEONARDO RHEINMETALL MILITARY VEHICLES S.r.l.	284	maintainer, 2026-10-22
