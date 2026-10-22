@@ -550,3 +550,32 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
 - **Published from a local build to the `gh-pages` branch, one commit with no history**
   (`tools/publish_site.sh`). CI cannot build it: the sources and `Out/` are not in git. The code
   history stays on the code branches; the published data is reproducible from them.
+
+## 2026-10-21 — explorer: two views, per-column filters
+
+- **Only Tabelle and SQL remain; the Domande and Metodo views are removed** (`web/domande.json`
+  with them). By the maintainer. The checks made for the questions stay recorded above.
+- **Every column header sorts and filters**, in the table list and in each table: text is
+  searched as shown; on numbers `>1000`, `<=5`, `=0`, `10-20`, Italian or plain notation.
+- **A table page shows its rows only: no printed totals, no notes.** By the maintainer.
+- **A column printed under several labels (T2: one per year) is headed by its SQL name.**
+- **Built on the regenerated 2025 database** (`sql` branch, 2026-10-20): data rows only, no
+  `row_kind`; headings, subtotals and totals live in `printed_figure`, the layout in `view_def`.
+- **"Come stampata": the table rebuilt as printed, in the browser.** A switch on the table page
+  swaps the rows for the printed layout: group headings, a name carried on its group's first row
+  only, subtotals, totals and summary lines from `printed_figure`, a band at each page linked to
+  the PDF. `printedRows` in `web/app.js` ports `render` in the extractor's `lib/views.py`; the
+  database stores nothing twice. Checked row for row against `render` on the 8 pilot tables
+  (23,202 rows, identical). A change to `render` or to `view_def`'s keys changes `printedRows`
+  too. By the maintainer: a switch, not a separate view.
+
+## 2026-10-22 Explorer: files addressed by content, no stale publish
+
+- **The build addresses the database, `app.js` and `style.css` by content** (`name?v=<12 hex of
+  SHA-256>`, `build_site.stamp`). Pages lets browsers reuse a file for 10 minutes; after a
+  publish, a browser kept the older database and showed A1 without `riga_autorizzazione`.
+- **`publish_site.sh` refuses a `site/` not built from the current `web/`** (stamps taken out
+  before comparing). A `site/` left from 19 October went out labelled with that day's HEAD.
+- **The rows view hides the import's link columns** (`view_def.link.col`, `.unit_col`: A1
+  `riga_importo`, `riga_autorizzazione`); they are not printed. CSV and SQL keep them. By the
+  maintainer.

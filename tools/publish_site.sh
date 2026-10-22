@@ -13,6 +13,19 @@ set -euo pipefail
 site=${1:-site}
 [ -f "$site/index.html" ] && [ -f "$site/armtrace.sqlite" ] ||
   { echo "$site: not a built site; run python3 tools/build_site.py" >&2; exit 1; }
+# A site/ left from an older build would go out labelled with today's HEAD.
+#   Compared with the build's ?v=<hash> stamps taken out (build_site.stamp).
+stale=$(cd "$site" && find . -type f ! -name armtrace.sqlite | sort)
+[ "$stale" = "$(cd web && find . -type f | sort)" ] && stale=
+for f in web/*; do
+  sed 's/?v=[0-9a-f]\{12\}//g' "$site/${f#web/}" 2>/dev/null | cmp -s - "$f" ||
+    stale="$stale${stale:+$'\n'}${f#web/} differs"
+done
+if [ -n "$stale" ]; then
+  echo "$stale" >&2
+  echo "$site: built from another web/; run python3 tools/build_site.py first" >&2
+  exit 1
+fi
 
 remote=$(git remote get-url origin)
 source=$(git rev-parse --short HEAD)
