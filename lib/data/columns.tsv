@@ -31,11 +31,36 @@
 #   marks a row of the same table, never a value or code the report prints.
 #   Nested = the layout shows the grouping. A table printing every line complete is flat,
 #   even if lines share a key the print does not show (Dogane M): no id (DECISIONS.md).
+#   A `riga_*` value is a `row_ord`: unique only with `year` (the edition, on every row of
+#   every table), as the rows of one year's table. Across years the key is (year, riga_*):
+#   `WHERE year = 2025 AND riga_autorizzazione = 2`, joins `ON ... AND a.year = i.year`. It
+#   never follows an authorisation from one edition to the next: A1 and F1 print no number
+#   for it (maintainer, 2026-10-24).
 #   company not printed: ArmTrace's id of the company named in the column the sum field
 #           gives (`lib/companies.py`; names: lib/data/company-names.tsv), NULL with an
 #           issue when the name has none yet (maintainer, 2026-10-21, plan.md Phase 3)
+#   block   a label printed once in a cell spanning a block of rows (T13's rotated
+#           `Categoria (Military List)`, then `Tipologia`): stored on each row of the cell;
+#           a total over blocks is checked against each block on its own (maintainer,
+#           2026-10-24: two breakdowns of one total, one table). sum field
+#           `<block>=<row>`: that block adds up to that row, not to the total (T23: the
+#           imports' categories give MATERIALI, figure by figure; inferred from the
+#           figures, the report does not say; maintainer, 2026-10-24)
+#   companies  not printed: the ids of the companies a cell lists (sum field: that column),
+#           a JSON list in printed order, null for a name with no id yet (an issue); the cell
+#           is split by `lib/companies.split_list`. A name only a list prints never makes a
+#           company by itself (maintainer, 2026-10-24: Difesa 4; any table that lists them)
+#   rowsum  a row's own printed total of a year column (3B's `Nel quadriennio`), sum field
+#           the column it adds: a printed figure, not a fact (`printed_figure` kind rowsum),
+#           checked row by row (maintainer, 2026-10-24)
+#   once    in the sum field: stored on the row of the edition's year only, NULL on the
+#           others, so a sum is the printed one (3B's Importo, Residuo; maintainer, 2026-10-24)
 #   years   the printed year columns of a table that prints a year window (T2): one
-#           row per printed row and year, `anno` + `valore` (amount)
+#           row per printed row and year, `anno` + `valore` (amount). Several measures
+#           per year (T10: `Anno 2022` over `N. | Valore in € | %`): one `years` line
+#           per measure, labelled with the measure; the year is read from the label
+#           over it (or under it: 3B's `INCASSO` over `2022`), `anno` is one column
+#           (maintainer, 2026-10-24). `sum`: each year's cell is checked on its own
 # event: a `date` column with sum field `event <WORD>` is filled on the rows of the list
 #   headed `SOCIETA' <WORD> <year> (<n>)`: with the date the row prints, else the edition's
 #   year (`2025`, nothing printed, flagged). A table with event columns is a register list
@@ -110,3 +135,63 @@ DIFESA/A5/2	data_sospensione	date		event SOSPESE
 DIFESA/A5/2	data_cancellazione	date	Data Canc.	event CANCELLATE
 DIFESA/A5/2	motivazione	text	Motivazione	
 DIFESA/A5/2	id_ditta	company		denominazione
+MAE/T10	paese	text	Paese	
+MAE/T10	n	years	N.	sum
+MAE/T10	valore_euro	years	Valore in €	sum
+MAE/T10	percentuale	years	%	
+MAE/T11	programma_accordo_intergovernativo	text	Programma/accordo intergovernativo	
+MAE/T11	n_aut	years	N. aut.	sum
+MAE/T11	valore_euro	years	Valore in €	sum
+MAE/T13	ripartizione	block		
+MAE/T13	voce	text		
+MAE/T13	valore_euro	years	Valore in €	sum
+MAE/T13	numero	years	Numero	sum
+MAE/T23	ripartizione	block		Categoria (Military List)=MATERIALI
+MAE/T23	voce	text		
+MAE/T23	valore_euro	years	Valore in €	sum
+MAE/T23	quantita	years	Quantità	sum
+MAE/T20	paese_di_provenienza	text	Paese di provenienza	
+MAE/T20	pos	years	Pos.	
+MAE/T20	valore_euro	years	Valore in €	sum
+MAE/T20	percentuale	years	%	
+MAE/T20	n_aut	years	N. Aut.	sum
+DIFESA/A2C6/3B	n_ord	code	N° Ord.	
+DIFESA/A2C6/3B	rif_istanza	code	Rif. Istanza	
+DIFESA/A2C6/3B	importo_autorizzato	amount	Importo autorizzato	once
+DIFESA/A2C6/3B	incasso	years	INCASSO	sum
+DIFESA/A2C6/3B	incasso_quadriennio	rowsum	Nel quadriennio (Y-3-Y)	incasso
+DIFESA/A2C6/3B	residuo	amount	Residuo eventuale da incassare (diff. tra autorizzato ed incassato nel corso degli anni di validità dell'autorizzazione)	once
+MAE/B4	area_geografica	group	Area Geografica	
+MAE/B4	paese_di_destinazione	text	Paese di destinazione	
+MAE/B4	autorizzazioni	number	Autorizzazioni	sum
+MAE/B4	valore_euro	amount	Valore (EURO)	sum
+MAE/D	area_geografica	group	Area Geografica	
+MAE/D	paese_di_destinazione	text	Paese di destinazione	
+MAE/D	autorizzazioni	number	Autorizzazioni	sum
+MAE/D	valore_euro	amount	Valore (EURO)	sum
+MAE/G1	paese_di_provenienza	text	Paese di provenienza	
+MAE/G1	autorizzazioni	number	Autorizzazioni	sum
+MAE/G1	valore_euro	amount	Valore (EURO)	sum
+MAE/G2	area_geografica	group	Area Geografica	
+MAE/G2	paese_di_provenienza	text	Paese di provenienza	
+MAE/G2	autorizzazioni	number	Autorizzazioni	sum
+MAE/G2	valore_euro	amount	Valore (EURO)	sum
+MAE/I	area_geografica	group	Area Geografica	
+MAE/I	paese_di_provenienza	text	Paese di provenienza	
+MAE/I	autorizzazioni	number	Autorizzazioni	sum
+MAE/I	valore_euro	amount	Valore (EURO)	sum
+MAE/F1	operatore	group		
+MAE/F1	valuta	text	Valuta	
+MAE/F1	ammontare	amount	Ammontare	
+MAE/F1	euro	amount	EURO	sum else ammontare@valuta=EUR unless val_fini_dog
+MAE/F1	val_fini_dog	amount	Valore Fini Dog.	sum
+MAE/F1	data	date	Data	
+MAE/F1	qta	number	Quantità	
+MAE/F1	unita_misura	text	Unità Misura	
+MAE/F1	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+MAE/F1	tipo	code	Tipo	
+MAE/F1	cat	code	Cat. Rif.	
+MAE/F1	riga_importo	link		ammontare qta data
+MAE/F1	riga_autorizzazione	unit		
+MAE/F1	id_ditta	company		operatore
+DIFESA/4	id_ditte	companies		ditte_italiane_partecipanti

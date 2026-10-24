@@ -7,10 +7,24 @@
 #   sum <col>                      the sum of <col> over the data rows (with its `else`)
 #   sum <col> where <col2>=$1      the same, on rows where <col2> is the label's group
 #   count <col>                    data rows where <col> is printed (or implied: an event's year)
+#   -                              none: listed UNCHECKED, kept
+# A summary page line printing two values labels the second `(2)` (G2's `Totale : 556 ...`).
 #   ... unless <col>               rows where <col> is printed add nothing (as in columns.tsv)
 #   sum <col> over subtotal        the printed subtotals of <col> added up (A1's EURO total:
 #                                  the rows give 0,05 more, its subtotals' cent roundings;
 #                                  each subtotal is checked against its rows)
+# A summary line printed in the grid (T20 under its ten countries) is a printed figure,
+# known by its label here, checked year column by year column (`lib/views._line_checks`):
+#   sum rows of Y                  the facts, in the edition's year only: another year's
+#                                  line may cover rows the table does not print (T20's
+#                                  2024 `Primi 10 Paesi` is 2024's own top ten)
+#   sum lines above                the summary lines printed above it
+#   sum over subtotal              the subtotals above it (B4's total: its countries are rounded,
+#                                  its areas are not, as A1's)
+#   -                              none: kept, listed UNCHECKED (T20's `Altri`; the `di cui` and
+#                                  `Totale ai Fini Doganali` lines of B4, D, G1, G2, I, F1, printed
+#                                  in a box of their own: no column holds them)
+# (maintainer, 2026-10-24: the ten countries are the facts, these lines are figures)
 # A label under a heading carries it (`lib/extract.read_summary`): A1's per-currency totals are
 # `Totali parziali per tipo valuta: USD`; the first, `1.552.753,27`, beside no currency, is the
 # heading alone (the rows with no currency printed).
@@ -23,3 +37,26 @@ MAE/A1	^Totali parziali per tipo valuta$	sum ammontare where valuta= unless val_
 DIFESA/A5/2	^SOCIETA' ISCRITTE	count data_iscrizione
 DIFESA/A5/2	^SOCIETA' SOSPESE	count data_sospensione
 DIFESA/A5/2	^SOCIETA' CANCELLATE	count data_cancellazione
+MAE/T20	^Primi 10 Paesi$	sum rows of Y
+MAE/T20	^Altri$	-
+MAE/T20	^TOTALE$	sum lines above
+MAE/B4	^Totale :$	sum over subtotal
+MAE/B4	^di cui	-
+MAE/B4	^Totale ai Fini Doganali	-
+MAE/D	^Totale :$	sum over subtotal
+MAE/D	^di cui	-
+MAE/D	^Totale ai Fini Doganali	-
+MAE/I	^Totale :$	sum over subtotal
+MAE/I	^di cui	-
+MAE/I	^Totale ai Fini Doganali	-
+MAE/G1	^di cui	-
+MAE/G1	^Totale ai Fini Doganali	-
+MAE/G2	^Totale$	sum autorizzazioni over subtotal
+MAE/G2	^Totale \(2\)$	sum valore_euro over subtotal
+MAE/G2	^di cui	-
+MAE/G2	^Totale ai Fini Doganali	-
+MAE/F1	^Totale Autorizzazioni	count data
+MAE/F1	^Totale Valore in EURO	sum euro over subtotal
+MAE/F1	^Totale ai Fini Doganali	sum val_fini_dog
+MAE/F1	^di cui	-
+MAE/F1	^Totali parziali per tipo valuta ?: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog

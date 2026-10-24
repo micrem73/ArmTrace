@@ -122,7 +122,10 @@ def test_mef_ii_company_subtotals_and_a_last_page_drawn_in_pieces(year, sources)
 def test_mae_a2_totals_and_the_share_printed_under_them(year, sources):
     r = read(VOL1, 607, 611, 603, "MAE/A2")
     assert sum(1 for x in r.rows if x["kind"] == "data") == 159 and not r.issues
-    assert r.notes[0][2] == "(pari a 3,43 %) (pari a 7,48 %)"
+    # The share is printed beside its value, in its box: kept in its text
+    # (2026-10-24; a note before, when the grid ended above it).
+    total = next(x for x in r.rows if x["kind"] == "total")
+    assert "265.139.737,31 (pari a 3,43 %)" in total["cells"]
     assert statuses(r, "MAE/A2") == ["PASS"] * 4 + ["ROUNDING"]
 
 
@@ -160,8 +163,7 @@ def stored(year, result, key):
     E.create(db, name, spec)
     rows, _ = E.records(year, result, spec)
     db.executemany(f"INSERT INTO {name} VALUES ({','.join('?' * len(rows[0]))})", rows)
-    for i, label in enumerate(result.labels):
-        col = spec.printed[min(i, len(spec.printed) - 1)]
+    for i, (label, col) in enumerate(zip(result.labels, result.columns)):
         db.execute("INSERT INTO column_def VALUES (?,?,?,?,?,?,?,?)",
                    (name, key, int(year), i, col.key, col.type, label, col.sum_sql()))
     db.executemany("INSERT INTO printed_figure VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -176,6 +178,10 @@ def stored(year, result, key):
     ("MAE/T2", VOL1, 27, 27, 23, [0.0, 295.84, 595.28, 513.41]),     # the year window
     ("DOG/A1C2/M1", VOL2, 858, 867, 1896, None),
     ("DIFESA/A5/2", VOL2, 236, 240, 1274, None),     # a year stored, not printed
+    ("MAE/T10", VOL1, 46, 46, 42, None),             # measures under each year
+    ("MAE/T13", VOL1, 51, 51, 47, None),             # a rotated label over its block
+    ("MAE/T20", VOL1, 62, 62, 58, [0.0, 377.04, 595.28, 669.34]),   # two year blocks
+    ("DIFESA/A2C6/3B", VOL2, 244, 251, 1282, None),  # once, rowsum, a total box
 ])
 def test_the_database_alone_rebuilds_the_printed_table(year, sources, key, volume, first,
                                                         last, printed, clip):
@@ -495,3 +501,189 @@ def test_difesa_a5_2_register_lists_by_place_not_text_order(year, sources):
     assert rows["ESPLODENTI SABINO S.p.A."]["numero_iscrizione"] == "00126"
     assert not rows["ESPLODENTI SABINO S.p.A."]["data_iscrizione"]
     assert statuses(r, key) == ["PASS", "PASS"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_two_level_header_gives_each_column_its_label_and_the_one_over_it(year, sources):
+    """T10 prints `Anno 2022` over `N. | Valore in € | %`, and `Paese` over both
+    rows; Annesso 3B prints `INCASSO` over its years (maintainer, 2026-10-24)."""
+    from lib import geometry as geo
+    from lib import grammar as gra
+
+    def header(volume, pdf_page):
+        doc = pymupdf.open(ROOT / "In" / "2025" / volume)
+        sp = SourcePage(doc, pdf_page, 0, None)
+        frame, words = extract.page_words(sp)
+        h = geo.grid_header(sp, words, frame, is_label=gra.is_label_row)
+        return [(c.get("over", ""), c["text"]) for c in h["cells"]]
+    t10 = header(VOL1, 46)
+    assert t10[:4] == [("", "Paese"), ("Anno 2022", "N."), ("Anno 2022", "Valore in €"),
+                       ("Anno 2022", "%")]
+    assert len(t10) == 13 and t10[-1] == ("Anno 2025", "%")
+    b3 = header(VOL2, 244)
+    assert b3[3:8] == [("INCASSO", "2022"), ("INCASSO", "2023"), ("INCASSO", "2024"),
+                       ("INCASSO", "2025"), ("INCASSO", "Nel quadriennio (2022-2025)")]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_year_windows_with_several_measures_add_up_year_by_year(year, sources):
+    """T10 and T11: `Anno <year>` over its measures; one row per item and year
+    (maintainer, 2026-10-24); each year's printed total against its rows."""
+    import ExtractTables as E
+    t10 = read(VOL1, 46, 46, 42, "MAE/T10")
+    data = [x for x in t10.rows if x["kind"] == "data"]
+    assert len(data) == 22 and data[0]["cells"][:4] == ["GERMANIA", "115", "149.076.248,68",
+                                                         "52,26%"]
+    assert statuses(t10, "MAE/T10") == ["PASS"] * 8
+    rows, _ = E.records(year, t10, extract.specs()["MAE/T10"])
+    turchia = [r for r in rows if "TURCHIA" in r]
+    assert len(turchia) == 1 and 2023 in turchia[0]       # printed for 2023 only
+    t11 = read(VOL1, 47, 47, 43, "MAE/T11")
+    assert len([x for x in t11.rows if x["kind"] == "data"]) == 21
+    assert statuses(t11, "MAE/T11") == ["PASS"] * 7 + ["ROUNDING"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_two_breakdowns_of_one_total_each_checked_on_their_own(year, sources):
+    """T13 and T23 print `Categoria (Military List)` and `Tipologia` rotated,
+    each in a cell spanning its block (maintainer, 2026-10-24). T13: both add up
+    to TOTALE, but its `Numero` total is 1 off in 2022, 2023 and 2025 (A1's
+    quantities give the rows' sum: the print is off). T23: the categories add up
+    to MATERIALI, the type block to TOTALE."""
+    from collections import Counter
+    t13 = read(VOL1, 51, 51, 47, "MAE/T13")
+    blocks = Counter(x["cells"][0] for x in t13.rows if x["kind"] == "data")
+    assert blocks == {"Categoria (Military List)": 22, "Tipologia": 4}
+    failed = [c[0] for c in extract.checks(t13, extract.specs()["MAE/T13"]) if c[3] == "FAIL"]
+    assert len(failed) == 5 and all(" numero " in c for c in failed)
+    t23 = read(VOL1, 66, 66, 62, "MAE/T23")
+    assert Counter(statuses(t23, "MAE/T23")) == {"PASS": 13, "ROUNDING": 3}
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_t20_ten_countries_are_facts_its_summary_lines_figures(year, sources):
+    """T20 prints 2025's top ten and their 2024 values, then `Primi 10 Paesi`,
+    `Altri`, `TOTALE` (maintainer, 2026-10-24: figures, not facts). The labels
+    stand outside their box, right-aligned; the gap between the year blocks is
+    no column. 2024's `Primi 10 Paesi` is 2024's own top ten: UNCHECKED."""
+    from collections import Counter
+    r = read(VOL1, 62, 62, 58, "MAE/T20", clip=[0.0, 377.04, 595.28, 669.34])   # T21 below
+    kinds = Counter(x["kind"] for x in r.rows)
+    assert kinds == {"data": 10, "line": 2, "total": 1} and not r.issues
+    assert [x["cells"][0] for x in r.rows[-3:]] == ["Primi 10 Paesi", "Altri", "TOTALE"]
+    assert Counter(statuses(r, "MAE/T20")) == {"PASS": 5, "ROUNDING": 1, "UNCHECKED": 6}
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_annesso_3b_incasso_by_year_importo_once_quadriennio_checked(year, sources):
+    """Annesso 3B (maintainer, 2026-10-24): one row per authorisation and
+    year; Importo and Residuo on the edition's year only; `Nel quadriennio` a
+    printed figure, checked row by row; `TOTALE INCASSO`, a box of its own
+    under the last page's grid, checked year by year. The print numbers 180
+    twice and skips 42-53 and 365: kept as printed."""
+    from collections import Counter
+    r = read(VOL2, 244, 251, 1282, "DIFESA/A2C6/3B")
+    data = [x for x in r.rows if x["kind"] == "data"]
+    assert len(data) == 488 and not r.issues
+    assert r.rows[-1]["kind"] == "total" and r.rows[-1]["cells"][0] == "TOTALE INCASSO"
+    # `  3 ` + `2.288,00 €`, the second over the first's space: one number.
+    assert next(x for x in data if x["cells"][1] == "20191277")["cells"][2] == "32.288,00 €"
+    assert Counter(statuses(r, "DIFESA/A2C6/3B")) == {"PASS": 493}
+    db = stored(year, r, "DIFESA/A2C6/3B")
+    cols = [c[1] for c in db.execute("PRAGMA table_info(difesa_a2c6_3b)")]
+    assert "incasso_quadriennio" not in cols
+    assert db.execute("SELECT count(*) FROM difesa_a2c6_3b").fetchone()[0] == 488 * 4
+    assert db.execute("SELECT anno, importo_autorizzato, incasso_raw FROM difesa_a2c6_3b "
+                      "WHERE rif_istanza='20180256' ORDER BY anno").fetchall() == [
+        (2022, None, "0,00 €"), (2023, None, "18.335,00 €"), (2024, None, "31.360,00 €"),
+        (2025, 1500000, "0,00 €")]
+    assert db.execute("SELECT count(*) FROM printed_figure WHERE kind='rowsum'"
+                      ).fetchone()[0] == 488
+
+
+@pytest.mark.parametrize("year", ["2025"])
+@pytest.mark.parametrize("key,volume,first,last,printed,note", [
+    ("MAE/B4", VOL1, 684, 691, 680, "(*) Esportazioni"),     # a header box with no inner wall
+    ("MAE/D", VOL1, 814, 816, 810, "LE AUTORIZZAZIONI"),     # a note where a heading would be
+    ("MAE/G1", VOL2, 72, 74, 1110, "LE AUTORIZZAZIONI"),     # a note under the table
+    ("MAE/G2", VOL2, 75, 78, 1113, "LE AUTORIZZAZIONI"),     # a summary page, two values a line
+    ("MAE/I", VOL2, 114, 116, 1152, "LE AUTORIZZAZIONI"),    # OCEANIA opens its page
+])
+def test_mae_summaries_by_area_read_whole(year, sources, key, volume, first, last, printed,
+                                          note):
+    """B4, D, G1, G2, I: an area heading in a labelled column, unlabelled area
+    totals (a count and an amount), and a closing box whose `di cui` and
+    `Totale ai Fini Doganali` lines no column holds (UNCHECKED, kept). Every
+    total is checked; none fails, nothing is outside the table."""
+    from collections import Counter
+    r = read(volume, first, last, printed, key)
+    assert not r.issues and any(n[2].startswith(note) for n in r.notes)
+    got = Counter(statuses(r, key))
+    assert not got["FAIL"] and got["PASS"] and got["UNCHECKED"]
+    groups = [x["group"] for x in r.rows if x["kind"] == "group"]
+    assert key == "MAE/G1" or groups[-1] == "OCEANIA"
+    # The closing box's `di cui` lines are shares of its totals, of no area: `line`s
+    # with no group (importer, 2026-10-24: D filed them under OCEANIA).
+    shares = [x for x in r.rows if x["cells"][0].startswith("di cui")]
+    assert all(x["kind"] == "line" and x["group"] is None for x in shares)
+    # G2 prints them on its summary page: labelled lines, no group either.
+    assert shares or any(t[2].startswith("di cui") for t in r.totals)
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_f1_header_split_by_its_labels_and_its_summary_page(year, sources):
+    """MAE F1 prints `Ammontare` and `EURO` in one header box (the wall between
+    them runs round the body's amounts only): split by the agreed labels. Its
+    last page, boxed, is its summary, not rows of the grid."""
+    a, b = (pymupdf.open(ROOT / "In" / "2025" / v) for v in (VOL1, VOL2))
+    pages = [SourcePage(a, p, 1035 + p - 1039) for p in (1039, 1040)] + [SourcePage(b, 66, 1104)]
+    r = extract.read_table(year, "MAE/F1", pages=pages)
+    assert r.labels[1:3] == ["Ammontare", "EURO"] and r.pages == {"header": 2, "summary": 1}
+    aris = next(x for x in r.rows if x["kind"] == "subtotal")
+    assert aris["cells"][2:4] == ["4.940.860,63", "0,00"]          # EURO, Valore Fini Dog.
+    assert ("Totale Autorizzazioni", "556") in [(t[2], t[3]) for t in r.totals]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_list_of_companies_stores_their_ids_in_printed_order(year, sources, tmp_path,
+                                                                monkeypatch):
+    """Difesa 4's `DITTE ITALIANE PARTECIPANTI` (maintainer, 2026-10-24): the ids
+    in printed order, null for a name with no id yet (one issue), a word that
+    names no company (id 0) left out, a name standing for two (`34+177`) both."""
+    import json
+
+    import ExtractTables as E
+    from lib import companies
+    monkeypatch.setattr(companies, "LIST", tmp_path / "companies.tsv")
+    monkeypatch.setattr(companies, "NAMES", tmp_path / "company-names.tsv")
+    companies.write({1: "LEONARDO S.p.A.", 2: "ERA ELECTRONIC SYSTEMS S.r.l.", 3: "CONSORZIO SIGEN"},
+                    {"LEONARDO": (1, "maintainer"), "ERA ELECTRONIC SYSTEM": (2, "maintainer"),
+                     "Altre aziende italiane partecipanti": (0, "maintainer; not a company"),
+                     "CONSORZIO SIGEN LEONARDO": ((3, 1), "maintainer; a comma left out")})
+    key = "DIFESA/4"
+    r = read(VOL2, 254, 258, 1292, key)
+    db = stored(year, r, key)
+    (ids,) = db.execute("SELECT id_ditte FROM difesa_4 WHERE ditte_italiane_partecipanti "
+                        "LIKE '%Altre aziende%'").fetchone()
+    ids = json.loads(ids)
+    assert ids[:2] == [1, 2] and len(ids) == 9 and ids.count(None) == 7
+    (ids,) = db.execute("SELECT id_ditte FROM difesa_4 WHERE programma = 'ORIZZONTE'").fetchone()
+    assert json.loads(ids)[:2] == [3, 1]        # two companies, one printed name
+    _, issues = E.records(year, r, extract.specs()[key])
+    named = [d for _p, kind, d in issues if kind == "company"]
+    assert len(named) == len(set(named)) and not any("Altre aziende" in d for d in named)
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_short_operator_heading_in_the_margin_is_read(year, sources):
+    """MAE F1 p17 (vol. II): `LEE Srl` heads its operator from the margin left
+    of `Valuta`, its middle half a point outside the column; read as the
+    middle, it was dropped and 40 rows went to LARIMART (importer, 2026-10-24).
+    A word beside the grid is the grid's or an issue, never lost."""
+    doc = pymupdf.open(ROOT / "In" / "2025" / VOL2)
+    r = extract.read_table(year, "MAE/F1", pages=[SourcePage(doc, 16, 1054),
+                                                   SourcePage(doc, 17, 1055)])
+    groups = [x["group"] for x in r.rows if x["kind"] == "group"]
+    assert groups[-2:] == ["LARIMART S.p.A.", "LEE Srl"]
+    ugello = next(x for x in r.rows if x["cells"][7].startswith("UGELLO"))
+    assert ugello["group"] == "LEE Srl"

@@ -90,3 +90,27 @@ def test_a_register_number_names_its_company_before_any_name_matching():
     tool.by_register(rows, names)
     assert names["VALTRO GROUP S.p.A."] == (280, "register 00938")
     assert "B SRL" not in names and len(names) == 2
+
+
+def test_a_list_of_companies_is_split_where_the_print_separates_them():
+    """Difesa 4's `DITTE ITALIANE PARTECIPANTI`: commas outside brackets, a
+    `: ` or a `. ` before a capital (a comma the print left out); asides in
+    brackets and a footnote mark are no part of a name (maintainer, 2026-10-24)."""
+    assert C.split_list("TELESPAZIO, THALES ALENIA SPACE ITALIA.") == [
+        "TELESPAZIO", "THALES ALENIA SPACE ITALIA"]
+    assert C.split_list("MBDA ITALIA, LEONARDO COMPANY (compresa ex OTOMELARA), AVIO S.p.A., "
+                        "KNDS Amno Italy S.p.A. LINKRA SRL, MI.TEL TELEOPTIX, T.CONSULT.") == [
+        "MBDA ITALIA", "LEONARDO COMPANY", "AVIO S.p.A.", "KNDS Amno Italy S.p.A.",
+        "LINKRA SRL", "MI.TEL TELEOPTIX", "T.CONSULT"]
+    assert C.split_list("LEONARDO (MAJOR SUB CONTRACTORS). Altre aziende italiane partecipanti: "
+                        "ERA ELECTRONIC SYSTEM, FIMAC.") == [
+        "LEONARDO", "Altre aziende italiane partecipanti", "ERA ELECTRONIC SYSTEM", "FIMAC"]
+    assert C.split_list("WASS Submarine Systems (Fincantieri)1.") == ["WASS Submarine Systems"]
+    assert C.split_list("MECAER, , MEPIT, TXT E TECH S.R.L..") == ["MECAER", "MEPIT",
+                                                                   "TXT E TECH S.R.L."]
+    assert C.split_list("PIAGGIO AERO INDUSTRIES (ora BAYKAR PIAGGIO AEROSPACE a far data dal "
+                        "30.06.2025), SIRIO PANEL") == ["PIAGGIO AERO INDUSTRIES", "SIRIO PANEL"]
+    # A bracket the print never closes (programme 15) runs to the end of its name.
+    assert C.split_list("LEONARDO (inquadrata nell’ambito del consorzio IAMCO (International "
+                        "Aerospace Management Company) per le necessità della flotta.") == [
+        "LEONARDO"]

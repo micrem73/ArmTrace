@@ -25,10 +25,16 @@ from lib import extract
 from lib import grammar as gra
 
 
+# The rows a table prints that are not facts: a group's subtotal, the total, and
+# a summary line in the grid known by its `totals.tsv` label (`line`: T20's
+# `Altri`, B4's `di cui` shares), which belongs to the table, not to a group.
+FIGURE_KINDS = ("subtotal", "total", "line")
+
+
 def split(result):
     """(facts, figures, summary) of a table as read (`extract.read_table`)."""
     facts = [r for r in result.rows if r["kind"] == "data"]
-    figures = [r for r in result.rows if r["kind"] in ("subtotal", "total")]
+    figures = [r for r in result.rows if r["kind"] in FIGURE_KINDS]
     return facts, figures, list(result.totals)
 
 
@@ -42,9 +48,9 @@ def from_db(db, key, year, spec=None):
     for i, col, label in db.execute("SELECT ordinal, col, label_it FROM column_def "
                                     "WHERE table_key=? AND year=? ORDER BY ordinal",
                                     (key, int(year))):
-        order.append(by_col[col])
-        if by_col[col].type == "years":
-            year_of[i] = int(label)
+        order.append(by_col.get(col, extract.GAP))
+        if order[-1].type == "years":
+            year_of[i] = int(extract.YEAR.search(label).group())
     cur = db.execute(f"SELECT * FROM {name} WHERE year=? ORDER BY row_ord", (int(year),))
     names = [d[0] for d in cur.description]
     lines = {}
@@ -52,6 +58,11 @@ def from_db(db, key, year, spec=None):
         row = dict(zip(names, values))
         lines.setdefault(row["row_ord"], []).append(row)
     linked = _linked(lines, spec)
+    rowsums = {}                # a row's own printed total (3B), by row and ordinal
+    for row_ord, i, raw in db.execute(
+            "SELECT row_ord, ordinal, value_raw FROM printed_figure WHERE table_key=? "
+            "AND year=? AND kind='rowsum'", (key, int(year))):
+        rowsums[(row_ord, i)] = raw
     facts = []
     for row_ord, rows in lines.items():
         row = rows[0]
@@ -60,10 +71,17 @@ def from_db(db, key, year, spec=None):
             if col.type == "years":
                 hit = next((r for r in rows if r["anno"] == year_of[i]), {})
                 cells.append(hit.get(f"{col.key}_raw") or "")
+            elif col.type in ("gap", "group"):
+                cells.append("")        # a group is printed as its heading
+            elif col.type == "rowsum":
+                cells.append(rowsums.get((row_ord, i)) or "")
             elif col.type in ("amount", "number", "date"):
-                cells.append(row[f"{col.key}_raw"] or "")
-                if row[f"{col.key}_raw"] is None and row[col.key] is not None:
-                    implied[col.key] = row[col.key]     # stored, not printed
+                # A `once` value is on one year's row of the line (3B's edition year).
+                held = next((r for r in rows if r[col.key] is not None), row) \
+                    if col.once else row
+                cells.append(held[f"{col.key}_raw"] or "")
+                if held[f"{col.key}_raw"] is None and held[col.key] is not None:
+                    implied[col.key] = held[col.key]    # stored, not printed
             else:
                 cells.append(row[col.key] or "")
         # A1: a description copied onto a second amount's row is not printed there.
@@ -77,7 +95,8 @@ def from_db(db, key, year, spec=None):
     figures = {}
     for kind, row_ord, pdf_page, printed_page, grp, i, raw in db.execute(
             "SELECT kind, row_ord, pdf_page, printed_page, grp, ordinal, value_raw "
-            "FROM printed_figure WHERE table_key=? AND year=? AND kind!='summary' "
+            "FROM printed_figure WHERE table_key=? AND year=? "
+            "AND kind NOT IN ('summary', 'rowsum') "
             "ORDER BY row_ord, ordinal", (key, int(year))):
         fig = figures.setdefault(row_ord, {
             "kind": kind, "row_ord": row_ord, "pdf_page": pdf_page,
@@ -117,11 +136,100 @@ def _group_of(row, spec):
     return row["cells"][carry[0]] if carry else None
 
 
-def _figure_checks(row, scope, spec):
+def _figure_checks(row, scope, spec, everything=(), above=()):
+    rule = next((expr for rx, expr in spec.totals if rx.search(row["cells"][0] or "")), None)
+    if rule is not None:
+        return _line_checks(row, rule.split(), everything, above)
+    # A total over blocks (`block`: T13's Categoria and Tipologia) is checked
+    # against each block on its own: both add up to it.
+    at = next((i for i, c in enumerate(row["order"]) if c.type == "block"), None)
+    if at is not None and row["kind"] == "total":
+        against = row["order"][at].against or {}
+        blocks = {}
+        for r in scope:
+            blocks.setdefault(r["cells"][at], []).append(r)
+        out = []
+        for block, rows in blocks.items():
+            # A block that breaks down one row of another (T23: the categories
+            # add up to MATERIALI) is checked against that row.
+            target = next((r for r in scope if against.get(block) in r["cells"]), row)
+            tag = f" ({block} = {against[block]})" if target is not row else f" ({block})"
+            out += [(name + tag, printed, computed, status)
+                    for name, printed, computed, status in _sums(target, rows, spec)]
+        return out
+    return _sums(row, scope, spec) + _rowsum_checks(row)
+
+
+def _rowsum_checks(row):
+    """A row's own printed total (`rowsum`: 3B's `Nel quadriennio`) against the
+    row's cells in the year column it adds up."""
     out = []
-    for col in (c for c in spec.printed if c.sum):
+    for i, col in enumerate(row["order"]):
+        if col.type != "rowsum" or not row["cells"][i]:
+            continue
+        value, _ = extract.parse("amount", row["cells"][i])
+        if value is None:
+            continue
+        computed = sum(extract.parse("amount", c)[0] or 0
+                       for c, other in zip(row["cells"], row["order"]) if other.key == col.of)
+        out.append((f"{row['kind']} p{row['pdf_page']} {col.key} row {row['row_ord']}",
+                    row["cells"][i], computed, extract._status(computed, value)))
+    return out
+
+
+def _line_checks(row, rule, facts, above):
+    """A summary line printed in the grid, checked by its `totals.tsv` rule,
+    column by column (a year column cell by cell): `sum rows of Y` the facts,
+    in the edition's year only (another year's line may cover rows not
+    printed, T20); `sum lines above` the summary lines printed above it;
+    `sum over subtotal` the subtotals above it (B4's total: its countries are
+    rounded, its areas are not, as A1's); `-` none (UNCHECKED)."""
+    out = []
+    latest = max(row["year_of"].values(), default=None)
+    for i, col in enumerate(row["order"]):
+        if not col.sum:
+            continue
+        printed = row["cells"][i]
+        value = _printed_value(printed)
+        if value is None:
+            continue
+        year = row["year_of"].get(i)
+        name = f"{row['cells'][0]} p{row['pdf_page']} {col.key}" + (f" {year}" if year else "")
+        if rule == ["sum", "rows", "of", "Y"] and year == latest:
+            scope = facts
+        elif rule == ["sum", "lines", "above"]:
+            scope = above
+        elif rule == ["sum", "over", "subtotal"]:
+            scope = [r for r in above if r["kind"] == "subtotal"]
+        else:
+            out.append((name, printed, None, "UNCHECKED"))
+            continue
+        computed = sum(extract.parse("amount", r["cells"][i])[0] or 0 for r in scope)
+        out.append((name, printed, computed, extract._status(computed, value)))
+    return out
+
+
+def _printed_value(text):
+    """A printed figure's value, a comment after it set aside: A2's and B4's
+    `265.139.737,31 (pari a 3,43 %)` (`ExtractTables.figures` stores it so)."""
+    return extract.parse("amount", (text or "").split(" (")[0].strip())[0]
+
+
+def _sums(row, scope, spec):
+    out = []
+    # A year column prints one cell per year: each is checked on its own.
+    for i, col in enumerate(row["order"]):
+        if col.type != "years" or not col.sum:
+            continue
+        value = _printed_value(row["cells"][i])
+        if value is None:
+            continue
+        computed = sum(extract.parse("amount", r["cells"][i])[0] or 0 for r in scope)
+        out.append((f"{row['kind']} p{row['pdf_page']} {col.key} {row['year_of'][i]}",
+                    row["cells"][i], computed, extract._status(computed, value)))
+    for col in (c for c in spec.printed if c.sum and c.type != "years"):
         printed = extract._cell(row, col.key)
-        value, _ = extract.parse("amount", printed)
+        value = _printed_value(printed)
         if value is None:
             continue
         computed = sum(extract._effective(r, col, spec) for r in scope)
@@ -137,7 +245,7 @@ def render(facts, figures, summary, spec):
 
     `kind` is `group` (a heading), `data`, `subtotal`, `total` or `summary`.
     Cells are the printed text: a fact's own, a figure's printed values."""
-    out, scope, everything = [], [], []
+    out, scope, everything, lines = [], [], [], []
     heading, run = object(), object()
     carry = None
     for row in sorted(facts + figures, key=lambda r: r["row_ord"]):
@@ -153,7 +261,8 @@ def render(facts, figures, summary, spec):
             blank = (carry if not first else set()) | set(row.get("copied", ()))
             cells = [("" if i in blank else c) for i, c in enumerate(row["cells"])]
             out.append({"kind": "data", "group": group, "cells": cells,
-                        "pdf_page": row["pdf_page"], "checks": [], "linked": row.get("linked")})
+                        "pdf_page": row["pdf_page"], "checks": _rowsum_checks(row),
+                        "linked": row.get("linked")})
             scope.append(row)
             everything.append(row)
             run = group
@@ -161,7 +270,8 @@ def render(facts, figures, summary, spec):
             within = scope if row["kind"] == "subtotal" else everything
             out.append({"kind": row["kind"], "group": row["group"], "cells": list(row["cells"]),
                         "pdf_page": row["pdf_page"],
-                        "checks": _figure_checks(row, within, spec)})
+                        "checks": _figure_checks(row, within, spec, everything, lines)})
+            lines.append(row)
             if row["kind"] == "subtotal":
                 scope, run = [], object()
     for pdf_page, _printed_page, label, raw in summary:
@@ -183,6 +293,8 @@ def _summary_check(label, raw, facts, figures, spec):
         return (f"printed {label!r}", raw, None, "UNCHECKED")
     m, expr = rule
     words = expr.split()
+    if words == ["-"]:
+        return (f"printed {label!r}", raw, None, "UNCHECKED")
     if words[0] == "count":
         computed = sum(1 for r in facts if extract._cell(r, words[1])
                        or words[1] in r.get("implied", {}))

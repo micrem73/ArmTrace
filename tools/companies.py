@@ -11,7 +11,8 @@ lib/data/companies.tsv and company-names.tsv: first by register number (a name
 Difesa A5/2 prints beside a number that already has an id takes it), then a
 known company's other spelling, and a company with no candidate, automatically; the clusters left are printed
 for the maintainer, who answers with --same (one company) or --apart (each its
-own). A name given stands for all its spellings. Re-extract afterwards: the ids
+own). A name given stands for all its spellings; --none marks a word a list prints
+that names no company (id 0: the list leaves it out). Re-extract afterwards: the ids
 are stored at extraction.
 
 The register of companies (Difesa A5/2, every extracted year) is a witness to
@@ -32,16 +33,25 @@ from lib import companies, extract, layout  # noqa: E402
 
 
 def printed_counts(year):
+    """({printed name: rows}, {names printed only in lists of companies})."""
     db = sqlite3.connect(layout.year_dir(year, ROOT) / f"armtrace-{year}.sqlite")
-    counts = {}
+    counts, listed = {}, {}
     for key, spec in extract.specs().items():
         name = extract.sql_name(key)
-        if spec.company and db.execute("SELECT 1 FROM sqlite_master WHERE name=?",
-                                       (name,)).fetchone():
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone():
+            continue
+        if spec.company:
             for printed, n in db.execute(f"SELECT {spec.company.of}, count(*) FROM {name} "
                                          f"WHERE {spec.company.of} IS NOT NULL GROUP BY 1"):
                 counts[printed] = counts.get(printed, 0) + n
-    return counts
+        for col in spec.company_lists:
+            for (cell,) in db.execute(f"SELECT DISTINCT {col.of} FROM {name}"):
+                for printed in companies.split_list(cell):
+                    listed[printed] = listed.get(printed, 0) + 1
+    only = set(listed) - set(counts)
+    for printed, n in listed.items():
+        counts[printed] = counts.get(printed, 0) + n
+    return counts, only
 
 
 def register(root=ROOT):
@@ -132,17 +142,36 @@ def main(argv=None):
     parser.add_argument("year")
     parser.add_argument("--same", nargs="+", metavar="NAME")
     parser.add_argument("--apart", nargs="+", metavar="NAME")
+    parser.add_argument("--none", nargs="+", metavar="NAME",
+                        help="printed in a list, but names no company (id 0)")
+    parser.add_argument("--two", nargs="+", metavar="NAME=ID+ID",
+                        help="one name a list prints for several companies, a comma left out")
     args = parser.parse_args(argv)
-    counts = printed_counts(args.year)
+    counts, from_lists = printed_counts(args.year)
     listed, names = companies.load()[0], companies.read_how()
+    for printed in args.two or []:
+        name, _, ids = printed.rpartition("=")
+        if name not in counts:
+            sys.exit(f"not printed in this year's tables: {name!r}")
+        names[name] = (tuple(int(x) for x in ids.split("+")),
+                       f"maintainer, {datetime.date.today().isoformat()}; two names, a comma left out")
     for given, together in ((args.same, True), (args.apart, False)):
         if given:
             decide(given, counts, names, listed, together)
+    for printed in args.none or []:
+        if printed not in counts:
+            sys.exit(f"not printed in this year's tables: {printed!r}")
+        names[printed] = (0, f"maintainer, {datetime.date.today().isoformat()}; not a company")
     by_register(register(), names)
     spellings, new, review = companies.propose(
         counts, (listed, {p: cid for p, (cid, _h) in names.items()}))
     for printed, cid in spellings:
         names[printed] = (cid, "spelling")
+    # A name printed only in a list never makes a company by itself: the list
+    # was split by rule (`Altre aziende italiane partecipanti` is no company).
+    review += [[{"fold": companies.fold(p[0]), "printed": {x: counts[x] for x in p}, "id": None}]
+               for _n, p in new if set(p) <= from_lists]
+    new = [(n, p) for n, p in new if not set(p) <= from_lists]
     for name, printed in new:
         cid = max(listed, default=0) + 1
         listed[cid] = name

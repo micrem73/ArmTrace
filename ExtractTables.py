@@ -90,8 +90,12 @@ def columns_of(spec):
     """[(sql column, type)] of one table, in printed order."""
     out = [(spec.group.key, "group")] if spec.group else []
     for col in spec.printed:
+        if col.type in ("rowsum", "group"):
+            continue                # a figure (`printed_figure`), or the group, above
         if col.type == "years":
-            out += [("anno", "year"), (col.key, "amount")]
+            # One row per printed row and year: `anno`, then each measure (T10:
+            # `N.`, `Valore in €`, `%` under every `Anno <year>`).
+            out += ([] if ("anno", "year") in out else [("anno", "year")]) + [(col.key, "amount")]
         else:
             out.append((col.key, col.type))
     if spec.link:
@@ -100,6 +104,7 @@ def columns_of(spec):
         out.append((spec.unit.key, "link"))
     if spec.company:
         out.append((spec.company.key, "link"))
+    out += [(c.key, "companies") for c in spec.company_lists]
     return out
 
 
@@ -134,12 +139,18 @@ def records(year, result, spec):
         if spec.unit:
             values[spec.unit.key] = r.get("unit")
         flags += r.get("notes", [])
-        years = []
+        years = {}
         for i, col in enumerate(r["order"]):
             raw = r["cells"][i]
             if col.type == "years":
-                years.append((r["year_of"][i], raw))
+                years.setdefault(r["year_of"][i], {})[col.key] = raw
                 continue
+            if col.type == "gap":
+                if raw:
+                    issues.append((r["pdf_page"], "gap", f"{raw!r} between two year blocks"))
+                continue
+            if col.type in ("rowsum", "group"):
+                continue            # a figure; the group's heading, set above
             value, problem = extract.parse(col.type, raw)
             if problem:
                 flags.append(f"{col.key}: {problem}")
@@ -153,27 +164,47 @@ def records(year, result, spec):
                 values[col.key] = value
         if spec.company:
             name = values.get(spec.company.of)
-            values[spec.company.key] = ids.get(name)
+            values[spec.company.key] = ids.get(name) or None
             if name and name not in ids and name not in unknown:
                 unknown.add(name)
                 issues.append((r["pdf_page"], "company", f"{spec.company.of} {name!r}: no id "
                                "in lib/data/company-names.tsv"))
+        for col in spec.company_lists:
+            # The companies a cell lists (Difesa 4): their ids, in printed order,
+            # null where a name has none yet (`lib/companies.split_list`).
+            names = companies.split_list(values.get(col.of))
+            # A word that names no company (id 0) is left out of the list.
+            names = [n for n in names if ids.get(n) != 0]
+            listed = [i for n in names for i in (ids[n] if isinstance(ids.get(n), tuple)
+                                                 else [ids.get(n)])]
+            values[col.key] = json.dumps(listed) if names else None
+            for name in names:
+                if name not in ids and name not in unknown:
+                    unknown.add(name)
+                    issues.append((r["pdf_page"], "company", f"{col.of} {name!r}: no id "
+                                   "in lib/data/company-names.tsv"))
         flag = "; ".join(flags) or None
-        if years:
-            for anno, raw in years:
+        # A year where the row prints nothing is no row (T10's TURCHIA: 2023 only);
+        # the edition's year is, when a `once` value goes there (3B's Importo).
+        once = [c.key for c in spec.printed if c.once]
+        printed = {a: m for a, m in years.items()
+                   if any(m.values()) or (once and a == int(year))} or years
+        for anno, measured in (sorted(printed.items()) or [(None, {})]):
+            here = dict(values)
+            if years and anno != int(year):
+                for key in once:        # printed once: on the edition year's row
+                    here[key] = here[f"{key}_raw"] = None
+            for key, raw in measured.items():
                 value, problem = extract.parse("years", raw)
                 if problem:
-                    issues.append((r["pdf_page"], problem, f"{anno} {raw!r}"))
-                rows.append(meta + [values.get(c) for c, k in columns_of(spec)
-                                    if k not in ("year", "amount")]
-                            + [anno, str(value) if value is not None else None,
-                               raw or None, flag])
-        else:
+                    issues.append((r["pdf_page"], problem, f"{key} {anno} {raw!r}"))
+                here[key] = str(value) if value is not None else None
+                here[f"{key}_raw"] = raw or None
             out = list(meta)
             for col, kind in columns_of(spec):
-                out.append(values.get(col))
+                out.append(anno if kind == "year" else here.get(col))
                 if kind in ("amount", "number", "date"):
-                    out.append(values.get(f"{col}_raw"))
+                    out.append(here.get(f"{col}_raw"))
             rows.append(out + [flag])
     return rows, issues
 
@@ -183,12 +214,27 @@ def figures(year, key, result):
     each summary line, with the issues a figure's value raises."""
     rows, issues = [], []
     for r in result.rows:
-        if r["kind"] not in ("subtotal", "total"):
+        if r["kind"] == "data":
+            # A row's own printed total (3B's `Nel quadriennio`) is a figure.
+            for i, (col, raw) in enumerate(zip(r["order"], r["cells"])):
+                if col.type == "rowsum" and raw:
+                    value, problem = extract.parse("amount", raw)
+                    if problem:
+                        issues.append((r["pdf_page"], problem, f"{col.key} {raw!r}"))
+                    rows.append((int(year), key, "rowsum", r["row_ord"], r["pdf_page"],
+                                 r["printed_page"], None, i, None,
+                                 str(value) if value is not None else None, raw))
+            continue
+        if r["kind"] not in views.FIGURE_KINDS:
             continue
         for i, (col, raw) in enumerate(zip(r["order"], r["cells"])):
             if not raw:
                 continue
-            value, problem = extract.parse("amount", raw)
+            # A value may carry a comment, `265.139.737,31 (pari a 3,43 %)`; a
+            # cell may be that comment alone (G1, I): the text is kept as printed.
+            value, problem = extract.parse("amount", raw.split(" (")[0].strip())
+            if raw.startswith("(pari a"):
+                value, problem = None, None
             if problem and col.sum and not extract.TOTAL_LEAD.match(raw) \
                     and not extract.SUBTOTAL_TAIL.match(raw):
                 issues.append((r["pdf_page"], problem, f"{r['kind']} {col.key} {raw!r}"))
@@ -210,7 +256,9 @@ def view_def(spec, result):
         "group": group.key if group else None,
         "group_prints": ("heading" if spec.group else "first_row") if group else None,
         "summed": {c.key: c.sum_sql() for c in spec.printed if c.sum},
-        "years": {"year_col": "anno", "value_col": spec.years.key} if spec.years else None,
+        "years": ({"year_col": "anno", "value_cols": [c.key for c in spec.printed
+                                                      if c.type == "years"]}
+                  if spec.years else None),
         "subtotals": any(r["kind"] == "subtotal" for r in result.rows),
         "total": any(r["kind"] == "total" for r in result.rows),
         "summary": bool(result.totals),
@@ -236,8 +284,7 @@ def extract_one(db, year, key, spec):
     rows, issues = records(year, result, spec)
     width = len(rows[0]) if rows else 0
     db.executemany(f"INSERT INTO {name} VALUES ({','.join('?' * width)})", rows)
-    for i, label in enumerate(result.labels):
-        col = [c for c in spec.printed][min(i, len(spec.printed) - 1)]
+    for i, (label, col) in enumerate(zip(result.labels, result.columns)):
         db.execute("INSERT OR IGNORE INTO column_def VALUES (?,?,?,?,?,?,?,?)",
                    (name, key, int(year), i, col.key, col.type, label, col.sum_sql()))
     shown, problems = figures(year, key, result)
@@ -294,10 +341,14 @@ def finish(db, year, out_dir):
     named, used = companies.load()[0], set()
     for key, spec in extract.specs().items():
         name = extract.sql_name(key)
-        if spec.company and db.execute("SELECT 1 FROM sqlite_master WHERE name=?",
-                                       (name,)).fetchone():
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone():
+            continue
+        if spec.company:
             used |= {i for (i,) in db.execute(f"SELECT DISTINCT {spec.company.key} "
                                               f"FROM {name}") if i}
+        for col in spec.company_lists:
+            for (ids,) in db.execute(f"SELECT {col.key} FROM {name} WHERE {col.key} IS NOT NULL"):
+                used |= {i for i in json.loads(ids) if i}
     views.add_register(db)
     db.execute("DELETE FROM company")
     db.executemany("INSERT INTO company VALUES (?,?)", [(i, named[i]) for i in sorted(used)])

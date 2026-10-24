@@ -67,10 +67,15 @@ class SourcePage:
     def _along(self, direction):
         return self.direction is None or _direction(direction) == self.direction
 
-    def get_texttrace(self):
+    def get_texttrace(self, across=False):
+        """The page's spans in the table's direction, glyphs decoded and inside
+        the clip; `across`: those printed across it instead (T13's rotated
+        `Categoria (Military List)`)."""
         spans = []
+        main = (self.direction or self._dominant()) if across else None
         for span in self.page.get_texttrace():
-            if not self._along(span.get("dir", (1.0, 0.0))):
+            direction = span.get("dir", (1.0, 0.0))
+            if (_direction(direction) == main) if across else not self._along(direction):
                 continue
             fmap = self.maps.get(span.get("font"))
             chars = []

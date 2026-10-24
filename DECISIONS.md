@@ -525,6 +525,86 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   printed beside a register number that already has an id takes it before any name
   matching (`how` = `register <number>`); name matching only covers what no number settles.
 
+- **Lists of companies in a cell: a list of ids** (maintainer, 2026-10-24). Difesa 4's
+  `DITTE ITALIANE PARTECIPANTI` gets `id_ditte` (type `companies`): the ids of the companies
+  the cell lists, a JSON list in printed order (`json_each` reads it), null for a name with no
+  id yet; the cell stays as printed. Split by rule (`lib/companies.split_list`: commas, `: `,
+  `. ` before a capital; asides in brackets and footnote marks are no part of a name). A name
+  only a list prints never makes a company by itself: the maintainer decided all 117 on a
+  matching page (72 to a known company, 39 new, `Altre aziende italiane partecipanti` not a
+  company: id 0, left out of the list; `CONSORZIO SIGEN LEONARDO` two companies, a comma left
+  out: `34+177`; FIMAC to FIMAC S.p.A., MI.TEL TELEOPTIX new). Any other table that lists
+  companies in a cell takes the same type.
+- **`riga_*` ids are unique with the year** (maintainer, 2026-10-24). Every row of every
+  table carries `year`, the edition it was read from; the site puts all years in one table.
+  A `riga_*` value is a `row_ord` of its year's table, so the key of an authorisation (A1, F1)
+  is (`year`, `riga_autorizzazione`), and a join on `riga_importo` also matches `year`. Not a
+  number made unique by itself (year folded in): the year is already on the row, and an id
+  that looked global would invite following an authorisation across editions, which A1 and F1
+  cannot support (no printed number). Tables that print an official number (MEF EE, Dogane M)
+  are the ones to join across years.
+- **Two-level headers: one row per item and year** (maintainer, 2026-10-24). A year window
+  with several measures per year (MAE T10, T11, T13, T20, T23: `Anno <year>` over `N. |
+  Valore in € | %`) is stored as T2 is: one row per printed row and year, `anno` plus one
+  column per measure. T13 and T23 print two breakdowns of one total (`Categoria (Military
+  List)` 001–022, then `Tipologia`), each label printed once, rotated, beside its block: one
+  table, the label a `group` column, each block checked against the total. Annesso 3B
+  (`DIFESA/A2C6/3B`, `INCASSO` over 2022–2025): one row per authorisation and year too (the
+  maintainer weighed a wide row mirroring the page, then chose this); `Importo autorizzato`
+  and `Residuo` are stored once, on the row of the edition's year (NULL on the others, so a
+  sum is the printed one); `Nel quadriennio` is a printed figure, each authorisation's four
+  years checked against it.
+- **Reading two-level headers** (2026-10-24). `geometry.grid_header` returns, for a header on
+  two grid rows, each column's own label and the one over it (`over`): from the upper row
+  down (T10: `Anno 2022` over `N.`), or from the lower row up when the upper row's floor runs
+  only under its wide label (3B: `INCASSO`). Rule edges closer than 5 pt are one (a
+  highlighted column's fill box); the lower row ends at a floor as wide as the grid; columns
+  the first body row has beyond the header (T13's stub) are unlabelled columns. A label is
+  stored as printed, top first (`Anno 2022 / N.`). New column types and rules, all in
+  `columns.tsv`: `block` (a label in a cell spanning a block of rows, rotated in T13/T23:
+  read from the text printed across the table, `SourcePage.get_texttrace(across=True)`);
+  `rowsum` (a row's own printed total, a figure); `once`; the gap between two year blocks
+  (T20) is no column, and text in it is an issue. A total in a box of its own under the grid,
+  with its own labels (3B's `TOTALE INCASSO`), is the table's total row, each value under the
+  column of the same label. A row label printed left of its line's walls (T20's `Altri`) is the
+  first column's. Two words joined without a space where the second starts inside the
+  first's printed space only for a number cut in two (3B `  3 ` + `2.288,00 €`; the page
+  prints 32.288,00 €): words also overlap across a real space (DOG M `BENELLI ARMI`).
+- **MAE summaries without a ruled body: B4, D, G1, G2, I, F1** (2026-10-24, columns agreed
+  by the maintainer the same day). An area printed once above its countries, in a column the
+  header labels (B4's `Area Geografica`), is a `group` with a label: a printed column, blank on
+  data rows. F1 is A1's layout for imports (links and ids as A1's). Reading rules, all tables:
+  a wall starting right under the header divides the cell above it (B4 from p2); a header cell
+  holding two agreed labels with no wall between them is split between their words, at a body
+  wall if one stands in the gap (F1 `Ammontare EURO`); the grid runs to its last wall, however
+  short (B4 p682: a second area under the first); a subtotal may print a count beside its
+  amounts (B4's `22 | 37.468.488,89`); a value may carry a comment in its cell, kept as printed
+  and read without it (`265.139.737,31 (pari a 3,43 %)`: A2's shares, a note before, are now
+  in its total row's text); after a subtotal, a text-only line opens a group even at a page's
+  top (I's OCEANIA); where a heading would be, a footnote is a note (`(*) ...`, or a sentence
+  of eight words or more: `LE AUTORIZZAZIONI CON VALORE NULLO ...`); a page with no header
+  whose first amount is on an agreed summary line is a summary page (F1's last); on a summary
+  page `(pari a N %)` is a percentage and a second value on a line is labelled `(2)`; the page
+  stamp is furniture even after a note. Checks: B4, D, I and G2's totals against their area
+  subtotals (`sum over subtotal`, as A1's EURO total: the countries are rounded, the areas are
+  not; B4's countries give 3 cents more); the `di cui` and `Totale ai Fini Doganali` lines (no
+  column holds them) are kept, UNCHECKED.
+- **Two defects the importer found** (2026-10-24, fixed test-first). A summary line in the grid
+  known by its `totals.tsv` label (T20's `Altri`, the `di cui` shares under B4, D, G1, I's
+  totals) is kind `line`, of no group: it was a subtotal of the area in progress (D's shares
+  filed as OCEANIA's). A word reaching into the grid's columns is the grid's (F1 p17 `LEE Srl`,
+  an operator heading starting in the margin, its middle 0.4 pt out: it was dropped and its 40
+  rows went to LARIMART), and any other word beside the grid within its height is an issue,
+  never dropped silently; re-extracting every table found no other. All six importer PASS.
+- **What the six tables say** (2025). T13: Military List category and type (MATERIALI,
+  TECNOLOGIE, SERVIZI, RICAMBI) are two codes on every item (A1's `Cat.` and `Tipo`, legend p69):
+  both blocks add up to TOTALE; A1's quantities give each of T13's 2025 `Numero` figures
+  exactly, and the printed TOTALE `Numero` is 1 off in 2022, 2023, 2025 (5 FAIL, the print's).
+  T23 (imports): the categories add up to MATERIALI, not TOTALE, in every year; the report does
+  not say why (maintainer: check them against MATERIALI, `columns.tsv`). T20: 2024's `Primi 10
+  Paesi` is 2024's own top ten, not the rows' sum: figures, not facts (maintainer). 3B: the
+  print numbers 180 twice and skips 42-53 and 365.
+
 ## 2026-10-19 — 2022: shifted fonts read back, export stamp as witness, Dogane outside the MEF vocabulary
 
 - **Scanned Difesa annexes are declared, as in 2023** (`editions/y2022.py`): vol. I
