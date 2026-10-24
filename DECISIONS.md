@@ -589,6 +589,13 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   subtotals (`sum over subtotal`, as A1's EURO total: the countries are rounded, the areas are
   not; B4's countries give 3 cents more); the `di cui` and `Totale ai Fini Doganali` lines (no
   column holds them) are kept, UNCHECKED.
+- **Two defects the importer found** (2026-10-24, fixed test-first). A summary line in the grid
+  known by its `totals.tsv` label (T20's `Altri`, the `di cui` shares under B4, D, G1, I's
+  totals) is kind `line`, of no group: it was a subtotal of the area in progress (D's shares
+  filed as OCEANIA's). A word reaching into the grid's columns is the grid's (F1 p17 `LEE Srl`,
+  an operator heading starting in the margin, its middle 0.4 pt out: it was dropped and its 40
+  rows went to LARIMART), and any other word beside the grid within its height is an issue,
+  never dropped silently; re-extracting every table found no other. All six importer PASS.
 - **What the six tables say** (2025). T13: Military List category and type (MATERIALI,
   TECNOLOGIE, SERVIZI, RICAMBI) are two codes on every item (A1's `Cat.` and `Tipo`, legend p69):
   both blocks add up to TOTALE; A1's quantities give each of T13's 2025 `Numero` figures

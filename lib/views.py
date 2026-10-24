@@ -25,10 +25,16 @@ from lib import extract
 from lib import grammar as gra
 
 
+# The rows a table prints that are not facts: a group's subtotal, the total, and
+# a summary line in the grid known by its `totals.tsv` label (`line`: T20's
+# `Altri`, B4's `di cui` shares), which belongs to the table, not to a group.
+FIGURE_KINDS = ("subtotal", "total", "line")
+
+
 def split(result):
     """(facts, figures, summary) of a table as read (`extract.read_table`)."""
     facts = [r for r in result.rows if r["kind"] == "data"]
-    figures = [r for r in result.rows if r["kind"] in ("subtotal", "total")]
+    figures = [r for r in result.rows if r["kind"] in FIGURE_KINDS]
     return facts, figures, list(result.totals)
 
 

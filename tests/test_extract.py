@@ -569,7 +569,7 @@ def test_t20_ten_countries_are_facts_its_summary_lines_figures(year, sources):
     from collections import Counter
     r = read(VOL1, 62, 62, 58, "MAE/T20", clip=[0.0, 377.04, 595.28, 669.34])   # T21 below
     kinds = Counter(x["kind"] for x in r.rows)
-    assert kinds == {"data": 10, "subtotal": 2, "total": 1} and not r.issues
+    assert kinds == {"data": 10, "line": 2, "total": 1} and not r.issues
     assert [x["cells"][0] for x in r.rows[-3:]] == ["Primi 10 Paesi", "Altri", "TOTALE"]
     assert Counter(statuses(r, "MAE/T20")) == {"PASS": 5, "ROUNDING": 1, "UNCHECKED": 6}
 
@@ -622,6 +622,12 @@ def test_mae_summaries_by_area_read_whole(year, sources, key, volume, first, las
     assert not got["FAIL"] and got["PASS"] and got["UNCHECKED"]
     groups = [x["group"] for x in r.rows if x["kind"] == "group"]
     assert key == "MAE/G1" or groups[-1] == "OCEANIA"
+    # The closing box's `di cui` lines are shares of its totals, of no area: `line`s
+    # with no group (importer, 2026-10-24: D filed them under OCEANIA).
+    shares = [x for x in r.rows if x["cells"][0].startswith("di cui")]
+    assert all(x["kind"] == "line" and x["group"] is None for x in shares)
+    # G2 prints them on its summary page: labelled lines, no group either.
+    assert shares or any(t[2].startswith("di cui") for t in r.totals)
 
 
 @pytest.mark.parametrize("year", ["2025"])
@@ -666,3 +672,18 @@ def test_a_list_of_companies_stores_their_ids_in_printed_order(year, sources, tm
     _, issues = E.records(year, r, extract.specs()[key])
     named = [d for _p, kind, d in issues if kind == "company"]
     assert len(named) == len(set(named)) and not any("Altre aziende" in d for d in named)
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_short_operator_heading_in_the_margin_is_read(year, sources):
+    """MAE F1 p17 (vol. II): `LEE Srl` heads its operator from the margin left
+    of `Valuta`, its middle half a point outside the column; read as the
+    middle, it was dropped and 40 rows went to LARIMART (importer, 2026-10-24).
+    A word beside the grid is the grid's or an issue, never lost."""
+    doc = pymupdf.open(ROOT / "In" / "2025" / VOL2)
+    r = extract.read_table(year, "MAE/F1", pages=[SourcePage(doc, 16, 1054),
+                                                   SourcePage(doc, 17, 1055)])
+    groups = [x["group"] for x in r.rows if x["kind"] == "group"]
+    assert groups[-2:] == ["LARIMART S.p.A.", "LEE Srl"]
+    ugello = next(x for x in r.rows if x["cells"][7].startswith("UGELLO"))
+    assert ugello["group"] == "LEE Srl"

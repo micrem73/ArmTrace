@@ -225,7 +225,7 @@ def figures(year, key, result):
                                  r["printed_page"], None, i, None,
                                  str(value) if value is not None else None, raw))
             continue
-        if r["kind"] not in ("subtotal", "total"):
+        if r["kind"] not in views.FIGURE_KINDS:
             continue
         for i, (col, raw) in enumerate(zip(r["order"], r["cells"])):
             if not raw:

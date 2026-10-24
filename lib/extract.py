@@ -484,9 +484,11 @@ class Reader:
                 v_bottom = walls_end
         else:
             v_bottom = last_line + TOL
+        # Any word reaching into the grid's columns is the grid's: an operator's
+        # heading starts in the margin (F1 p17 `LEE Srl`, its middle 0.4 pt out).
         body = [w for w in words
-                if v_top < w.vmid < v_bottom and u_lo < w.umid < u_hi]
-        self.check_outside(sp, words, body + boxed, v_bottom)
+                if v_top < w.vmid < v_bottom and w.u1 > u_lo and w.u0 < u_hi]
+        self.check_outside(sp, words, body + boxed, v_bottom, v_top)
         self.page_cells = cells
         self.read_body(sp, body, [v_top] + [f for f in floors if v_top < f < v_bottom]
                        + [v_bottom], mine, first=(kind == "continuation"))
@@ -540,12 +542,20 @@ class Reader:
             used += inside
         return row, used
 
-    def check_outside(self, sp, words, body, v_bottom):
+    def check_outside(self, sp, words, body, v_bottom, v_top=None):
         """Words outside the body. A note under the table is kept, the page
-        stamp is furniture; any other line under the table, and a printed
-        amount anywhere outside it, is an issue: never silently dropped."""
+        stamp is furniture; any other line under the table, a word beside the
+        grid within its height, and a printed amount anywhere outside it, is
+        an issue: never silently dropped."""
         inside = set(map(id, body))
         rest = [w for w in words if id(w) not in inside]
+        if v_top is not None:
+            for band in geo.row_bands([w for w in rest if v_top < w.vmid < v_bottom]):
+                text = " ".join(w.text.strip() for w in band)
+                if text and not STAMP.search(text):
+                    self.result.issues.append(
+                        (sp.pdf_page, "outside", f"{text[:60]!r} beside the table"))
+                inside.update(map(id, band))
         below = [b for b in geo.row_bands([w for w in rest if w.vmid > v_bottom])]
         noting = False
         for band in below:
@@ -736,7 +746,9 @@ class Reader:
         elif self.spec.group and self.only_amounts(row):
             kind = "subtotal"
         elif any(rx.search(lead) for rx, _expr in self.spec.totals) and self.has_value(row):
-            kind = "subtotal"       # a summary line in the grid, by its label (T20)
+            # A summary line in the grid, known by its label (T20's `Altri`, the
+            # `di cui` shares under B4's total): the table's, no group's.
+            return self.emit(sp, "line", row)
         else:
             kind = "data"
         self.emit(sp, kind, row, group=self.group if kind != "total" else None)
