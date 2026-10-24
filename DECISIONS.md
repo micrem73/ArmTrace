@@ -525,6 +525,42 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   printed beside a register number that already has an id takes it before any name
   matching (`how` = `register <number>`); name matching only covers what no number settles.
 
+- **Two-level headers: one row per item and year** (maintainer, 2026-10-24). A year window
+  with several measures per year (MAE T10, T11, T13, T20, T23: `Anno <year>` over `N. |
+  Valore in € | %`) is stored as T2 is: one row per printed row and year, `anno` plus one
+  column per measure. T13 and T23 print two breakdowns of one total (`Categoria (Military
+  List)` 001–022, then `Tipologia`), each label printed once, rotated, beside its block: one
+  table, the label a `group` column, each block checked against the total. Annesso 3B
+  (`DIFESA/A2C6/3B`, `INCASSO` over 2022–2025): one row per authorisation and year too (the
+  maintainer weighed a wide row mirroring the page, then chose this); `Importo autorizzato`
+  and `Residuo` are stored once, on the row of the edition's year (NULL on the others, so a
+  sum is the printed one); `Nel quadriennio` is a printed figure, each authorisation's four
+  years checked against it.
+- **Reading two-level headers** (2026-10-24). `geometry.grid_header` returns, for a header on
+  two grid rows, each column's own label and the one over it (`over`): from the upper row
+  down (T10: `Anno 2022` over `N.`), or from the lower row up when the upper row's floor runs
+  only under its wide label (3B: `INCASSO`). Rule edges closer than 5 pt are one (a
+  highlighted column's fill box); the lower row ends at a floor as wide as the grid; columns
+  the first body row has beyond the header (T13's stub) are unlabelled columns. A label is
+  stored as printed, top first (`Anno 2022 / N.`). New column types and rules, all in
+  `columns.tsv`: `block` (a label in a cell spanning a block of rows, rotated in T13/T23:
+  read from the text printed across the table, `SourcePage.get_texttrace(across=True)`);
+  `rowsum` (a row's own printed total, a figure); `once`; the gap between two year blocks
+  (T20) is no column, and text in it is an issue. A total in a box of its own under the grid,
+  with its own labels (3B's `TOTALE INCASSO`), is the table's total row, each value under the
+  column of the same label. A row label printed left of its line's walls (T20's `Altri`) is the
+  first column's. Two words joined without a space where the second starts inside the
+  first's printed space only for a number cut in two (3B `  3 ` + `2.288,00 €`; the page
+  prints 32.288,00 €): words also overlap across a real space (DOG M `BENELLI ARMI`).
+- **What the six tables say** (2025). T13: Military List category and type (MATERIALI,
+  TECNOLOGIE, SERVIZI, RICAMBI) are two codes on every item (A1's `Cat.` and `Tipo`, legend p69):
+  both blocks add up to TOTALE; A1's quantities give each of T13's 2025 `Numero` figures
+  exactly, and the printed TOTALE `Numero` is 1 off in 2022, 2023, 2025 (5 FAIL, the print's).
+  T23 (imports): the categories add up to MATERIALI, not TOTALE, in every year; the report does
+  not say why (maintainer: check them against MATERIALI, `columns.tsv`). T20: 2024's `Primi 10
+  Paesi` is 2024's own top ten, not the rows' sum: figures, not facts (maintainer). 3B: the
+  print numbers 180 twice and skips 42-53 and 365.
+
 ## 2026-10-19 — 2022: shifted fonts read back, export stamp as witness, Dogane outside the MEF vocabulary
 
 - **Scanned Difesa annexes are declared, as in 2023** (`editions/y2022.py`): vol. I

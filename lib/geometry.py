@@ -594,6 +594,23 @@ def grid_header(page, words, frame=None, tol=RULE_TOL, is_label=None):
                 return j
         return None
 
+    def _stub(cells, v1):
+        """Columns the first body row has beyond the header's edges, unlabelled
+        (T13: the breakdown and code columns under no header cell)."""
+        m = next((x for x in range(len(levels)) if levels[x][0] - v1 >= ROW_GAP_MIN), None)
+        if m is None:
+            return cells
+        # As wide as the floor under the header: a cell spanning the body rows
+        # (T13's rotated breakdown) has no floor of its own between them.
+        floor = next((lv for lv in levels if abs(lv[0] - v1) <= tol), levels[m])
+        body = walls_across(v1, levels[m][0], floor[1] - tol, floor[2] + tol)
+        left = [u for u in body if u < cells[0]["u0"] - tol]
+        right = [u for u in body if u > cells[-1]["u1"] + tol]
+        def empty(a, b):
+            return {"text": "", "over": "", "u0": a, "u1": b, "bold": False}
+        return ([empty(a, b) for a, b in zip(left, left[1:] + [cells[0]["u0"]])] + cells
+                + [empty(a, b) for a, b in zip([cells[-1]["u1"]] + right, right)])
+
     for i, (top, lo, hi) in enumerate(levels):
         j = next_level(i)
         if j is None:
@@ -606,13 +623,37 @@ def grid_header(page, words, frame=None, tol=RULE_TOL, is_label=None):
         if len(across) < 3 or not inside:
             continue                # the next floor down closes no grid row
         k = next_level(j)
+        spans = None
         if k is not None:
             body = walls_across(bottom, levels[k][0],
                                 min(lo2, levels[k][1]) - tol,
                                 max(hi2, levels[k][2]) + tol)
             if len(body) > len(across) and body[0] <= across[0] + tol \
                     and body[-1] >= across[-1] - tol:
-                across = body
+                spans, across = across, body
+        two = None
+        if spans is not None:
+            # The lower row ends at a floor as wide as the grid: a highlighted
+            # column's fill (T10's 2025, yellow) draws floors of its own width.
+            under = next((lv for lv in levels[j + 1:] if lv[0] - bottom >= ROW_GAP_MIN
+                          and lv[1] <= across[0] + tol and lv[2] >= across[-1] - tol), None)
+            two = under and _two_levels(words, _merge_positions(spans, 2 * tol),
+                                        _merge_positions(across, 2 * tol),
+                                        top, bottom, under[0], is_label)
+            if two:
+                return {"cells": _stub(two, under[0]), "v0": top, "v1": under[0]}
+        if not two and i > 0 and top - levels[i - 1][0] >= ROW_GAP_MIN:
+            # A row above whose floor runs only under its wide label (3B's
+            # `INCASSO`): this row is the lower one, the labels over it are there.
+            prev = levels[i - 1][0]
+            up = walls_across(prev, top, across[0] - tol, across[-1] + tol)
+            if 3 <= len(up) < len(across) and up[0] <= across[0] + tol \
+                    and up[-1] >= across[-1] - tol:
+                two = _two_levels(words, _merge_positions(up, 2 * tol),
+                                  _merge_positions(across, 2 * tol),
+                                  prev, top, bottom, is_label)
+                if two:
+                    return {"cells": _stub(two, bottom), "v0": prev, "v1": bottom}
         cells = []
         for a, b in zip(across, across[1:]):
             mine = sorted((w for w in inside if a < w.umid < b),
@@ -624,6 +665,37 @@ def grid_header(page, words, frame=None, tol=RULE_TOL, is_label=None):
             return None             # the grid starts with data: no header here
         return {"cells": cells, "v0": top, "v1": bottom}
     return None
+
+
+def _two_levels(words, spans, walls, top, middle, bottom, is_label):
+    """A header on two grid rows, or None: a label over several columns
+    (`Anno 2022` over `N. | Valore in € | %`, T10; `INCASSO` over its years,
+    Difesa 3B), and labels standing over both rows (`Paese`). The upper row's
+    walls are `spans`, the lower's `walls`. Each column gets its own label
+    (`text`) and the one printed over it (`over`, empty when its label stands
+    over both rows). Only when the lower row is a row of labels: else the
+    columns under a wide header cell are data (T2 leaves its stub unlabelled)."""
+    def text(u0, u1, v0, v1):
+        mine = sorted((w for w in words if u0 < w.umid < u1 and v0 < w.vmid < v1),
+                      key=lambda w: (round(w.v0), w.u0))
+        return " ".join(" ".join(w.text for w in mine).split()), any(w.bold for w in mine)
+    cells = []
+    for a, b in zip(walls, walls[1:]):
+        lo, hi = next(((x, y) for x, y in zip(spans, spans[1:])
+                       if x <= a + RULE_TOL and y >= b - RULE_TOL), (a, b))
+        if hi - lo <= b - a + RULE_TOL:         # one column wide: its label is all of it
+            label, bold = text(a, b, top, bottom)
+            cells.append({"text": label, "over": "", "u0": a, "u1": b, "bold": bold,
+                          "lower": False})
+        else:
+            label, bold = text(a, b, middle, bottom)
+            over, _ = text(lo, hi, top, middle)
+            cells.append({"text": label, "over": over, "u0": a, "u1": b, "bold": bold,
+                          "lower": True})
+    lower = [c["text"] for c in cells if c.pop("lower")]
+    if not lower or (is_label is not None and not is_label(lower)):
+        return None
+    return cells
 
 
 def join_floors(floors, tol=RULE_TOL):
@@ -907,11 +979,19 @@ def cell_matrix(bands, columns):
             # Two words that touch on one line are one word, printed in two
             # spans: Difesa 4 `THALES IT` + `ALIA.`, `MBDA ITALIA` + `.`.
             prev = last[best]
-            # A word ending in its own printed space (T2 `Paesi `) is not.
-            touching = (prev is not None and not prev.text[-1:].isspace()
-                        and abs(word.v0 - prev.v0) < BASELINE_TOL
-                        and word.u0 - prev.u1 <= WORD_GAP_EM * (word.size or prev.size))
-            cells[best] = (cells[best] + ("" if touching else " ") + word.text).strip()
+            # A word ending in its own printed space (T2 `Paesi `) is not,
+            # unless it is a number cut in two: a digit and its space, then a
+            # digit starting inside that space (3B `  3 ` + `2.288,00 €`, the
+            # page prints 32.288,00 €; `1 ` + `.000.000.000,00 €`). Words do overlap across a real space
+            # (DOG M `BENELLI ` + `ARMI`, 0.4 pt): only digits are joined.
+            near = (prev is not None and abs(word.v0 - prev.v0) < BASELINE_TOL
+                    and word.u0 - prev.u1 <= WORD_GAP_EM * (word.size or prev.size))
+            over = (near and prev.text[-1:].isspace() and word.u0 < prev.u1
+                    and prev.text.strip()[-1:].isdigit()
+                    and re.match(r"[.,]?\d", word.text.strip()) is not None)
+            touching = near and (not prev.text[-1:].isspace() or over)
+            head = cells[best].rstrip() if over else cells[best]
+            cells[best] = (head + ("" if touching else " ") + word.text).strip()
             last[best] = word
         rows.append(cells)
     return rows

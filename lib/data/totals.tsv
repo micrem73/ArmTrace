@@ -11,6 +11,14 @@
 #   sum <col> over subtotal        the printed subtotals of <col> added up (A1's EURO total:
 #                                  the rows give 0,05 more, its subtotals' cent roundings;
 #                                  each subtotal is checked against its rows)
+# A summary line printed in the grid (T20 under its ten countries) is a printed figure,
+# known by its label here, checked year column by year column (`lib/views._line_checks`):
+#   sum rows of Y                  the facts, in the edition's year only: another year's
+#                                  line may cover rows the table does not print (T20's
+#                                  2024 `Primi 10 Paesi` is 2024's own top ten)
+#   sum lines above                the summary lines printed above it
+#   -                              none: kept, listed UNCHECKED (T20's `Altri`)
+# (maintainer, 2026-10-24: the ten countries are the facts, these lines are figures)
 # A label under a heading carries it (`lib/extract.read_summary`): A1's per-currency totals are
 # `Totali parziali per tipo valuta: USD`; the first, `1.552.753,27`, beside no currency, is the
 # heading alone (the rows with no currency printed).
@@ -23,3 +31,6 @@ MAE/A1	^Totali parziali per tipo valuta$	sum ammontare where valuta= unless val_
 DIFESA/A5/2	^SOCIETA' ISCRITTE	count data_iscrizione
 DIFESA/A5/2	^SOCIETA' SOSPESE	count data_sospensione
 DIFESA/A5/2	^SOCIETA' CANCELLATE	count data_cancellazione
+MAE/T20	^Primi 10 Paesi$	sum rows of Y
+MAE/T20	^Altri$	-
+MAE/T20	^TOTALE$	sum lines above

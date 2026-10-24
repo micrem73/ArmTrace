@@ -160,8 +160,7 @@ def stored(year, result, key):
     E.create(db, name, spec)
     rows, _ = E.records(year, result, spec)
     db.executemany(f"INSERT INTO {name} VALUES ({','.join('?' * len(rows[0]))})", rows)
-    for i, label in enumerate(result.labels):
-        col = spec.printed[min(i, len(spec.printed) - 1)]
+    for i, (label, col) in enumerate(zip(result.labels, result.columns)):
         db.execute("INSERT INTO column_def VALUES (?,?,?,?,?,?,?,?)",
                    (name, key, int(year), i, col.key, col.type, label, col.sum_sql()))
     db.executemany("INSERT INTO printed_figure VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -176,6 +175,10 @@ def stored(year, result, key):
     ("MAE/T2", VOL1, 27, 27, 23, [0.0, 295.84, 595.28, 513.41]),     # the year window
     ("DOG/A1C2/M1", VOL2, 858, 867, 1896, None),
     ("DIFESA/A5/2", VOL2, 236, 240, 1274, None),     # a year stored, not printed
+    ("MAE/T10", VOL1, 46, 46, 42, None),             # measures under each year
+    ("MAE/T13", VOL1, 51, 51, 47, None),             # a rotated label over its block
+    ("MAE/T20", VOL1, 62, 62, 58, [0.0, 377.04, 595.28, 669.34]),   # two year blocks
+    ("DIFESA/A2C6/3B", VOL2, 244, 251, 1282, None),  # once, rowsum, a total box
 ])
 def test_the_database_alone_rebuilds_the_printed_table(year, sources, key, volume, first,
                                                         last, printed, clip):
@@ -495,3 +498,101 @@ def test_difesa_a5_2_register_lists_by_place_not_text_order(year, sources):
     assert rows["ESPLODENTI SABINO S.p.A."]["numero_iscrizione"] == "00126"
     assert not rows["ESPLODENTI SABINO S.p.A."]["data_iscrizione"]
     assert statuses(r, key) == ["PASS", "PASS"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_two_level_header_gives_each_column_its_label_and_the_one_over_it(year, sources):
+    """T10 prints `Anno 2022` over `N. | Valore in € | %`, and `Paese` over both
+    rows; Annesso 3B prints `INCASSO` over its years (maintainer, 2026-10-24)."""
+    from lib import geometry as geo
+    from lib import grammar as gra
+
+    def header(volume, pdf_page):
+        doc = pymupdf.open(ROOT / "In" / "2025" / volume)
+        sp = SourcePage(doc, pdf_page, 0, None)
+        frame, words = extract.page_words(sp)
+        h = geo.grid_header(sp, words, frame, is_label=gra.is_label_row)
+        return [(c.get("over", ""), c["text"]) for c in h["cells"]]
+    t10 = header(VOL1, 46)
+    assert t10[:4] == [("", "Paese"), ("Anno 2022", "N."), ("Anno 2022", "Valore in €"),
+                       ("Anno 2022", "%")]
+    assert len(t10) == 13 and t10[-1] == ("Anno 2025", "%")
+    b3 = header(VOL2, 244)
+    assert b3[3:8] == [("INCASSO", "2022"), ("INCASSO", "2023"), ("INCASSO", "2024"),
+                       ("INCASSO", "2025"), ("INCASSO", "Nel quadriennio (2022-2025)")]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_year_windows_with_several_measures_add_up_year_by_year(year, sources):
+    """T10 and T11: `Anno <year>` over its measures; one row per item and year
+    (maintainer, 2026-10-24); each year's printed total against its rows."""
+    import ExtractTables as E
+    t10 = read(VOL1, 46, 46, 42, "MAE/T10")
+    data = [x for x in t10.rows if x["kind"] == "data"]
+    assert len(data) == 22 and data[0]["cells"][:4] == ["GERMANIA", "115", "149.076.248,68",
+                                                         "52,26%"]
+    assert statuses(t10, "MAE/T10") == ["PASS"] * 8
+    rows, _ = E.records(year, t10, extract.specs()["MAE/T10"])
+    turchia = [r for r in rows if "TURCHIA" in r]
+    assert len(turchia) == 1 and 2023 in turchia[0]       # printed for 2023 only
+    t11 = read(VOL1, 47, 47, 43, "MAE/T11")
+    assert len([x for x in t11.rows if x["kind"] == "data"]) == 21
+    assert statuses(t11, "MAE/T11") == ["PASS"] * 7 + ["ROUNDING"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_two_breakdowns_of_one_total_each_checked_on_their_own(year, sources):
+    """T13 and T23 print `Categoria (Military List)` and `Tipologia` rotated,
+    each in a cell spanning its block (maintainer, 2026-10-24). T13: both add up
+    to TOTALE, but its `Numero` total is 1 off in 2022, 2023 and 2025 (A1's
+    quantities give the rows' sum: the print is off). T23: the categories add up
+    to MATERIALI, the type block to TOTALE."""
+    from collections import Counter
+    t13 = read(VOL1, 51, 51, 47, "MAE/T13")
+    blocks = Counter(x["cells"][0] for x in t13.rows if x["kind"] == "data")
+    assert blocks == {"Categoria (Military List)": 22, "Tipologia": 4}
+    failed = [c[0] for c in extract.checks(t13, extract.specs()["MAE/T13"]) if c[3] == "FAIL"]
+    assert len(failed) == 5 and all(" numero " in c for c in failed)
+    t23 = read(VOL1, 66, 66, 62, "MAE/T23")
+    assert Counter(statuses(t23, "MAE/T23")) == {"PASS": 13, "ROUNDING": 3}
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_t20_ten_countries_are_facts_its_summary_lines_figures(year, sources):
+    """T20 prints 2025's top ten and their 2024 values, then `Primi 10 Paesi`,
+    `Altri`, `TOTALE` (maintainer, 2026-10-24: figures, not facts). The labels
+    stand outside their box, right-aligned; the gap between the year blocks is
+    no column. 2024's `Primi 10 Paesi` is 2024's own top ten: UNCHECKED."""
+    from collections import Counter
+    r = read(VOL1, 62, 62, 58, "MAE/T20", clip=[0.0, 377.04, 595.28, 669.34])   # T21 below
+    kinds = Counter(x["kind"] for x in r.rows)
+    assert kinds == {"data": 10, "subtotal": 2, "total": 1} and not r.issues
+    assert [x["cells"][0] for x in r.rows[-3:]] == ["Primi 10 Paesi", "Altri", "TOTALE"]
+    assert Counter(statuses(r, "MAE/T20")) == {"PASS": 5, "ROUNDING": 1, "UNCHECKED": 6}
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_annesso_3b_incasso_by_year_importo_once_quadriennio_checked(year, sources):
+    """Annesso 3B (maintainer, 2026-10-24): one row per authorisation and
+    year; Importo and Residuo on the edition's year only; `Nel quadriennio` a
+    printed figure, checked row by row; `TOTALE INCASSO`, a box of its own
+    under the last page's grid, checked year by year. The print numbers 180
+    twice and skips 42-53 and 365: kept as printed."""
+    from collections import Counter
+    r = read(VOL2, 244, 251, 1282, "DIFESA/A2C6/3B")
+    data = [x for x in r.rows if x["kind"] == "data"]
+    assert len(data) == 488 and not r.issues
+    assert r.rows[-1]["kind"] == "total" and r.rows[-1]["cells"][0] == "TOTALE INCASSO"
+    # `  3 ` + `2.288,00 €`, the second over the first's space: one number.
+    assert next(x for x in data if x["cells"][1] == "20191277")["cells"][2] == "32.288,00 €"
+    assert Counter(statuses(r, "DIFESA/A2C6/3B")) == {"PASS": 493}
+    db = stored(year, r, "DIFESA/A2C6/3B")
+    cols = [c[1] for c in db.execute("PRAGMA table_info(difesa_a2c6_3b)")]
+    assert "incasso_quadriennio" not in cols
+    assert db.execute("SELECT count(*) FROM difesa_a2c6_3b").fetchone()[0] == 488 * 4
+    assert db.execute("SELECT anno, importo_autorizzato, incasso_raw FROM difesa_a2c6_3b "
+                      "WHERE rif_istanza='20180256' ORDER BY anno").fetchall() == [
+        (2022, None, "0,00 €"), (2023, None, "18.335,00 €"), (2024, None, "31.360,00 €"),
+        (2025, 1500000, "0,00 €")]
+    assert db.execute("SELECT count(*) FROM printed_figure WHERE kind='rowsum'"
+                      ).fetchone()[0] == 488

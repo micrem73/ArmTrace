@@ -50,7 +50,7 @@ TOL = geo.RULE_TOL
 VALUE_SHAPES = {gra.SHAPE_NUMBER, gra.SHAPE_CURRENCY, gra.SHAPE_DATE,
                 gra.SHAPE_PERCENT, gra.SHAPE_CODE, gra.SHAPE_YEAR}
 # Columns of printed words: a value's shape there is text (`CAL. 5,56`).
-TEXT_TYPES = {"text", "group", "carry"}
+TEXT_TYPES = {"text", "group", "carry", "block"}
 # A printed amount: what must never be lost outside a table's body.
 AMOUNT_WORD = re.compile(r"\d,\d{2}%?$")
 # A note printed under the table belongs to it (DECISIONS.md 2026-10-17).
@@ -86,6 +86,8 @@ class Column:
     link: tuple = None          # `link`: (amount col, item col, opener col)
     of: str = None              # `company`: the column printing the name
     event: str = None           # `event <WORD>`: filled on the list headed <WORD>
+    against: dict = None        # `block`: {block: the row it adds up to, not the total}
+    once: bool = False          # `once`: stored on the edition year's row only (3B)
 
     def sum_sql(self):
         """The SQL a data row adds to this column's printed totals, or None.
@@ -151,12 +153,16 @@ def specs():
         col = Column(row["col"], row["type"],
                      [x for x in (row["labels"] or "").split("|")])
         rule = (row["sum"] or "").split()
+        col.once = "once" in rule
+        rule = [w for w in rule if w != "once"]
         if col.type == "link":
             col.link = tuple(rule)
-        elif col.type == "company":
+        elif col.type in ("company", "rowsum"):
             col.of = rule[0]
         elif rule[:1] == ["event"]:
             col.event = rule[1]
+        elif col.type == "block" and row["sum"]:
+            col.against = dict(x.strip().split("=") for x in row["sum"].split(";"))
         elif rule[:1] == ["sum"]:
             col.sum = True
             if rule[1:2] == ["else"]:
@@ -204,6 +210,7 @@ class Result:
     notes: list = field(default_factory=list)     # (pdf_page, printed_page, text)
     issues: list = field(default_factory=list)    # (pdf_page, kind, detail)
     labels: list = field(default_factory=list)    # printed header, first page
+    columns: list = field(default_factory=list)   # the spec column under each label
     pages: dict = field(default_factory=dict)     # kind -> count
 
 
@@ -219,6 +226,24 @@ def page_words(page, frame=None):
                if d != (round(frame.right[0]), round(frame.right[1]))]
     words = [w for w in geo.lines_of(page, frame, foreign_dirs=foreign) if not w.foreign]
     return frame, words
+
+
+def _rotated_cells(page, frame, levels):
+    """[(u, v_top, v_bottom, text)]: text printed across the table's lines
+    (T13's `Categoria (Military List)`, rotated in its stub), with the floors
+    above and below it that cross its column: the cell it labels."""
+    out = []
+    for span in page.get_texttrace(across=True):
+        text = " ".join("".join(chr(c[0]) for c in span["chars"]).split())
+        x0, y0, x1, y1 = span["bbox"]
+        us, vs = zip(*(frame.point(x, y) for x, y in ((x0, y0), (x1, y1))))
+        u = sum(us) / 2
+        crossing = [lv[0] for lv in levels if lv[1] - TOL <= u <= lv[2] + TOL]
+        above = [v for v in crossing if v <= min(vs)]
+        below = [v for v in crossing if v >= max(vs)]
+        if text and above and below:
+            out.append((u, max(above), min(below), text))
+    return out
 
 
 def _rules(page, frame):
@@ -254,6 +279,11 @@ def _page_columns(cells, walls):
     return None
 
 
+# The unprinted space between two blocks of year columns (T20's 2025 and 2024):
+# a column of the page, not of the table; a value printed in it is an issue.
+GAP = Column("", "gap", [""])
+
+
 class Reader:
     def __init__(self, year, key, spec):
         self.year, self.key, self.spec = str(year), key, spec
@@ -265,29 +295,48 @@ class Reader:
         self.carried = {}           # column index -> text carried down (`carry`)
         self.frame = None           # the table's reading frame, from its header
         self.row_ord = 0
+        self.blocks = []            # labels of cells spanning rows (`block`)
 
     # -- header ---------------------------------------------------------------
 
     def accept_header(self, cells, pdf_page):
-        labels = [gra.normalise_text(c["text"]) for c in cells]
+        texts = [gra.normalise_text(c["text"]) for c in cells]
+        overs = [gra.normalise_text(c.get("over", "")) for c in cells]
+        # A two-level label is stored as printed, top first: `Anno 2022 / N.`.
+        labels = [" / ".join(x for x in (o, t) if x) for o, t in zip(overs, texts)]
         printed = self.spec.printed
-        years = self.spec.years
+        measures = [c for c in printed if c.type == "years"]
         order, year_of = [], {}
-        if years:
-            # A stub of fixed columns, then one column per printed year.
-            fixed = [c for c in printed if c is not years]
-            if len(labels) < len(fixed) + 1:
+        if measures:
+            # Fixed columns, in their order, and year columns: a year printed
+            # alone (T2: the label is the year, one measure), or over a measure
+            # (T10: `Anno 2022` over `N.`), or under one (3B: `INCASSO` over `2022`).
+            fixed = [c for c in printed if c.type != "years"]
+            for i, (over, text) in enumerate(zip(overs, texts)):
+                if fixed and fold(text, self.year) in [
+                        fold(x, self.year) for x in fixed[0].labels]:
+                    order.append(fixed.pop(0))
+                    continue
+                if not over and not text and year_of:
+                    order.append(GAP)       # between two year blocks (T20): empty
+                    continue
+                year, measure = None, None
+                if over and YEAR.search(over):
+                    year, label = YEAR.search(over).group(), text
+                elif over and YEAR.fullmatch(text):
+                    year, label = text, over
+                elif not over and YEAR.fullmatch(text) and len(measures) == 1 \
+                        and fold(text, self.year) in [x.lower() for x in measures[0].labels]:
+                    year, measure = text, measures[0]
+                if year and measure is None:
+                    measure = next((m for m in measures if fold(label, self.year) in
+                                    [fold(x, self.year) for x in m.labels]), None)
+                if measure is None:
+                    return self._refuse(pdf_page, labels)
+                order.append(measure)
+                year_of[i] = int(year)
+            if fixed or not year_of:
                 return self._refuse(pdf_page, labels)
-            for i, label in enumerate(labels):
-                if i < len(fixed):
-                    if fold(label, self.year) not in [fold(x, self.year) for x in fixed[i].labels]:
-                        return self._refuse(pdf_page, labels)
-                    order.append(fixed[i])
-                else:
-                    if fold(label, self.year) not in [x.lower() for x in years.labels]:
-                        return self._refuse(pdf_page, labels)
-                    order.append(years)
-                    year_of[i] = int(label)
         else:
             if len(labels) != len(printed):
                 return self._refuse(pdf_page, labels)
@@ -296,7 +345,7 @@ class Reader:
                     return self._refuse(pdf_page, labels)
                 order.append(col)
         if self.cells is None:
-            self.result.labels = labels
+            self.result.labels, self.result.columns = labels, order
         self.cells, self.order, self.year_of = cells, order, year_of
         return True
 
@@ -314,6 +363,7 @@ class Reader:
             self.count("illegible")
             return
         walls, levels = _rules(sp, frame)
+        self.blocks = _rotated_cells(sp, frame, levels)
         header = geo.grid_header(sp, words, frame, is_label=gra.is_label_row)
         if header and (self.cells is None or self.matches(header["cells"])):
             if not self.accept_header(header["cells"], sp.pdf_page):
@@ -354,26 +404,73 @@ class Reader:
             if not STAMP.search(" ".join(w.text for w in band))]
         last_line = max((max(w.v1 for w in band) for band in lines), default=v_top)
         spanning = [b for _u, a, b in mine if b - max(a, v_top) >= 0.5 * (last_line - v_top)]
+        total, boxed = None, []
         if len(spanning) >= 2:
             v_bottom = max(spanning + floors[-1:]) + TOL
+            # A total in a box of its own under the grid, with its own labels
+            # (3B's `TOTALE INCASSO`): the grid ends where its walls do.
+            walls_end = max(spanning) + TOL
+            total, boxed = self.read_total_box([w for w in words if w.vmid > walls_end],
+                                               sp, frame)
+            if total:
+                v_bottom = walls_end
         else:
             v_bottom = last_line + TOL
         body = [w for w in words
                 if v_top < w.vmid < v_bottom and u_lo < w.umid < u_hi]
-        self.check_outside(sp, words, body, v_bottom)
+        self.check_outside(sp, words, body + boxed, v_bottom)
         self.page_cells = cells
         self.read_body(sp, body, [v_top] + [f for f in floors if v_top < f < v_bottom]
                        + [v_bottom], mine, first=(kind == "continuation"))
+        if total:
+            self.emit(sp, "total", total)
 
     def matches(self, cells):
         """A header candidate after the first header is one only when it
         prints the agreed labels; else it is a text-only data row (Difesa 4
         p2 opens on `GRECIA, SPAGNA, AUSTRIA.`)."""
-        labels = [fold(c["text"], self.year) for c in cells]
+        labels = [fold(" / ".join(x for x in (gra.normalise_text(c.get("over", "")),
+                                               gra.normalise_text(c["text"])) if x), self.year)
+                  for c in cells]
         return labels == [fold(x, self.year) for x in self.result.labels]
 
     def count(self, kind):
         self.result.pages[kind] = self.result.pages.get(kind, 0) + 1
+
+    def read_total_box(self, below, sp, frame):
+        """A total printed in a box of its own under the grid, with its own
+        labels (3B: `TOTALE INCASSO` over `2022 ... 2025 | Nel quadriennio`):
+        a `total` row, each value under the table column of the same label.
+        (row, the box's words), or (None, []) when there is none or a label
+        matches no column: its words stay outside the table, an issue."""
+        if not below:
+            return None, []
+        box = geo.grid_header(sp, below, frame, is_label=gra.is_label_row)
+        if not box:
+            return None, []
+        # The title is over the labels, or the line above them in the box's width.
+        u0, u1 = box["cells"][0]["u0"], box["cells"][-1]["u1"]
+        above = [w for w in below if w.vmid < box["v0"] and u0 < w.umid < u1]
+        title = " ".join(dict.fromkeys(c.get("over", "") for c in box["cells"] if c.get("over"))) \
+            or " ".join(w.text.strip() for w in sorted(above, key=lambda w: w.u0))
+        if not TOTAL_LEAD.match(title):
+            return None, []
+        mine = [fold(c["text"], self.year) for c in self.cells]
+        at = []
+        for c in box["cells"]:
+            label = fold(gra.normalise_text(c["text"]), self.year)
+            if label not in mine:
+                return None, []
+            at.append(mine.index(label))
+        values = [w for w in below if w.vmid > box["v1"]]
+        row = [""] * len(self.order)
+        row[0] = title
+        used = above + [w for w in below if box["v0"] < w.vmid < box["v1"]]
+        for c, i in zip(box["cells"], at):
+            inside = [w for w in values if c["u0"] < w.umid < c["u1"]]
+            row[i] = " ".join(w.text.strip() for w in inside)
+            used += inside
+        return row, used
 
     def check_outside(self, sp, words, body, v_bottom):
         """Words outside the body. A note under the table is kept, the page
@@ -455,8 +552,24 @@ class Reader:
                 self.place(sp, joined, None, first)
             else:
                 for band, row in zip(box, rows):
-                    self.place(sp, row, band, first)
+                    self.place(sp, self.label_outside(row, band, walls), band, first)
             first = False
+
+    def label_outside(self, row, band, walls):
+        """A row label printed left of its line's walls, outside the box its
+        values are in (T20's `Altri`, `TOTALE`, right-aligned under the stub
+        and `Pos.`): the first column's, wherever its width reaches."""
+        lead = next((i for i, t in enumerate(row) if t), None)
+        if not lead or self.order[0].type not in TEXT_TYPES:
+            return row
+        v = sum(w.vmid for w in band) / len(band)
+        crossing = [u for u, a, b in walls if a - TOL <= v <= b + TOL]
+        cell = self.page_cells[lead]
+        mine = [w for w in band if cell["u0"] < w.umid < cell["u1"]]
+        if crossing and mine and max(w.u1 for w in mine) <= min(crossing) + TOL:
+            row = list(row)
+            row[0], row[lead] = row[lead], ""
+        return row
 
     def lines(self, bands):
         """A band printed inside the height of the line above, in columns
@@ -489,6 +602,14 @@ class Reader:
     def place(self, sp, row, band, first):
         """A record, a group heading, or the continuation of the record above."""
         row = [gra.normalise_text(t) for t in row]
+        if band is not None and any(row):
+            # A `block` column's label stands in a cell spanning its rows (T13).
+            v = sum(w.vmid for w in band) / len(band)
+            for i, col in enumerate(self.order):
+                if col.type == "block" and not row[i]:
+                    cell = self.page_cells[i]
+                    row[i] = next((text for u, v0, v1, text in self.blocks
+                                   if cell["u0"] < u < cell["u1"] and v0 < v < v1), "")
         if not any(row):
             return
         # A total row opens on its label (`Totale complessivo`); a description
@@ -518,6 +639,8 @@ class Reader:
             return self.emit(sp, "subtotal", row, group=self.group or named.group(1))
         elif self.spec.group and self.only_amounts(row):
             kind = "subtotal"
+        elif any(rx.search(lead) for rx, _expr in self.spec.totals) and self.has_value(row):
+            kind = "subtotal"       # a summary line in the grid, by its label (T20)
         else:
             kind = "data"
         self.emit(sp, kind, row, group=self.group if kind != "total" else None)
@@ -704,6 +827,7 @@ def read_list(year, key, spec, pages):
             result.pages.get("header" if started else "cover", 0) + 1
     close()
     result.labels = [seen_labels.get(c.key, "") for c in order]
+    result.columns = list(order)
     return result
 
 
@@ -810,7 +934,7 @@ def parse(col_type, raw):
     raw = raw or ""
     if raw == "":
         return None, None
-    if col_type in ("text", "code", "group", "carry"):
+    if col_type in ("text", "code", "group", "carry", "block"):
         return raw, ("undecoded" if glyphs.undecoded(raw) else None)
     if col_type in ("amount", "number", "years"):
         if raw in gra.DASHES:

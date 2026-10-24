@@ -34,8 +34,24 @@
 #   company not printed: ArmTrace's id of the company named in the column the sum field
 #           gives (`lib/companies.py`; names: lib/data/company-names.tsv), NULL with an
 #           issue when the name has none yet (maintainer, 2026-10-21, plan.md Phase 3)
+#   block   a label printed once in a cell spanning a block of rows (T13's rotated
+#           `Categoria (Military List)`, then `Tipologia`): stored on each row of the cell;
+#           a total over blocks is checked against each block on its own (maintainer,
+#           2026-10-24: two breakdowns of one total, one table). sum field
+#           `<block>=<row>`: that block adds up to that row, not to the total (T23: the
+#           imports' categories give MATERIALI, figure by figure; inferred from the
+#           figures, the report does not say; maintainer, 2026-10-24)
+#   rowsum  a row's own printed total of a year column (3B's `Nel quadriennio`), sum field
+#           the column it adds: a printed figure, not a fact (`printed_figure` kind rowsum),
+#           checked row by row (maintainer, 2026-10-24)
+#   once    in the sum field: stored on the row of the edition's year only, NULL on the
+#           others, so a sum is the printed one (3B's Importo, Residuo; maintainer, 2026-10-24)
 #   years   the printed year columns of a table that prints a year window (T2): one
-#           row per printed row and year, `anno` + `valore` (amount)
+#           row per printed row and year, `anno` + `valore` (amount). Several measures
+#           per year (T10: `Anno 2022` over `N. | Valore in € | %`): one `years` line
+#           per measure, labelled with the measure; the year is read from the label
+#           over it (or under it: 3B's `INCASSO` over `2022`), `anno` is one column
+#           (maintainer, 2026-10-24). `sum`: each year's cell is checked on its own
 # event: a `date` column with sum field `event <WORD>` is filled on the rows of the list
 #   headed `SOCIETA' <WORD> <year> (<n>)`: with the date the row prints, else the edition's
 #   year (`2025`, nothing printed, flagged). A table with event columns is a register list
@@ -110,3 +126,29 @@ DIFESA/A5/2	data_sospensione	date		event SOSPESE
 DIFESA/A5/2	data_cancellazione	date	Data Canc.	event CANCELLATE
 DIFESA/A5/2	motivazione	text	Motivazione	
 DIFESA/A5/2	id_ditta	company		denominazione
+MAE/T10	paese	text	Paese	
+MAE/T10	n	years	N.	sum
+MAE/T10	valore_euro	years	Valore in €	sum
+MAE/T10	percentuale	years	%	
+MAE/T11	programma_accordo_intergovernativo	text	Programma/accordo intergovernativo	
+MAE/T11	n_aut	years	N. aut.	sum
+MAE/T11	valore_euro	years	Valore in €	sum
+MAE/T13	ripartizione	block		
+MAE/T13	voce	text		
+MAE/T13	valore_euro	years	Valore in €	sum
+MAE/T13	numero	years	Numero	sum
+MAE/T23	ripartizione	block		Categoria (Military List)=MATERIALI
+MAE/T23	voce	text		
+MAE/T23	valore_euro	years	Valore in €	sum
+MAE/T23	quantita	years	Quantità	sum
+MAE/T20	paese_di_provenienza	text	Paese di provenienza	
+MAE/T20	pos	years	Pos.	
+MAE/T20	valore_euro	years	Valore in €	sum
+MAE/T20	percentuale	years	%	
+MAE/T20	n_aut	years	N. Aut.	sum
+DIFESA/A2C6/3B	n_ord	code	N° Ord.	
+DIFESA/A2C6/3B	rif_istanza	code	Rif. Istanza	
+DIFESA/A2C6/3B	importo_autorizzato	amount	Importo autorizzato	once
+DIFESA/A2C6/3B	incasso	years	INCASSO	sum
+DIFESA/A2C6/3B	incasso_quadriennio	rowsum	Nel quadriennio (Y-3-Y)	incasso
+DIFESA/A2C6/3B	residuo	amount	Residuo eventuale da incassare (diff. tra autorizzato ed incassato nel corso degli anni di validità dell'autorizzazione)	once
