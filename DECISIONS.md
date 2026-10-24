@@ -525,6 +525,24 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   printed beside a register number that already has an id takes it before any name
   matching (`how` = `register <number>`); name matching only covers what no number settles.
 
+- **Lists of companies in a cell: a list of ids** (maintainer, 2026-10-24). Difesa 4's
+  `DITTE ITALIANE PARTECIPANTI` gets `id_ditte` (type `companies`): the ids of the companies
+  the cell lists, a JSON list in printed order (`json_each` reads it), null for a name with no
+  id yet; the cell stays as printed. Split by rule (`lib/companies.split_list`: commas, `: `,
+  `. ` before a capital; asides in brackets and footnote marks are no part of a name). A name
+  only a list prints never makes a company by itself: the maintainer decided all 117 on a
+  matching page (72 to a known company, 39 new, `Altre aziende italiane partecipanti` not a
+  company: id 0, left out of the list; `CONSORZIO SIGEN LEONARDO` two companies, a comma left
+  out: `34+177`; FIMAC to FIMAC S.p.A., MI.TEL TELEOPTIX new). Any other table that lists
+  companies in a cell takes the same type.
+- **`riga_*` ids are unique with the year** (maintainer, 2026-10-24). Every row of every
+  table carries `year`, the edition it was read from; the site puts all years in one table.
+  A `riga_*` value is a `row_ord` of its year's table, so the key of an authorisation (A1, F1)
+  is (`year`, `riga_autorizzazione`), and a join on `riga_importo` also matches `year`. Not a
+  number made unique by itself (year folded in): the year is already on the row, and an id
+  that looked global would invite following an authorisation across editions, which A1 and F1
+  cannot support (no printed number). Tables that print an official number (MEF EE, Dogane M)
+  are the ones to join across years.
 - **Two-level headers: one row per item and year** (maintainer, 2026-10-24). A year window
   with several measures per year (MAE T10, T11, T13, T20, T23: `Anno <year>` over `N. |
   Valore in € | %`) is stored as T2 is: one row per printed row and year, `anno` plus one
@@ -552,6 +570,25 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   first column's. Two words joined without a space where the second starts inside the
   first's printed space only for a number cut in two (3B `  3 ` + `2.288,00 €`; the page
   prints 32.288,00 €): words also overlap across a real space (DOG M `BENELLI ARMI`).
+- **MAE summaries without a ruled body: B4, D, G1, G2, I, F1** (2026-10-24, columns agreed
+  by the maintainer the same day). An area printed once above its countries, in a column the
+  header labels (B4's `Area Geografica`), is a `group` with a label: a printed column, blank on
+  data rows. F1 is A1's layout for imports (links and ids as A1's). Reading rules, all tables:
+  a wall starting right under the header divides the cell above it (B4 from p2); a header cell
+  holding two agreed labels with no wall between them is split between their words, at a body
+  wall if one stands in the gap (F1 `Ammontare EURO`); the grid runs to its last wall, however
+  short (B4 p682: a second area under the first); a subtotal may print a count beside its
+  amounts (B4's `22 | 37.468.488,89`); a value may carry a comment in its cell, kept as printed
+  and read without it (`265.139.737,31 (pari a 3,43 %)`: A2's shares, a note before, are now
+  in its total row's text); after a subtotal, a text-only line opens a group even at a page's
+  top (I's OCEANIA); where a heading would be, a footnote is a note (`(*) ...`, or a sentence
+  of eight words or more: `LE AUTORIZZAZIONI CON VALORE NULLO ...`); a page with no header
+  whose first amount is on an agreed summary line is a summary page (F1's last); on a summary
+  page `(pari a N %)` is a percentage and a second value on a line is labelled `(2)`; the page
+  stamp is furniture even after a note. Checks: B4, D, I and G2's totals against their area
+  subtotals (`sum over subtotal`, as A1's EURO total: the countries are rounded, the areas are
+  not; B4's countries give 3 cents more); the `di cui` and `Totale ai Fini Doganali` lines (no
+  column holds them) are kept, UNCHECKED.
 - **What the six tables say** (2025). T13: Military List category and type (MATERIALI,
   TECNOLOGIE, SERVIZI, RICAMBI) are two codes on every item (A1's `Cat.` and `Tipo`, legend p69):
   both blocks add up to TOTALE; A1's quantities give each of T13's 2025 `Numero` figures

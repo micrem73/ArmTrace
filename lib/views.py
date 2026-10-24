@@ -65,8 +65,8 @@ def from_db(db, key, year, spec=None):
             if col.type == "years":
                 hit = next((r for r in rows if r["anno"] == year_of[i]), {})
                 cells.append(hit.get(f"{col.key}_raw") or "")
-            elif col.type == "gap":
-                cells.append("")
+            elif col.type in ("gap", "group"):
+                cells.append("")        # a group is printed as its heading
             elif col.type == "rowsum":
                 cells.append(rowsums.get((row_ord, i)) or "")
             elif col.type in ("amount", "number", "date"):
@@ -173,28 +173,40 @@ def _rowsum_checks(row):
 
 def _line_checks(row, rule, facts, above):
     """A summary line printed in the grid, checked by its `totals.tsv` rule,
-    year column by year column (T20): `sum rows of Y` the facts, in the
-    edition's year only (another year's line may cover rows not printed);
-    `sum lines above` the lines printed above it; `-` none (UNCHECKED)."""
+    column by column (a year column cell by cell): `sum rows of Y` the facts,
+    in the edition's year only (another year's line may cover rows not
+    printed, T20); `sum lines above` the summary lines printed above it;
+    `sum over subtotal` the subtotals above it (B4's total: its countries are
+    rounded, its areas are not, as A1's); `-` none (UNCHECKED)."""
     out = []
     latest = max(row["year_of"].values(), default=None)
     for i, col in enumerate(row["order"]):
-        if col.type != "years" or not col.sum:
+        if not col.sum:
             continue
         printed = row["cells"][i]
-        value, _ = extract.parse("amount", printed)
+        value = _printed_value(printed)
         if value is None:
             continue
-        name = f"{row['cells'][0]} p{row['pdf_page']} {col.key} {row['year_of'][i]}"
-        if rule == ["sum", "rows", "of", "Y"] and row["year_of"][i] == latest:
-            computed = sum(extract.parse("amount", r["cells"][i])[0] or 0 for r in facts)
+        year = row["year_of"].get(i)
+        name = f"{row['cells'][0]} p{row['pdf_page']} {col.key}" + (f" {year}" if year else "")
+        if rule == ["sum", "rows", "of", "Y"] and year == latest:
+            scope = facts
         elif rule == ["sum", "lines", "above"]:
-            computed = sum(extract.parse("amount", r["cells"][i])[0] or 0 for r in above)
+            scope = above
+        elif rule == ["sum", "over", "subtotal"]:
+            scope = [r for r in above if r["kind"] == "subtotal"]
         else:
             out.append((name, printed, None, "UNCHECKED"))
             continue
+        computed = sum(extract.parse("amount", r["cells"][i])[0] or 0 for r in scope)
         out.append((name, printed, computed, extract._status(computed, value)))
     return out
+
+
+def _printed_value(text):
+    """A printed figure's value, a comment after it set aside: A2's and B4's
+    `265.139.737,31 (pari a 3,43 %)` (`ExtractTables.figures` stores it so)."""
+    return extract.parse("amount", (text or "").split(" (")[0].strip())[0]
 
 
 def _sums(row, scope, spec):
@@ -203,7 +215,7 @@ def _sums(row, scope, spec):
     for i, col in enumerate(row["order"]):
         if col.type != "years" or not col.sum:
             continue
-        value, _ = extract.parse("amount", row["cells"][i])
+        value = _printed_value(row["cells"][i])
         if value is None:
             continue
         computed = sum(extract.parse("amount", r["cells"][i])[0] or 0 for r in scope)
@@ -211,7 +223,7 @@ def _sums(row, scope, spec):
                     row["cells"][i], computed, extract._status(computed, value)))
     for col in (c for c in spec.printed if c.sum and c.type != "years"):
         printed = extract._cell(row, col.key)
-        value, _ = extract.parse("amount", printed)
+        value = _printed_value(printed)
         if value is None:
             continue
         computed = sum(extract._effective(r, col, spec) for r in scope)
@@ -275,6 +287,8 @@ def _summary_check(label, raw, facts, figures, spec):
         return (f"printed {label!r}", raw, None, "UNCHECKED")
     m, expr = rule
     words = expr.split()
+    if words == ["-"]:
+        return (f"printed {label!r}", raw, None, "UNCHECKED")
     if words[0] == "count":
         computed = sum(1 for r in facts if extract._cell(r, words[1])
                        or words[1] in r.get("implied", {}))

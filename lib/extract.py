@@ -118,7 +118,10 @@ class Spec:
     @property
     def printed(self):
         """The columns the header prints, in order (not the group heading)."""
-        return [c for c in self.columns if c.type not in ("group", "link", "unit", "company")]
+        # A group heading in a column the header names (MAE B4's `Area Geografica`)
+        # is printed; one over the rows with no column (A1's operator) is not.
+        return [c for c in self.columns if c.type not in ("link", "unit", "company", "companies")
+                and not (c.type == "group" and not any(c.labels))]
 
     @property
     def group(self):
@@ -135,6 +138,10 @@ class Spec:
     @property
     def company(self):
         return next((c for c in self.columns if c.type == "company"), None)
+
+    @property
+    def company_lists(self):
+        return [c for c in self.columns if c.type == "companies"]
 
     @property
     def years(self):
@@ -157,7 +164,7 @@ def specs():
         rule = [w for w in rule if w != "once"]
         if col.type == "link":
             col.link = tuple(rule)
-        elif col.type in ("company", "rowsum"):
+        elif col.type in ("company", "companies", "rowsum"):
             col.of = rule[0]
         elif rule[:1] == ["event"]:
             col.event = rule[1]
@@ -226,6 +233,18 @@ def page_words(page, frame=None):
                if d != (round(frame.right[0]), round(frame.right[1]))]
     words = [w for w in geo.lines_of(page, frame, foreign_dirs=foreign) if not w.foreign]
     return frame, words
+
+
+def is_note(text):
+    """A footnote: one opening as notes do (`(*)`, `Fonte`, ...), or a sentence
+    of its own, eight words or more ending a sentence (MAE D, G1, G2, I:
+    `LE AUTORIZZAZIONI CON VALORE NULLO SONO CONTABILIZZATE AI SOLI FINI
+    DOGANALI (SENZA REGOLAMENTO FINANZIARIO).`)."""
+    text = text.strip()
+    last = text.split()[-1] if text else ""
+    # A sentence's end, not an abbreviation's: A1's operator `... AMEDEO LIA S.P.A.`.
+    sentence = text.endswith(".") and "." not in last[:-1]
+    return bool(NOTE_START.match(text)) or (len(text.split()) >= 8 and sentence)
 
 
 def _rotated_cells(page, frame, levels):
@@ -349,6 +368,49 @@ class Reader:
         self.cells, self.order, self.year_of = cells, order, year_of
         return True
 
+    def summary_page(self, words):
+        """A page with no header whose first line printing an amount is one of
+        the table's agreed summary lines (`totals.tsv`): its summary (MAE F1's
+        last page, boxed: its walls would pass for the grid's). Rows before it
+        make it a page of the grid (MAE D's last page: OCEANIA, then the box)."""
+        for band in geo.row_bands(words):
+            text = gra.normalise_text(" ".join(w.text for w in sorted(band, key=lambda w: w.u0)))
+            if any(AMOUNT_WORD.search(w.text.strip()) for w in band):
+                return any(rx.search(text) for rx, _expr in self.spec.totals)
+        return False
+
+    def split_merged(self, header, words, walls):
+        """A header cell holding two agreed labels in a row, with no wall drawn
+        between them in the header (MAE F1: `Ammontare EURO`; the wall runs
+        only round the body's amounts): two cells, divided where a wall stands
+        in the gap between the two labels' words, else midway."""
+        if self.spec.years:
+            return header["cells"]
+        labels = [[fold(x, self.year) for x in c.labels] for c in self.spec.printed]
+        out = []
+        for cell in header["cells"]:
+            text = fold(gra.normalise_text(cell["text"]), self.year)
+            mine = sorted((w for w in words if header["v0"] < w.vmid < header["v1"]
+                           and cell["u0"] < w.umid < cell["u1"]), key=lambda w: w.u0)
+            cut = None
+            if not any(text in alt for alt in labels):
+                for k in range(1, len(mine)):
+                    a = fold(" ".join(w.text.strip() for w in mine[:k]), self.year)
+                    b = fold(" ".join(w.text.strip() for w in mine[k:]), self.year)
+                    if any(a in labels[j] and b in labels[j + 1] for j in range(len(labels) - 1)):
+                        gap = (mine[k - 1].u1, mine[k].u0)
+                        cut = next((u for u, _a, _b in walls if gap[0] < u < gap[1]),
+                                   sum(gap) / 2)
+                        break
+            if cut is None:
+                out.append(cell)
+                continue
+            out += [{**cell, "text": " ".join(w.text.strip() for w in mine if w.umid < cut),
+                     "u1": cut},
+                    {**cell, "text": " ".join(w.text.strip() for w in mine if w.umid > cut),
+                     "u0": cut}]
+        return out
+
     def _refuse(self, pdf_page, labels):
         expected = [c.labels[0] if c.labels else "" for c in self.spec.printed]
         self.result.issues.append(
@@ -365,11 +427,15 @@ class Reader:
         walls, levels = _rules(sp, frame)
         self.blocks = _rotated_cells(sp, frame, levels)
         header = geo.grid_header(sp, words, frame, is_label=gra.is_label_row)
+        if header:
+            header["cells"] = self.split_merged(header, words, walls)
         if header and (self.cells is None or self.matches(header["cells"])):
             if not self.accept_header(header["cells"], sp.pdf_page):
                 raise Refused(self.result.issues[-1][2])
             kind, cells, v_top = "header", header["cells"], header["v1"]
             self.frame = frame
+        elif self.cells is not None and self.summary_page(words):
+            return self.read_summary(sp, words)
         elif self.cells is None:
             # Before the first header: the table's own cover (DOG M1 p1,
             # `Esportazione Definitiva (EX) / Riepilogo per operatore / TAB. M1`).
@@ -406,7 +472,9 @@ class Reader:
         spanning = [b for _u, a, b in mine if b - max(a, v_top) >= 0.5 * (last_line - v_top)]
         total, boxed = None, []
         if len(spanning) >= 2:
-            v_bottom = max(spanning + floors[-1:]) + TOL
+            # Down to the last wall of the grid, however short: B4 p682 prints a
+            # second area under the first, its total in a narrow box of its own.
+            v_bottom = max(spanning + floors[-1:] + [b for _u, _a, b in mine]) + TOL
             # A total in a box of its own under the grid, with its own labels
             # (3B's `TOTALE INCASSO`): the grid ends where its walls do.
             walls_end = max(spanning) + TOL
@@ -482,10 +550,12 @@ class Reader:
         noting = False
         for band in below:
             text = " ".join(w.text for w in band)
-            if NOTE_START.match(text) or noting:
+            if STAMP.search(text):
+                pass                # the page stamp: furniture, after a note too
+            elif is_note(text) or noting:
                 noting = True
                 self.result.notes.append((sp.pdf_page, sp.printed_page, text))
-            elif not STAMP.search(text):
+            else:
                 self.result.issues.append(
                     (sp.pdf_page, "outside", f"line {text[:60]!r} under the table"))
             inside.update(map(id, band))
@@ -509,12 +579,20 @@ class Reader:
         entries, section = [], ""          # [label, [(value, is_percent)]]
         for band in geo.row_bands(words):
             band = sorted(band, key=lambda w: w.u0)
+            if is_note(" ".join(w.text.strip() for w in band)):
+                self.result.notes.append((sp.pdf_page, sp.printed_page,
+                                          gra.normalise_text(" ".join(w.text for w in band))))
+                continue
             values, text = [], []
+            # A percentage is `N %` (A1) or `(pari a N %)` (G2), after its value.
+            band = [w for w in band if not re.fullmatch(r"\(\s*pari\s+a", w.text.strip())]
             for i, w in enumerate(band):
-                if gra.value_shape(w.text) in (gra.SHAPE_NUMBER, gra.SHAPE_CURRENCY):
-                    pct = i + 1 < len(band) and band[i + 1].text.strip() == "%"
+                shape = gra.value_shape(w.text)
+                if shape in (gra.SHAPE_NUMBER, gra.SHAPE_CURRENCY) or (
+                        shape == gra.SHAPE_CODE and values == [] and text):
+                    pct = i + 1 < len(band) and band[i + 1].text.strip() in ("%", "%)")
                     values.append((w.text, pct))
-                elif w.text.strip() != "%":
+                elif w.text.strip() not in ("%", "%)"):
                     text.append(w.text)
             text = gra.normalise_text(" ".join(text))
             if STAMP.search(text):
@@ -529,9 +607,13 @@ class Reader:
             entries.append([label, values])
         for label, values in entries:
             label = gra.normalise_text(re.sub(r"\s*:+$", "", label))
+            # A second value on the line is labelled `(2)` (G2: `Totale : 556
+            # 1.977.363.805,02`), a percentage `(%)`.
+            k = 0
             for raw, pct in values:
-                self.result.totals.append(
-                    (sp.pdf_page, sp.printed_page, f"{label} (%)" if pct else label, raw))
+                k += not pct
+                name = f"{label} (%)" if pct else (f"{label} ({k})" if k > 1 else label)
+                self.result.totals.append((sp.pdf_page, sp.printed_page, name, raw))
 
     # -- records --------------------------------------------------------------
 
@@ -560,8 +642,10 @@ class Reader:
         values are in (T20's `Altri`, `TOTALE`, right-aligned under the stub
         and `Pos.`): the first column's, wherever its width reaches."""
         lead = next((i for i, t in enumerate(row) if t), None)
-        if not lead or self.order[0].type not in TEXT_TYPES:
-            return row
+        if (not lead or self.order[0].type not in TEXT_TYPES
+                or self.order[lead].type in TEXT_TYPES | {"code"}
+                or gra.value_shape(row[lead]) in VALUE_SHAPES):
+            return row          # only a label in a column of values (T20's `Pos.`)
         v = sum(w.vmid for w in band) / len(band)
         crossing = [u for u, a, b in walls if a - TOL <= v <= b + TOL]
         cell = self.page_cells[lead]
@@ -596,7 +680,9 @@ class Reader:
         """A value in a column that holds values. In a text column a value's
         shape is only a wrapped description's last line (DOG M `(CLIN` /
         `5)`, MAE A1 `CAL.` / `5,56`): it does not make the line a record."""
-        return any(gra.value_shape(t) in VALUE_SHAPES
+        # A value may carry a comment after it in its cell: B4's
+        # `265.139.737,31 (pari a 3,43 %)`.
+        return any(gra.value_shape(t.split(" (")[0].strip()) in VALUE_SHAPES
                    for t, col in zip(row, self.order) if t and col.type not in TEXT_TYPES)
 
     def place(self, sp, row, band, first):
@@ -620,9 +706,19 @@ class Reader:
             # A group heading is one run of text starting in the first column
             # (A1 `A.C.S.A. STEEL FORGINGS S.P.A.`); one in a later column is
             # the wrapped description of the record above.
-            if (self.spec.group and band is not None and not first
+            # On a page's first line too, after a subtotal: nothing continues
+            # a subtotal (MAE I p1154 opens on `OCEANIA`).
+            closed = (self.last() or {}).get("kind") == "subtotal"
+            if (self.spec.group and band is not None and (not first or closed)
                     and len(geo.column_bands(band)) == 1
                     and min(w.u0 for w in band) < self.page_cells[0]["u1"]):
+                text = " ".join(w.text.strip() for w in band)
+                if is_note(text):
+                    # Where a heading would be: a footnote (B4 `(*) ...`; D, I `LE
+                    # AUTORIZZAZIONI CON VALORE NULLO ...`). A record's wrapped line
+                    # is never one: it continues the record, above.
+                    self.result.notes.append((sp.pdf_page, sp.printed_page, text))
+                    return
                 self.group = " ".join(w.text for w in band)
                 self.emit(sp, "group", [], group=self.group)
                 return
@@ -652,8 +748,9 @@ class Reader:
         alone (`34.299,20` under Val. Fini Dog.): that is a record, and read
         as a subtotal it cut its operator in two."""
         filled = [(i, t) for i, t in enumerate(row) if t]
+        # A count too (B4's area lines: `22 | 37.468.488,89`).
         return (len(filled) >= 2
-                and all(self.order[i].type == "amount" for i, _t in filled))
+                and all(self.order[i].type in ("amount", "number") for i, _t in filled))
 
     def last(self):
         rows = [r for r in self.result.rows if r["kind"] != "group"]

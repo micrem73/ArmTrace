@@ -654,6 +654,13 @@ def grid_header(page, words, frame=None, tol=RULE_TOL, is_label=None):
                                   prev, top, bottom, is_label)
                 if two:
                     return {"cells": _stub(two, bottom), "v0": prev, "v1": bottom}
+        # A wall starting right under the header, inside one of its cells,
+        # divides it: MAE B4 from p2 draws no wall between `Area Geografica`
+        # and `Paese di destinazione` in its header box, only from under it.
+        across = sorted(across + [u for u, v0, _v1 in walls
+                                  if bottom - tol <= v0 <= bottom + 2 * tol
+                                  and across[0] + tol < u < across[-1] - tol
+                                  and all(abs(u - x) > tol for x in across)])
         cells = []
         for a, b in zip(across, across[1:]):
             mine = sorted((w for w in inside if a < w.umid < b),

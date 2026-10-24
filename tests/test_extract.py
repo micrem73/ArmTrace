@@ -122,7 +122,10 @@ def test_mef_ii_company_subtotals_and_a_last_page_drawn_in_pieces(year, sources)
 def test_mae_a2_totals_and_the_share_printed_under_them(year, sources):
     r = read(VOL1, 607, 611, 603, "MAE/A2")
     assert sum(1 for x in r.rows if x["kind"] == "data") == 159 and not r.issues
-    assert r.notes[0][2] == "(pari a 3,43 %) (pari a 7,48 %)"
+    # The share is printed beside its value, in its box: kept in its text
+    # (2026-10-24; a note before, when the grid ended above it).
+    total = next(x for x in r.rows if x["kind"] == "total")
+    assert "265.139.737,31 (pari a 3,43 %)" in total["cells"]
     assert statuses(r, "MAE/A2") == ["PASS"] * 4 + ["ROUNDING"]
 
 
@@ -596,3 +599,70 @@ def test_annesso_3b_incasso_by_year_importo_once_quadriennio_checked(year, sourc
         (2025, 1500000, "0,00 €")]
     assert db.execute("SELECT count(*) FROM printed_figure WHERE kind='rowsum'"
                       ).fetchone()[0] == 488
+
+
+@pytest.mark.parametrize("year", ["2025"])
+@pytest.mark.parametrize("key,volume,first,last,printed,note", [
+    ("MAE/B4", VOL1, 684, 691, 680, "(*) Esportazioni"),     # a header box with no inner wall
+    ("MAE/D", VOL1, 814, 816, 810, "LE AUTORIZZAZIONI"),     # a note where a heading would be
+    ("MAE/G1", VOL2, 72, 74, 1110, "LE AUTORIZZAZIONI"),     # a note under the table
+    ("MAE/G2", VOL2, 75, 78, 1113, "LE AUTORIZZAZIONI"),     # a summary page, two values a line
+    ("MAE/I", VOL2, 114, 116, 1152, "LE AUTORIZZAZIONI"),    # OCEANIA opens its page
+])
+def test_mae_summaries_by_area_read_whole(year, sources, key, volume, first, last, printed,
+                                          note):
+    """B4, D, G1, G2, I: an area heading in a labelled column, unlabelled area
+    totals (a count and an amount), and a closing box whose `di cui` and
+    `Totale ai Fini Doganali` lines no column holds (UNCHECKED, kept). Every
+    total is checked; none fails, nothing is outside the table."""
+    from collections import Counter
+    r = read(volume, first, last, printed, key)
+    assert not r.issues and any(n[2].startswith(note) for n in r.notes)
+    got = Counter(statuses(r, key))
+    assert not got["FAIL"] and got["PASS"] and got["UNCHECKED"]
+    groups = [x["group"] for x in r.rows if x["kind"] == "group"]
+    assert key == "MAE/G1" or groups[-1] == "OCEANIA"
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_f1_header_split_by_its_labels_and_its_summary_page(year, sources):
+    """MAE F1 prints `Ammontare` and `EURO` in one header box (the wall between
+    them runs round the body's amounts only): split by the agreed labels. Its
+    last page, boxed, is its summary, not rows of the grid."""
+    a, b = (pymupdf.open(ROOT / "In" / "2025" / v) for v in (VOL1, VOL2))
+    pages = [SourcePage(a, p, 1035 + p - 1039) for p in (1039, 1040)] + [SourcePage(b, 66, 1104)]
+    r = extract.read_table(year, "MAE/F1", pages=pages)
+    assert r.labels[1:3] == ["Ammontare", "EURO"] and r.pages == {"header": 2, "summary": 1}
+    aris = next(x for x in r.rows if x["kind"] == "subtotal")
+    assert aris["cells"][2:4] == ["4.940.860,63", "0,00"]          # EURO, Valore Fini Dog.
+    assert ("Totale Autorizzazioni", "556") in [(t[2], t[3]) for t in r.totals]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_list_of_companies_stores_their_ids_in_printed_order(year, sources, tmp_path,
+                                                                monkeypatch):
+    """Difesa 4's `DITTE ITALIANE PARTECIPANTI` (maintainer, 2026-10-24): the ids
+    in printed order, null for a name with no id yet (one issue), a word that
+    names no company (id 0) left out, a name standing for two (`34+177`) both."""
+    import json
+
+    import ExtractTables as E
+    from lib import companies
+    monkeypatch.setattr(companies, "LIST", tmp_path / "companies.tsv")
+    monkeypatch.setattr(companies, "NAMES", tmp_path / "company-names.tsv")
+    companies.write({1: "LEONARDO S.p.A.", 2: "ERA ELECTRONIC SYSTEMS S.r.l.", 3: "CONSORZIO SIGEN"},
+                    {"LEONARDO": (1, "maintainer"), "ERA ELECTRONIC SYSTEM": (2, "maintainer"),
+                     "Altre aziende italiane partecipanti": (0, "maintainer; not a company"),
+                     "CONSORZIO SIGEN LEONARDO": ((3, 1), "maintainer; a comma left out")})
+    key = "DIFESA/4"
+    r = read(VOL2, 254, 258, 1292, key)
+    db = stored(year, r, key)
+    (ids,) = db.execute("SELECT id_ditte FROM difesa_4 WHERE ditte_italiane_partecipanti "
+                        "LIKE '%Altre aziende%'").fetchone()
+    ids = json.loads(ids)
+    assert ids[:2] == [1, 2] and len(ids) == 9 and ids.count(None) == 7
+    (ids,) = db.execute("SELECT id_ditte FROM difesa_4 WHERE programma = 'ORIZZONTE'").fetchone()
+    assert json.loads(ids)[:2] == [3, 1]        # two companies, one printed name
+    _, issues = E.records(year, r, extract.specs()[key])
+    named = [d for _p, kind, d in issues if kind == "company"]
+    assert len(named) == len(set(named)) and not any("Altre aziende" in d for d in named)

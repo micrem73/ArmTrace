@@ -8,6 +8,10 @@ the same once case, accents, punctuation, spacing and the way a legal form is
 written are set aside: `S.P.A.` = `S.p.A.` = `SPA`), `register <number>` (the
 name printed in Difesa A5/2 beside a register number that already has an id:
 the number identifies a company before its name does), or `maintainer, <date>`.
+Id 0 marks a word a list prints that names no company (`Altre aziende italiane
+partecipanti`, Difesa 4): a list leaves it out (`maintainer, <date>; not a company`).
+Ids joined by `+` (`34+177`) are two companies printed as one name, a comma left
+out (`CONSORZIO SIGEN LEONARDO`): a list gives both, in that order.
 Anything else, another legal form (`BERCELLA SPA` / `BERCELLA S.R.L.`), a name
 the print cut, a near spelling, goes to the maintainer: `propose` lists it,
 nothing is guessed. A printed name with no id is stored NULL, with an issue.
@@ -38,6 +42,33 @@ def fold(name):
     for full, short in SPELLED:
         text = re.sub(rf"\b{full}\b", short, text)
     return text
+
+
+def split_list(text):
+    """The company names a cell lists (Difesa 4's `DITTE ITALIANE PARTECIPANTI`),
+    in printed order: split at commas, at `: `, and at `. ` before a capital (a
+    comma the print left out: `KNDS Amno Italy S.p.A. LINKRA SRL`); an aside in
+    brackets and a footnote mark after it are no part of a name (`VITROCISET
+    (oggi LEONARDO)`, `WASS Submarine Systems (Fincantieri)1.`), one never
+    closed runs to the name's end (programme 15); a sentence's
+    full stop is dropped, an abbreviation's kept (`AVIO S.p.A.`). The cell stays
+    as printed beside the names: they only find the ids."""
+    text = re.sub(r"\)\d+", ")", text or "")
+    while re.search(r"\([^()]*\)", text):
+        text = re.sub(r"\s*\([^()]*\)", "", text)
+    text = re.sub(r"\s*\([^,;]*", "", text)      # a bracket never closed: to the name's end
+    text = re.sub(r"\s+([.,;:])", r"\1", " ".join(text.split()))
+    names = []
+    for piece in re.split(r"[,;]", text):
+        for part in re.split(r":\s+|(?<=\.)\s+(?=[A-Z])", piece):
+            part = part.strip()
+            # `S.R.L..` ends an abbreviation and a sentence; `S.p.A.` only the first.
+            if part.endswith("..") or (part.endswith(".")
+                                       and not re.search(r"\b[A-Za-z]\.$", part)):
+                part = part[:-1].strip()
+            if part:
+                names.append(part)
+    return names
 
 
 def core(folded):
@@ -86,10 +117,17 @@ def _read(path):
                                    delimiter="\t"))
 
 
+def _ids(text):
+    """An id, or several (`34+177`): a name a list prints for two companies, a
+    comma the print left out (Difesa 4 `CONSORZIO SIGEN LEONARDO`)."""
+    ids = tuple(int(x) for x in text.split("+"))
+    return ids if len(ids) > 1 else ids[0]
+
+
 def load():
-    """({id: name}, {printed: id})."""
+    """({id: name}, {printed: id, or a tuple of ids})."""
     return ({int(r["id"]): r["name"] for r in _read(LIST)},
-            {r["printed"]: int(r["id"]) for r in _read(NAMES)})
+            {r["printed"]: _ids(r["id"]) for r in _read(NAMES)})
 
 
 def propose(counts, known=None):
@@ -105,7 +143,9 @@ def propose(counts, known=None):
     companies, names = known or load()
     by_fold = {}
     for printed, cid in names.items():
-        by_fold.setdefault(fold(printed), set()).add(cid)
+        # 0: a word a list prints that names no company; a tuple: two names in one
+        if cid and not isinstance(cid, tuple):
+            by_fold.setdefault(fold(printed), set()).add(cid)
     spellings, groups = [], {}
     for printed in sorted(counts):
         if printed in names:
@@ -159,11 +199,14 @@ def write(companies, names):
     with open(NAMES, "w", encoding="utf-8", newline="") as fh:
         fh.write("# lib/companies.py: every printed spelling and its company; how: "
                  "spelling (automatic), register <number>, or maintainer, <date>.\nprinted\tid\thow\n")
-        for printed in sorted(names, key=lambda n: (names[n][0], n)):
+        def first(cid):
+            return cid[0] if isinstance(cid, tuple) else cid
+        for printed in sorted(names, key=lambda n: (first(names[n][0]), n)):
             cid, how = names[printed]
+            cid = "+".join(map(str, cid)) if isinstance(cid, tuple) else cid
             fh.write(f"{printed}\t{cid}\t{how}\n")
 
 
 def read_how():
     """{printed: (id, how)} as stored."""
-    return {r["printed"]: (int(r["id"]), r["how"]) for r in _read(NAMES)}
+    return {r["printed"]: (_ids(r["id"]), r["how"]) for r in _read(NAMES)}
