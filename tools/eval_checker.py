@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from lib import layout, ontology  # noqa: E402
-from lib.volumes import find_report  # noqa: E402
+from lib.volumes import report_at  # noqa: E402
 
 TIMEOUT = 1200
 STUB = '''#!/usr/bin/env python3
@@ -79,7 +79,7 @@ def mutate(year, row, src, dst):
     a, b = map(int, span.split("-"))
     pa, pb = map(int, row["printed"].split("-"))
     pages = list(PdfReader(src).pages)
-    source = PdfReader(find_report(year, vol[1:], ROOT / "In")).pages
+    source = PdfReader(report_at(year, vol[1:], ROOT / "In")).pages
     name, _, value = mutation.partition("=")
     if name == "drop-last":
         pages, b, pb = pages[:-1], b - 1, pb - 1

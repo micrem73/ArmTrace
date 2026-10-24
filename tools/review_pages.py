@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT))
 
 from lib import layout  # noqa: E402
 from lib.patterns import REPORTS_DIR  # noqa: E402
-from lib.volumes import find_report  # noqa: E402
+from lib.volumes import report_at  # noqa: E402
 
 DPI = 90
 MAX_MID = 3
@@ -125,7 +125,7 @@ def main(year, key):
     for label, vol, idx in (("source-first", first_vol, first_idx),
                             ("source-before", first_vol, first_idx - 1),
                             ("source-after", last_vol, last_idx + 1)):
-        src = find_report(year, str(vol), ROOT / REPORTS_DIR)
+        src = report_at(year, vol, ROOT / REPORTS_DIR)
         sdoc = pymupdf.open(src)
         if 1 <= idx <= sdoc.page_count:
             path = out / f"{label}.png"

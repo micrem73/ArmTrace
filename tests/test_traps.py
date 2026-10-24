@@ -520,3 +520,112 @@ def test_the_printers_barcode_leaf_is_blank():
     assert is_blank(["*190670036670*", "*190670036670*"])
     assert is_blank(["PAGINA BIANCA"])
     assert not is_blank(["*190670036670*", "Austria 16"])
+
+
+def test_every_volume_runs_when_two_files_share_a_volume_number(tmp_path):
+    """2021: VOLUME I comes in two files, TOMO_I and TOMO_II, beside VOLUME_II.
+    Read off the filenames, TOMO_II and VOLUME_II both say volume 2, and asking
+    for that volume was ambiguous: "all" must list every file, in reading order."""
+    from argparse import Namespace
+    from lib.volumes import collect_jobs
+    folder = tmp_path / "In" / "2021"
+    folder.mkdir(parents=True)
+    names = ["2021_LXVII_n5_TOMO_I.pdf", "2021_LXVII_n5_TOMO_II.pdf",
+             "2021_LXVII_n5_VOLUME_II.pdf"]
+    for name in names:
+        (folder / name).write_bytes(b"%PDF-1.4\n")
+    args = Namespace(base=str(tmp_path), report=None, all=False,
+                     year="2021", volume="all")
+    assert [Path(r).name for r, _ in collect_jobs(args)] == names
+
+
+def test_a_table_read_from_text_stops_at_the_first_scan():
+    """2021 tomo II: MAE P2 (p772-773, then a VALORE page and a signature leaf)
+    ran on over the 66 scanned Difesa pages p776-841, too many for the stamp
+    trim, and overlapped the annexes declared there. A text table never
+    continues onto a page with no text layer."""
+    from lib.pageio import stop_before
+    scanned = {p: p >= 776 for p in range(772, 842)}
+    assert stop_before(772, 841, scanned) == 775
+    assert stop_before(772, 775, scanned) == 775
+    assert stop_before(776, 841, scanned) == 841   # a declared scan, left alone
+
+
+def test_a_table_stops_at_the_next_section_heading():
+    """2021 vol. II: DOG/A1C2/P2 (p955-957) ran on over the All. 2 heading and
+    summary (p958-960) and the currency and country lists after them; MG17
+    (p1048) over All. 3 (p1049-1052). MAE P2 of tomo I took the export's page
+    list ("Cartella Pagine ... Totale Pagine", p790). Neither belongs to the
+    table before it."""
+    from lib.pageio import is_allegato_page, is_page_list
+    assert is_allegato_page("All. 3 - OPERAZIONI RIFERITE AD AUTORIZZAZIONE\n"
+                            "GLOBALE DI TRASFERIMENTO")
+    pages = ["Cartella Pagine Totale Pagine", "Nr. Nr. Nr.",
+             "1 67 INTRO Considerazioni generali e statistiche 6 7",
+             "2 295 TAB A1 Esportazione definitiva per operatori 363"]
+    assert is_page_list(pages)
+    assert not is_page_list(["TAB A1 Esportazione definitiva per operatori",
+                             "Totale Pagine 3"])
+
+
+def test_a_dropped_copy_is_its_own_trash_run():
+    """2021 tomo II p1-822: the MAE section reprinted from tomo I (61 copies,
+    dropped), then the Difesa scans. One unclaimed run from page 1, it was
+    called front matter, and the page check found tables in the trash. Each
+    copy is its own run, named for the copy it duplicates; the page check
+    accepts a table in the trash only there."""
+    from lib.emit import split_at_copies, trash_reason
+    from tools.page_check import COPY_REASONS
+    copies = {("MAE", None, "T1"): {"start": 13, "end": 13, "kept_from": "TOMO_I"},
+              ("MAE", None, "P2"): {"start": 772, "end": 773, "kept_from": "TOMO_I"}}
+    assert split_at_copies([(1, 822)], copies) == [
+        (1, 12), (13, 13), (14, 771), (772, 773), (774, 822)]
+    assert split_at_copies([(5, 9)], copies) == [(5, 9)]
+    assert trash_reason({"dropped": copies}, 13, 13, {})[0] in COPY_REASONS
+
+
+def test_a_dropped_copy_is_not_a_second_table_row():
+    """2021: the 61 MAE tables reprinted in tomo II share their keys with the
+    copies kept from tomo I. The table index holds one row per key: the kept
+    copy. The dropped one is accounted for in the trash."""
+    from tools.build_index import index_rows
+    rows = [{"key": "MAE/T1", "status": "ok"},
+            {"key": "MAE/T1", "status": "reprint"},
+            {"key": "MAE/X", "status": "listed-missing"}]
+    assert [r["status"] for r in index_rows(rows)] == ["ok", "listed-missing"]
+
+
+def test_v_number_names_the_file_in_reading_order(tmp_path):
+    """2021: V2 is TOMO_II and V3 is VOLUME_II, though both filenames say
+    volume 2. The page renderer looked the source up by that number, which was
+    ambiguous for V2 and missing for V3."""
+    from lib.volumes import report_at
+    folder = tmp_path / "2021"
+    folder.mkdir()
+    names = ["2021_LXVII_n5_VOLUME_II.pdf", "2021_LXVII_n5_TOMO_I.pdf",
+             "2021_LXVII_n5_TOMO_II.pdf"]
+    for name in names:
+        (folder / name).write_bytes(b"%PDF-1.4\n")
+    assert [report_at("2021", n, tmp_path).name for n in (1, 2, 3)] == [
+        "2021_LXVII_n5_TOMO_I.pdf", "2021_LXVII_n5_TOMO_II.pdf",
+        "2021_LXVII_n5_VOLUME_II.pdf"]
+
+
+def test_uncaptioned_t7_is_named_by_its_title():
+    """2021 MAE/T7 (tomo I p40) prints no "Tabella 7", only the title 2022
+    captions as T7. The title stands in for the code; without it, a T7 file
+    that prints no code is still a failure."""
+    from VerifyTables import Checks, check_uniqueness
+
+    def verdict(text):
+        lines = text.split("\n")
+        page = {"text": text, "lines": lines, "_vocab": {"T7"}, "blank": False,
+                "garbled": False, "ciphered": False}
+        checks = Checks()
+        check_uniqueness({40: page}, "T7", checks)
+        return {i["id"]: i["verdict"] for i in checks.items}["uniqueness.own_code_absent"]
+
+    t7 = ("Autorizzazioni esportazioni anni 2018-2021 per area geografica\n"
+          "2021 2020 2019 2018\nN. Licenze 15 16 17 11")
+    assert verdict(t7) == "PASS"
+    assert verdict("Elenco dei paesi\nN. Licenze 15 16 17 11") == "FAIL"

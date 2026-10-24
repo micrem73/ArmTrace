@@ -45,6 +45,8 @@ from lib.pageio import (
     is_ciphered,
     is_garbled,
     is_index_page,
+    no_text_layer,
+    is_page_list,
     listing_codes,
     normalise_digit_one,
     printed_numbers,
@@ -54,6 +56,7 @@ from lib.pageio import (
     relation_exhibits,
     same_table,
     stamp_code,
+    stop_before,
     trim_foreign_stamp,
     trim_trailing,
     trim_trailing_blanks,
@@ -610,6 +613,9 @@ def scan_headers(reader, vocabulary, family, stamps=None, provenance=None,
             facts["numbers"][page_no] = printed_numbers(lines)
             facts["fingerprints"][page_no] = header_fingerprint(lines)
             facts["stamp_codes"][page_no] = stamp_code(lines)
+            facts["barrier"][page_no] = (no_text_layer(lines)
+                                         or is_page_list(lines)
+                                         or is_allegato_page(text))
         if not lines:
             continue
         # An index of tables, read as one. Tested before is_index_page() because
@@ -900,7 +906,8 @@ def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
     stamps = {}
     raw_prov = {}
     pasted = []
-    facts = {"blank": {}, "numbers": {}, "fingerprints": {}, "stamp_codes": {}}
+    facts = {"blank": {}, "numbers": {}, "fingerprints": {}, "stamp_codes": {},
+             "barrier": {}}
     page_codes, weak_pages, unassigned, garbled, ciphered, foreign, listings, \
         candidates, shared_pages, rel_pages = scan_headers(
             reader, vocabulary, family, stamps, raw_prov, pasted, facts,
@@ -1234,6 +1241,8 @@ def build_manifest(reader, vocabulary, counts, sibling=None, plan=None):
         info["end"], dropped, note = trim_trailing(info["start"], info["end"],
                                                    stamps)
         if facts is not None:
+            info["end"] = stop_before(info["start"], info["end"],
+                                      facts["barrier"])
             info["end"], stamped_away = trim_foreign_stamp(
                 info["start"], info["end"], facts["stamp_codes"], tkey[2])
             dropped += stamped_away
@@ -1553,7 +1562,8 @@ def declared_tables(report):
     """Tables an edition declares by page range, for a volume file name.
 
     Only for pages no detector can read: scans with no text layer (2023 vol. I,
-    the Difesa annexes). Each row is {authority, article, code, start, end},
+    the Difesa annexes), or a table printed without a caption that the
+    maintainer has filed (2021 MAE/T7). Each row is {authority, article, code, start, end},
     pdf pages, read off the page images by a person. None by default.
     """
     return []

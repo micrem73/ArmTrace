@@ -624,3 +624,39 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
 - **The rows view hides the import's link columns** (`view_def.link.col`, `.unit_col`: A1
   `riga_importo`, `riga_autorizzazione`); they are not printed. CSV and SQL keep them. By the
   maintainer.
+
+## 2026-10-23 — 2021: volume I in two tomi, tomo II reprints the MAE section
+
+- **The three files are read as one document, in folio order: TOMO_I, TOMO_II, VOLUME_II.**
+  The covers say so ("VOLUME I - TOMO I", folio 1; "VOLUME I - TOMO II", folio 790; "VOLUME
+  II", folio 1629), and the manifest URLs agree (`005v01_t1`, `005v01_t2`, `005v02`). The
+  filenames make TOMO_II and VOLUME_II both "volume 2", so `--volume all` now lists every file
+  in reading order instead of asking for each volume number (`lib/volumes.collect_jobs`).
+  `V<n>` in filenames stays document order: V1 tomo I, V2 tomo II, V3 volume II.
+- **Tomo II p3-774 is tomo I p18-789 again, word for word** (page by page comparison of the
+  text): the MAE relation and all 61 MAE tables. Only tomo I has the VALORE page (p562) and the
+  export's page list (p790). The engine's existing rule keeps the first copy (tomo I); the 61
+  tomo II copies go to the trash, each as its own `dropped-copy` run naming the kept volume
+  (`emit.split_at_copies`), and they are not rows of `tablesindex` (`build_index.index_rows`:
+  one row per key). The page check accepts a table in the trash only as such a copy
+  (`page_check.COPY_REASONS`). Keeping tomo I's copy (first printing, the only one with p562
+  and p790) was confirmed by the maintainer, 2026-10-24.
+- **Tomo II p776-841 is the Difesa section, scanned, as in 2022 and 2023**; the annexes are
+  declared in `editions/y2021.py` (annesso 4 is printed before 3C). p828 is the covering
+  letter, not a table.
+- **A table found in the text stops before a barrier page** (`pageio.stop_before`): a scan
+  (no text layer), the heading of the next Dogane allegato, or the MAE export's page list. The
+  reprinted P2 ran over all 66 scans (past the stamp trim's cap), Dogane A1C2/P2 and MG17 over
+  the All. 2 and All. 3 openings with their currency and country lists, MAE P2 over the page
+  list. 2022-2025 snapshots unchanged.
+- **No "Tabella 7" is printed in 2021; the table is filed as MAE/T7 anyway** (maintainer,
+  2026-10-24). The table that is T7 in 2022 (exports by geographic area over four years) is on
+  tomo I p40 (printed 38) without a caption. No detector can name it, so `editions/y2021.py`
+  declares it, like the scans: `MAE/T72021V1P38.PDF`, source `declared`. The verifier names it by its
+  title, as it does the MEF exhibits (`VerifyTables.EXHIBIT_TITLE`), asked only when the code
+  is absent, so a T7 that prints its caption is judged as before.
+- **`V<n>` names a file by reading order everywhere** (`volumes.report_at`): the page renderer
+  and the checker eval looked the source up by the volume its filename claims, which for 2021
+  was ambiguous (V2) or missing (V3). Four checkers rendered by hand before the fix; their
+  tables were re-checked.
+- **Check round 1 (2021): 161 PASS, no code or convention FAIL from the checkers.**
