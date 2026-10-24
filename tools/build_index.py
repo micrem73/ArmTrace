@@ -284,6 +284,13 @@ def same_name_notes(year, rows):
     return notes
 
 
+def index_rows(rows):
+    """The table-list rows that become index rows: all but the copies
+    resolve_repeats settled away, which share their key with the kept copy and
+    whose pages the trash accounts for (2021: 61 MAE tables in tomo II)."""
+    return [row for row in rows if row["status"] != "reprint"]
+
+
 def build(year):
     year = str(year)
     rows = read_tsv(layout.tables_tsv(year, ROOT))
@@ -298,7 +305,7 @@ def build(year):
 
     extra = same_name_notes(year, rows)
     tables, segments = [], []
-    for row in rows:
+    for row in index_rows(rows):
         key = row["key"]
         record = {"sources": [], "bookmarks": []}
         pdf = layout.pdf_dir(year, ROOT) / row["file"] if row["file"] else None

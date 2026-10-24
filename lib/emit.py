@@ -892,6 +892,24 @@ def trash_runs(claimed, page_count):
 
 
 
+def split_at_copies(runs, dropped):
+    """Runs cut at the edges of every dropped copy inside them, so that each
+    copy is a run of its own and trash_reason names it (2021 tomo II: 61 MAE
+    tables reprinted from tomo I inside one run from page 1)."""
+    edges = set()
+    for info in dropped.values():
+        edges |= {info["start"], info["end"] + 1}
+    out = []
+    for start, end in runs:
+        cuts = sorted(e for e in edges if start < e <= end)
+        for cut in cuts:
+            out.append((start, cut - 1))
+            start = cut
+        out.append((start, end))
+    return out
+
+
+
 def trash_reason(manifest, start, end, tables):
     """(slug, note) for one unattributed run.
 
@@ -1070,7 +1088,8 @@ def dump_volume_trash(idx, volume, claimed, overage, out_root, year, write):
     # The closed system: assert the arithmetic before writing anything, so a
     # mismatch is a reported defect rather than a silently wrong folder.
     twice = sorted(p for p, keys in claimed.items() if len(keys) > 1)
-    runs = trash_runs(claimed, page_count)
+    runs = split_at_copies(trash_runs(claimed, page_count),
+                           manifest.get("dropped") or {})
     trashed = sum(end - start + 1 for start, end in runs)
     covered = len(claimed) + trashed
     if covered != page_count:

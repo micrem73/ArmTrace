@@ -20,7 +20,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - **Done = `make check`** (ruff, then the full test suite; exits non-zero on any failure). Healthy output: `All checks passed!`, then `N passed in ~50s` with no `failed` or `error` (about 1 min warm). The first run after editing `lib/pageio.py` or upgrading pypdf rebuilds the page cache, which takes much longer.
 - Fast loop: `make test-fast` (traps, recheck, table list); lint only: `make lint` (`ruff.toml`: correctness rules only)
 - The golden tests need the sources: a test that says `sources for <year>: missing …` means download them, not a regression.
-- A `code` FAIL is fixed test-first: add the failing assertion (trap test or golden row), then change the code, not the test. Regenerate `tests/golden/` (`python3 tests/snapshot.py <year>`) only for tables re-checked after the change.
+- A `code` FAIL is fixed test-first: add the failing assertion (trap test or golden row), then change the code, not the test. Regenerate `tests/golden/` (`python3 tests/snapshot.py <year> > tests/golden/<year>.tsv`) only for tables re-checked after the change.
 - Checker eval: `make eval` (`tools/eval_checker.py 2025`: 26 cases, about $4 and 3 min). It runs the table-checker on known-good and deliberately broken cuts (`tests/evals/checker-2025.tsv`). Run it after changing `.claude/agents/table-checker.md`, the `check-year` skill or a convention, after a model change, and before a new year. A wrong cut that gets PASS is a failure. Add a case for every miss a person finds.
 - Hooks (`.claude/hooks/guard.py`): Edit/Write is blocked on `In/<year>/` and on `Out/` outside `Out/.work/`. Each edited `.py` file is linted.
 - Debug into a scratch tree with `--out <dir>`, so the last run's `Out/` is not overwritten.
@@ -72,13 +72,13 @@ Decisions and their reasons are in `DECISIONS.md`; measurements live beside the 
 - 2024: verified clean, 159 tables, MEF relation exhibits included (2026-10-18).
 - 2023: verified clean (2026-10-19), 159 tables in three volumes, all PASS. The scanned Difesa annexes (no text layer) are declared in `editions/y2023.py`; SQL extraction needs OCR for them.
 - 2022: verified clean (2026-10-20), 162 tables, all PASS. Scanned Difesa annexes declared in `editions/y2022.py` (OCR needed); MAE N1-P2 read back from a shifted font (`pageio.decipher`).
+- 2021: verified (2026-10-24), 162 tables, all PASS. Volume I in two tomi (V1 tomo I, V2 tomo II, V3 volume II); tomo II reprints tomo I's MAE section, kept from tomo I, the copies in the trash; the uncaptioned exports-by-area table (tomo I p40) declared as MAE/T7 and the scanned Difesa annexes (OCR needed) in `editions/y2021.py`.
 - Glyph recovery (garbled MAE fonts, 2020–2025): built. SQL extraction reads MAE text through `lib/glyphs.py` (`page_text`, `decode_spans`). A new edition: run `tools/build_glyphmap.py` and commit the map; an outline it cannot name stays undecoded and goes to a person (`lib/data/glyph-decisions.tsv`).
 - Open defects, each needs an engine change and a re-run of every verified year:
   - 2016 vol. II: the bare `TAB. M` series (278 pages) is not detected.
   - Volumes with no legible stamp (2019 vol. II, 2023 vol. III, family 3) get no trailing-page check; they need another witness.
   - 2016 and 2018 indices: ministry rows lack page numbers, so the index is rejected.
   - `MEF/II` key collision in 2020 vol. II: in 2024 it was a false Dogane `TAB.` match (`MALTAB.M.A.`), fixed; 2020 not yet re-run.
-  - 2021: `TOMO_II.pdf` and `VOLUME_II.pdf` both claim volume II (844 and 1070 pp).
 - SQL extraction (Phase 3 of `plan.md`) started on 2025 only (2026-10-19): catalogue 2024+2025 from the sources, one SQL table per printed table code. Pilot extracted (MAE/A1, MAE/A2, MAE/T2, MEF/EE, MEF/II, DIFESA/4, DOG/A1C2/M, DOG/A1C2/M1): every printed total and subtotal matches, 11 within 2 cents of rounding; A2 agrees with A1 operator by operator. Review stop B passed, committed. To do, in order:
   1. Two-level headers (a label over several columns): T10, T11, T13, T20, T23, Difesa 3B.
   2. MAE summary tables printed without a ruled grid: B4, D, G1, G2, I, F1.

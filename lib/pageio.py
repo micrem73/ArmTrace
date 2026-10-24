@@ -231,6 +231,31 @@ def no_text_layer(lines):
 
 
 
+def stop_before(start, end, barrier):
+    """A table's end pulled back before the first barrier page after its start.
+
+    A barrier is a page no table read from the text continues onto: a scan
+    (no_text_layer; 2021 tomo II MAE P2 ran on over the 66 scanned Difesa pages
+    after it, too many for the stamp trim), the heading of the next Dogane
+    allegato (is_allegato_page; 2021 vol. II P2 and MG17), or the MAE export's
+    page list (is_page_list; 2021 tomo I P2). A span that opens on a barrier is
+    left alone: scans are tables only when declared.
+    """
+    if barrier.get(start):
+        return end
+    first = next((p for p in range(start + 1, end + 1) if barrier.get(p)), None)
+    return end if first is None else first - 1
+
+
+
+def is_page_list(lines):
+    """True for the MAE export's own page list: "Cartella Pagine ... Totale
+    Pagine", one row per report (2021 tomo I p790, after the last table)."""
+    head = " ".join(lines[:3])
+    return "Cartella" in head and "Totale Pagine" in head
+
+
+
 def is_blank(lines):
     """True for a separator page: no text, the Italian "PAGINA BIANCA", or the
     printer's back leaf, which carries only its barcode ("*190670036670*",

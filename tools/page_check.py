@@ -17,7 +17,8 @@ so a run that breaks the rule cannot pass silently. Decided 2026-10-17.
 
 Then every trash page is read: the trash may hold covers, prose and furniture,
 never a table (decided 2026-10-18, after six MEF relation exhibits of 2024
-vol. II went there). A page is table-like when it prints a table marker AND
+vol. II went there), except a second copy of a table kept elsewhere
+(COPY_REASONS: 2021 tomo II reprints tomo I's MAE section). A page is table-like when it prints a table marker AND
 table content; a hit fails the check too.
 """
 import csv
@@ -41,6 +42,8 @@ from lib.patterns import (MEF_EXHIBIT, PAGE_NUMBER_RE, PDF_EXT, REL_HEADING,  # 
 AMOUNT = re.compile(r"\d{1,3}(?:\.\d{3})*,\d{2}")
 STAMP = re.compile(r"\bPag(?:ina|\.)?\s*\d+\s*di\s*\d+", re.IGNORECASE)
 MIN_AMOUNTS = 3
+# A second copy of a table kept elsewhere: the one table the trash may hold.
+COPY_REASONS = ("dropped-copy", "given-up-reprint")
 
 
 def table_like(text):
@@ -78,6 +81,8 @@ def trash_tables(year, out_root=ROOT):
         rows = list(csv.DictReader(fh, delimiter="\t"))
     readers = {}
     for row in rows:
+        if row["reason"] in COPY_REASONS:
+            continue
         path = layout.year_dir(year, out_root) / row["trash_file"]
         if path not in readers:
             readers[path] = PdfReader(str(path))

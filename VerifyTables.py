@@ -166,10 +166,13 @@ FIRST_CODE_LOOKUP = 3
 # on a shared word like "Riepilogo".
 TITLE_OVERLAP = 0.6
 SALDI_TITLE = re.compile(r"Riepilogo saldi esportazioni ed? importazioni")
-# Relation exhibits named by a title instead of a code: SALDI in every year,
-# and in 2023 UE, LGP, IAA and FG (patterns.MEF_EXHIBIT_TITLES).
+# Tables named by a title instead of a code: SALDI in every year, in 2023 UE,
+# LGP, IAA and FG (patterns.MEF_EXHIBIT_TITLES), and 2021 MAE T7, which prints
+# no caption (declared in editions/y2021.py). Asked only when the code is absent.
 EXHIBIT_TITLE = {REL_SALDI: SALDI_TITLE,
-                 **{code: title for title, code in MEF_EXHIBIT_TITLES}}
+                 **{code: title for title, code in MEF_EXHIBIT_TITLES},
+                 "T7": re.compile(r"Autorizzazioni esportazioni anni \d{4}-\d{4} "
+                                  r"per area geografica")}
 TITLE_STEM = 6  # letters compared per word: "definitiv-a/-e", "esporta-zione/-zioni"
 
 # There is deliberately no minimum fraction here any more. See check_uniqueness:

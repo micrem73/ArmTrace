@@ -80,6 +80,20 @@ def find_report(year, volume, reports_dir=REPORTS_DIR):
 
 
 
+def report_at(year, number, reports_dir=REPORTS_DIR):
+    """The source PDF that V<number> names: the number-th file of the year in
+    reading order (group_by_year), not the volume its filename claims. 2021's
+    TOMO_II and VOLUME_II both say volume 2; they are V2 and V3."""
+    folder = Path(reports_dir, str(year))
+    reports = sorted((p for p in folder.glob("*.pdf") if parse_volume(p.stem)),
+                     key=lambda p: (parse_volume(p.stem), str(p)))
+    if not 1 <= int(number) <= len(reports):
+        raise SystemExit(f"Nessun V{number} in {folder}: "
+                         f"{', '.join(p.name for p in reports) or '(nessun PDF)'}")
+    return reports[int(number) - 1]
+
+
+
 def collect_jobs(args):
     """Resolve the CLI flags to a list of (report_path, year) jobs."""
     reports_dir = Path(args.base, REPORTS_DIR)
@@ -102,10 +116,12 @@ def collect_jobs(args):
             f"Nessun anno trovato in {reports_dir}/: usa --year"
         )
     if args.volume == "all":             # every volume in the folder (2023: three)
+        # Every file, not every volume number: 2021's TOMO_II (vol. I, tomo II)
+        # and VOLUME_II both parse as 2. Reading order as in group_by_year.
         folder = Path(reports_dir, year)
-        volumes = sorted({str(n) for n in (parse_volume(p.stem)
-                                           for p in folder.glob("*.pdf")) if n},
-                         key=int)
+        reports = [str(p) for p in folder.glob("*.pdf") if parse_volume(p.stem)]
+        return [(r, year) for r in
+                sorted(reports, key=lambda p: (parse_volume(Path(p).stem), p))]
     else:
         volumes = ["1", "2"] if args.volume == "both" else [args.volume]
     return [(str(find_report(year, v, reports_dir)), year)
