@@ -1,0 +1,58 @@
+Camera dei Deputati — 313 — Senato della Repubblica
+
+ 
+
+XI LEGISLATURA — DISEGNI DI LEGGE E RELAZIONI — DOCUMENTI
+
+ 
+
+ESEMPI DI CODIFICA MATERIALI
+
+1) Codice Materiale per pistola mitragliatrice:
+
+CATEGORIA ARTICOLO SOTTOARTICOLO
+02 Moi aa00
+2) Codice Materiale per unità da sbarco:
+CATEGORIA ARTICOLO SOTTOARTICOLO
+06 mo9g a a00
+GLOSSARIO
+
+Il seguente glossario è stato formulato ed ha valore solo
+per la modulistica in oggetto, valida per la presentazione delle
+Liste dei materiali di armamento e per costituzione della
+relativa banca dati, al fine di interpretare correttamente le
+vocì in esso riportate.
+
+- SISTEMA : insieme di materiali di armamento destinati ad
+un insieme di funzioni operative;
+
+- SOTTOSISTEMA : insieme di materiali di armamento
+destinati ad una funzione operativa;
+
+- UNITA' : insieme di materiali di armamento che,
+nell'ambito di una funzione operativa, assolvono ad. una
+funzione specifica;
+
+-— ASSIEME : insieme di materiali di armamento che
+concorrono ad assolvere la funzione specifica;
+
+- SUBASSIEME : qualsiasi materiale, od anche insiemi di
+materiali, che preso singolarmente rientra nell' " Elenco
+dei materiali di Armamento " e le cui componenti non sono
+inserite indipendentemente nelle liste e possono,
+quindi, essere esportate solo come parti di ricambic
+semprechè sia stata prevista la relativa voce nelle Liste
+dei Materiali di Armamento.
+
+- PARTI DI RICAMBIO : componenti che concorrono alla
+realizzazione di sistemi, sottosistemi, unità , assiemi o
+subassiemi che sono specificatamente previsti nella
+documentazione tecnica con tale qualifica.
+
+- TECNOLOGIA : informazioni e. documentazione specifiche
+necessarie allo " sviluppo ", " produzione " ed
+" utilizzazione " di un prodotto.
+{ Vedere anche " Definizione dei termini usati nell'Elenco dei
+materiali di armamento " riportati del Decreto 23 settembre 1991
+pubblicato sulla Gazzetta Ufficiale n. 237 dei 9/10/91 )
+

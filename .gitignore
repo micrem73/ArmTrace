@@ -30,6 +30,12 @@ Out/**
 !Out/[0-9][0-9][0-9][0-9]/*.sql
 !Out/[0-9][0-9][0-9][0-9]/*.sqlite
 !Out/[0-9][0-9][0-9][0-9]/*.html
+# OCR text of scanned source pages (Out/ocr/<year>/<settings>/<volume>.p<page>.txt):
+# slow to make and read again by later work, so kept in git (maintainer, 2026-10-25).
+!Out/ocr/
+!Out/ocr/**/
+!Out/ocr/**/*.txt
+!Out/ocr/**/*.tsv
 *.pdf
 *.PDF
 *.csv

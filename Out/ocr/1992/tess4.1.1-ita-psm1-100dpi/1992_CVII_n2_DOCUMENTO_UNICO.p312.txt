@@ -1,0 +1,77 @@
+Camera dei Deputati —_ 312 — Senato della Repubblica
+
+ 
+
+ 
+
+ 
+
+XI LEGISLATURA — DISEGNI DI LEGGE E RELAZIONI — DOCUMENTI
+
+ 
+
+3 - SERVIZI
+
+4 - RICAMBI
+
+5 - Complesso delle tipologie 1,2,3,4, sopra indicate
+NOTA. Il codige "5" può essere utilizzato qualora l'impresa
+intenda metterè in Lista tutte e 4 le tipologie, sempre che non
+vari la classifica di sicurezza.
+
+(3) CLASSIFICA : riportare la classifica di segretezza
+del materiale di armamento, assegnata dall'Amministrazione
+Difesa, con la sigla come di seguito specificato
+
+NON CLASSIFICATO = NC
+
+  
+ 
+
+RISERVATO RI
+RISERVATISSIMO RR
+SEGRETO = SE
+SEGRETISSIMO = SS
+(4) DENOMINAZIONE DEL MATERIALE : indicare la
+
+denominazione del materiale di armamento con un massimo di 60
+caratteri. La denominazione indicata nella Lista deve essere
+sufficentemente chiara per individuare lo specifico materiale di
+armamento e dovrà essere la stessa’ denominazione che
+successivamente verrà sempre usata in tutte le Istanze connesse
+con le applicazioni della legge 185/90.
+
+(6) CODICE MATERIALE : CATEGORIA ARTICOLO SOTTOARTICOLO
+I_I_1 I_I_I_I I_I_I_ 1 I
+
+riferendosi all'Elenco dei materiali di Armamento, (Decreto 23
+settembre 1991 pubblicato sulla Gazzetta Ufficiale nr. 237 de
+9/10/91 ) compilar
+
+a) " CATEGORIA " : da 01 a 13 per indicare la categoria;
+
+b) " ARTICOLO " indice del gruppo come previsto dall'Elenco
+dei materiali di Armamento (MX);
+
+c) " SOTTOARTICOLO " : ricavato dall'Elenco dei Materiali di
+Armamento, senza ripetere il numero della categoria, per
+indicare fino al livello piu' basso, il sottoparagrafo ìn
+cui viene individuato il materiale o la famiglia del
+materiale.
+
+  
+
+ 
+
+NOTA BENE: l'uso delle minuscole o delle maiuscole deve
+corrispondere esattamente a quello riportato nel citato decreto
+
+Tutti i campi del CODICE MATERIALI devono essere riempiti con il
+codice relativo al campo stesso o, in sua mancanza, con uno
+VEDI ESEMPI)
+
+In caso di dubbia interpretazione dell'Elenco dei Materiali di
+Armamento le Imprese devono indicare il codice fino sal livello
+più basso in cuì il materiale è sicuramente identificabile o
+chiedere chiarimenti all'Amministrazione Difesa.
+
