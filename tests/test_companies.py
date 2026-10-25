@@ -76,6 +76,29 @@ def test_the_register_warns_where_it_contradicts_the_ids(tmp_path):
     assert out[3].startswith("id 2 is under register numbers 00002, 00004")
 
 
+def test_a_cluster_is_shown_with_what_the_tables_say_of_it(tmp_path):
+    """The tables' evidence comes before the maintainer's question (2026-10-25):
+    a table grouped by company printing two of a cluster's names apart, and a
+    register number beside one of them, are printed with the cluster."""
+    import sqlite3
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+    import companies as tool
+    (tmp_path / "Out" / "2025").mkdir(parents=True)
+    db = sqlite3.connect(tmp_path / "Out" / "2025" / "armtrace-2025.sqlite")
+    db.execute("CREATE TABLE difesa_a5_2 (numero_iscrizione, id_ditta, denominazione, year)")
+    db.execute("INSERT INTO difesa_a5_2 VALUES ('00007', NULL, 'B S.R.L.', 2025)")
+    db.execute("CREATE TABLE mef_ii (ditta, id_ditta, year)")
+    db.executemany("INSERT INTO mef_ii VALUES (?,?,?)",
+                   [("B SPA", None, 2025), ("B S.R.L.", None, 2025), ("C SPA", None, 2025)])
+    db.commit()
+    out = tool.evidence(["B SPA", "B S.R.L."], tmp_path)
+    assert out == ["printed apart in MEF/II 2025: B S.R.L.; B SPA",
+                   "register 00007: B S.R.L. (2025)"]
+    assert tool.evidence(["C SPA", "C S.P.A."], tmp_path) == []
+
+
 def test_a_register_number_names_its_company_before_any_name_matching():
     """A renamed company, printed with its register number, keeps its id
     without going to the maintainer (2026-10-22)."""

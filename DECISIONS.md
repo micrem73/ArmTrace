@@ -494,8 +494,13 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   LEONARDO / LEONARDO CAE ADVANCED JET TRAINING; AVIO S.P.A. / GE AVIO S.R.L. and THALES
   ALENIA SPACE ITALIA / THALES ITALIA on Claude's knowledge of the companies (Avio's aero
   business sold to GE in 2013; Thales Alenia Space is the Thales-Leonardo space venture),
-  the maintainer agreeing. The same company under another legal form (BERCELLA SPA /
-  S.R.L., SECONDO MONA, UMBRIA AEROSPACE SYSTEMS) is one id.
+  the maintainer agreeing. The same company under another legal form (SECONDO MONA,
+  UMBRIA AEROSPACE SYSTEMS) is one id. BERCELLA S.R.L. and BERCELLA SPA, first one id, are
+  two (maintainer, 2026-10-25): MEF II, Dogane M and M1 print them as two operators. The
+  bare `BERCELLA` of Difesa 4's list stays with BERCELLA SPA, no table telling which.
+  The tables' own evidence comes before the maintainer's question (maintainer, 2026-10-25):
+  a register number, a table grouped by company printing two names apart, is looked up and
+  shown with the cluster; the maintainer is asked only what it leaves open.
   These decisions are open to a witness: when Difesa A5/2 (the national register of
   companies, with register numbers) is imported, any register number under two ids, or id
   under two register numbers, is reported to the maintainer (maintainer, 2026-10-22).
@@ -504,6 +509,10 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   MEF II's `Ditta`) printing one id as two groups: 2025, MEF II prints BERCELLA S.R.L. /
   BERCELLA SPA and FINCANTIERI S.P.A. / FINCANTIERI CANTIERI NAVALI ITALIANI as separate
   groups (a bank may report a company under an old and a new name: a doubt, not a proof).
+  FINCANTIERI stays one id (2026-10-25): its bylaws (statuto, February 2026) name the company
+  incorporated in Rome on 29 December 1959 "FINCANTIERI S.p.A." (codice fiscale 00397130584);
+  "Fincantieri, Cantieri Navali Italiani" was that same company's name as an operating
+  company from the 1980s. The MEF II warning is that old name, not a second company.
 - **Difesa A5/2: the register of companies, by event** (maintainer, 2026-10-22). Each printed
   line is a row of its year, traceable to its page: `numero_iscrizione`, `denominazione`, one
   of `data_iscrizione` / `data_sospensione` / `data_cancellazione` (the list it is printed in:
@@ -740,3 +749,14 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   was ambiguous (V2) or missing (V3). Four checkers rendered by hand before the fix; their
   tables were re-checked.
 - **Check round 1 (2021): 161 PASS, no code or convention FAIL from the checkers.**
+
+## 2026-10-25 SQL extraction: the caption is kept
+
+- **What a table prints above its header is stored as its caption** (maintainer, 2026-10-25):
+  `view_def.caption`, per table and year, one printed line per line, as printed: the lines
+  above the first header, a cover page's lines, and for a list (Difesa A5/2) the text before
+  its first item. Before, the extractor stored the grid, the notes under it and the totals,
+  and dropped the caption, although it says what the table holds (T3: the columns are
+  five-year periods; Dogane M, N, O, P differ only by `Tipo di operazione`). The page stamp
+  and the Parliament's running head are left out; an amount above the grid stays an issue.
+  The caption is text: no value is read out of it (maintainer: no `tipo_operazione` column).

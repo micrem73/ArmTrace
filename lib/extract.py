@@ -63,6 +63,9 @@ NOTE_START = re.compile(r"^\s*(?:\(\s*pari\s+a\b|\(\s*\*+\s*\)|\*+|\(\d+\)|\d{1,
 # `Pag. 9 di 9`. Not table content, never lost text.
 STAMP = re.compile(r"Pag(?:ina|\.)?\s*\d+\s*di\s*\d+|CENTRO\s+INFORMATICO|^TAB\.?\s*\S+$",
                    re.IGNORECASE)
+# The Parliament's running head, in the table's direction on a page that does
+# not rotate it (Difesa 4: `Camera dei Deputati … – 1292 – Senato della Repubblica`).
+RUNNING_HEAD = re.compile(r"Camera\s+dei\s+Deputati|Senato\s+della\s+Repubblica|LEGISLATURA\s+[—–-]")
 YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 TOTAL_LEAD = re.compile(r"^total[ei]\b", re.IGNORECASE)
 # A subtotal named after its group: MEF II `A.L.A.  S.p.A. Totale  € 1.000.722,54`.
@@ -215,6 +218,7 @@ class Result:
     rows: list = field(default_factory=list)      # dicts, see Reader.emit
     totals: list = field(default_factory=list)    # (pdf_page, printed_page, label, raw)
     notes: list = field(default_factory=list)     # (pdf_page, printed_page, text)
+    caption: list = field(default_factory=list)   # printed lines above the first header
     issues: list = field(default_factory=list)    # (pdf_page, kind, detail)
     labels: list = field(default_factory=list)    # printed header, first page
     columns: list = field(default_factory=list)   # the spec column under each label
@@ -430,8 +434,11 @@ class Reader:
         if header:
             header["cells"] = self.split_merged(header, words, walls)
         if header and (self.cells is None or self.matches(header["cells"])):
+            first = self.cells is None
             if not self.accept_header(header["cells"], sp.pdf_page):
                 raise Refused(self.result.issues[-1][2])
+            if first:
+                self.read_caption(sp, [w for w in words if w.vmid < header["v0"]])
             kind, cells, v_top = "header", header["cells"], header["v1"]
             self.frame = frame
         elif self.cells is not None and self.summary_page(words):
@@ -441,7 +448,7 @@ class Reader:
             # `Esportazione Definitiva (EX) / Riepilogo per operatore / TAB. M1`).
             # It may name the table; it may not hold its figures.
             self.count("cover")
-            self.check_outside(sp, words, [], float("inf"))
+            self.read_caption(sp, words)
             return
         else:
             cells = _page_columns(self.cells, walls)
@@ -541,6 +548,21 @@ class Reader:
             row[i] = " ".join(w.text.strip() for w in inside)
             used += inside
         return row, used
+
+    def read_caption(self, sp, words):
+        """The table's caption: each printed line above its first header, and
+        a cover page's, as printed (maintainer, 2026-10-25), its `TAB. M1`
+        too. The page stamp and the running head are furniture; a printed
+        amount is no caption, and stays an issue."""
+        for band in geo.row_bands(words):
+            text = " ".join(" ".join(w.text for w in sorted(band, key=lambda w: w.u0)).split())
+            if text and not RUNNING_HEAD.search(text) and (
+                    not STAMP.search(text) or re.fullmatch(r"TAB\.?\s*\S+", text)):
+                self.result.caption.append(text)
+        for w in words:
+            if AMOUNT_WORD.search(w.text):
+                self.result.issues.append(
+                    (sp.pdf_page, "outside", f"amount {w.text!r} outside the table"))
 
     def check_outside(self, sp, words, body, v_bottom, v_top=None):
         """Words outside the body. A note under the table is kept, the page
@@ -888,7 +910,10 @@ def read_list(year, key, spec, pages):
                 started = True
                 continue
             if not started and not (first and event):
-                continue            # above the list on this page: furniture, prose
+                # Above the list: its caption before the first item, furniture after.
+                if row_ord == 0 and not RUNNING_HEAD.search(text) and not STAMP.search(text):
+                    result.caption.append(" ".join(text.split()))
+                continue
             started = True
             labels = [label_of.get(w.text.strip().lower()) for w in band]
             if all(labels):

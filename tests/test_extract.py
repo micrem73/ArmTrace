@@ -64,6 +64,24 @@ def test_difesa_4_one_record_per_programme_and_its_note(year, sources):
 
 
 @pytest.mark.parametrize("year", ["2025"])
+def test_the_caption_over_the_grid_is_kept_as_printed(year, sources):
+    """What a table prints above its header is its caption, one line per
+    printed line (maintainer, 2026-10-25): Dogane M's says which operation the
+    whole table covers, T3's that its columns are five-year periods."""
+    from lib import source
+
+    def caption(key):           # the first page, clipped to the table as the run is
+        pages = source.table_pages(year, key)[:1]
+        return extract.read_table(year, key, pages=pages).caption
+    assert caption("DOG/A1C2/M") == [
+        "Tipo di operazione: Esportazione Definitiva (EX) TAB. M"]     # one printed line
+    assert caption("DIFESA/4") == [
+        "MINISTERO DELLA DIFESA – Annesso 4", "TABELLA RIASSUNTIVA DEI",
+        "PROGRAMMI DI COPRODUZIONE INTERNAZIONALE 2025"]
+    assert caption("MAE/T2") == ["Tabella 2"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
 def test_t2_wrapped_labels_years_and_footnote(year, sources):
     r = read(VOL1, 27, 27, 23, "MAE/T2", clip=[0.0, 295.84, 595.28, 513.41])
     assert [x["cells"][0] for x in r.rows] == [
@@ -311,7 +329,8 @@ def test_a_summary_agrees_with_the_table_it_summarises():
     a2 = [c for c in got if c[1] == "MAE/A2"]
     assert len(a2) == 3 * 159 and all(c[5] == "PASS" for c in a2)
     m1 = [c for c in got if c[1] == "DOG/A1C2/M1"]
-    assert len(m1) == 157 and all(c[5] == "PASS" for c in m1)
+    # 158: BERCELLA S.R.L. and BERCELLA SPA are two companies (maintainer, 2026-10-25).
+    assert len(m1) == 158 and all(c[5] == "PASS" for c in m1)
     # M1 prints `CPM ELETTRONICA SRL` twice and `C.P.M. ELETTRONICA S.R.L.`: one company.
     cpm = [c[2] for c in m1 if "CPM ELETTRONICA SRL" in c[2]]
     assert len(cpm) == 1 and "C.P.M. ELETTRONICA S.R.L." in cpm[0]
@@ -454,6 +473,18 @@ def test_importer_eval_relink_moves_one_item_to_another_amount(year, sources, tm
     amounts = {r[0] for r in db.execute("SELECT row_ord FROM mae_a1 WHERE ammontare_raw IS NOT NULL")}
     assert moved != importo and moved in amounts
     assert unit == dict((r[0], r[2]) for r in before)[moved]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_columns_render_reads_the_header_past_a_cover_page(year, sources):
+    """Drafting columns, the importer gets the header off the first page that
+    prints one: Dogane N1's first page is its cover (p871), the grid is on p872."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import import_queue
+    out = import_queue.render(year, "DOG/A1C2/N1", dpi=20)
+    assert out["header"] == ["Denominazione operatore", "Numero di operazioni svolte",
+                             "Stato di avanzamento annuale (Euro)",
+                             "Utilizzo anni precedenti (Euro)"]
 
 
 @pytest.mark.parametrize("year", ["2025"])

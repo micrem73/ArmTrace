@@ -35,7 +35,8 @@ Shared tables:
     view_def       per table and year, how the printed table is laid out (JSON):
                    the group column and how it prints (a heading, or on its first
                    row only), the summed columns with their `sum_sql`, the year
-                   window
+                   window; and its `caption`, the lines printed above its header
+                   (and on its cover page), as printed, one per line
     table_note     notes printed under a table
     company        ArmTrace's id and name of each company a table of the year names
                    (its `id_ditta`: `lib/companies.py`)
@@ -72,7 +73,7 @@ CREATE TABLE printed_figure (year INTEGER, table_key TEXT, kind TEXT, row_ord IN
     pdf_page INTEGER, printed_page INTEGER, grp TEXT, ordinal INTEGER, label TEXT,
     value DECIMAL, value_raw TEXT);
 CREATE TABLE view_def (year INTEGER, table_key TEXT, sql_table TEXT, definition TEXT,
-    PRIMARY KEY (year, table_key));
+    caption TEXT, PRIMARY KEY (year, table_key));
 CREATE TABLE table_note (year INTEGER, table_key TEXT, pdf_page INTEGER,
     printed_page INTEGER, text TEXT);
 CREATE TABLE extract_issue (year INTEGER, table_key TEXT, pdf_page INTEGER,
@@ -290,8 +291,8 @@ def extract_one(db, year, key, spec):
     shown, problems = figures(year, key, result)
     issues += problems
     db.executemany("INSERT INTO printed_figure VALUES (?,?,?,?,?,?,?,?,?,?,?)", shown)
-    db.execute("INSERT INTO view_def VALUES (?,?,?,?)",
-               (int(year), key, name, view_def(spec, result)))
+    db.execute("INSERT INTO view_def VALUES (?,?,?,?,?)",
+               (int(year), key, name, view_def(spec, result), "\n".join(result.caption) or None))
     db.executemany("INSERT INTO table_note VALUES (?,?,?,?,?)",
                    [(int(year), key, p, pp, text) for p, pp, text in result.notes])
     db.executemany("INSERT INTO extract_issue VALUES (?,?,?,?,?)",
