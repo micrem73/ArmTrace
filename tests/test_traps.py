@@ -629,3 +629,37 @@ def test_uncaptioned_t7_is_named_by_its_title():
           "2021 2020 2019 2018\nN. Licenze 15 16 17 11")
     assert verdict(t7) == "PASS"
     assert verdict("Elenco dei paesi\nN. Licenze 15 16 17 11") == "FAIL"
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_double_rule_is_one_wall_not_an_empty_column(year, sources):
+    """MAE T7 and T81 draw the 2024 and 2025 columns with double rules ~3 pt
+    apart; the gap between them was read as an empty column, so the agreed
+    year labels never matched (importer, 2026-10-25)."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from lib import extract, geometry as geo, grammar as gra, source
+    for key, labels in (("MAE/T7", ["", "", "2021", "2022", "2023", "2024", "2025"]),):
+        sp = source.table_pages(year, key)[0]
+        frame, words = extract.page_words(sp)
+        h = geo.grid_header(sp, words, frame, is_label=gra.is_label_row)
+        assert [c["text"] for c in h["cells"]] == labels, key
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_label_row_under_the_years_over_two_columns_each(year, sources):
+    """MAE T81..T88: the years, then `N. autorizzazioni e valore in €` under
+    each year, then two columns under each (the count, the value), the walls
+    between them starting under a double floor. Each column gets its year
+    (`over`) and the label; the country column under no header cell is the stub."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from lib import extract, geometry as geo, grammar as gra, source
+    sp = source.table_pages(year, "MAE/T81")[0]
+    frame, words = extract.page_words(sp)
+    h = geo.grid_header(sp, words, frame, is_label=gra.is_label_row)
+    label = "N. autorizzazioni e valore in €"
+    assert [(c.get("over", ""), c["text"]) for c in h["cells"]] == [("", "")] + [
+        (str(y), label) for y in range(2021, 2026) for _ in (0, 1)]

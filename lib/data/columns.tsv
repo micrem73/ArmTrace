@@ -55,6 +55,7 @@
 #           checked row by row (maintainer, 2026-10-24)
 #   once    in the sum field: stored on the row of the edition's year only, NULL on the
 #           others, so a sum is the printed one (3B's Importo, Residuo; maintainer, 2026-10-24)
+#   none    the whole table is not imported (maintainer, 2026-10-25: charts): one line, no col
 #   years   the printed year columns of a table that prints a year window (T2): one
 #           row per printed row and year, `anno` + `valore` (amount). Several measures
 #           per year (T10: `Anno 2022` over `N. | Valore in € | %`): one `years` line
@@ -195,3 +196,705 @@ MAE/F1	riga_importo	link		ammontare qta data
 MAE/F1	riga_autorizzazione	unit		
 MAE/F1	id_ditta	company		operatore
 DIFESA/4	id_ditte	companies		ditte_italiane_partecipanti
+# Approved on the drafts page (maintainer, 2026-10-25), siblings with them.
+DIFESA/A2C6/3A	n	code	N.	
+DIFESA/A2C6/3A	data_rilascio_aut	date	DATA RILASCIO AUT.	
+DIFESA/A2C6/3A	societa	text	SOCIETA'	
+DIFESA/A2C6/3A	volume_autorizzato	amount	Volume autorizzato	
+DIFESA/A2C6/3A	scadenza_autorizz	date	Scadenza Autorizz.	
+DIFESA/A2C6/3A	incassi	amount	Incassi dal 01/01/Y al 31/12/Y	
+DIFESA/A2C6/3A	note	text	Note	
+DIFESA/A2C6/3A	id_ditta	company		societa
+DOG/A10QUATER/MT1	denominazione_operatore	text	Denominazione Operatore	
+DOG/A10QUATER/MT1	quantita	number	Quantità	
+DOG/A10QUATER/MT1	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A10QUATER/MT1	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A10QUATER/MT1	id_ditta	company		denominazione_operatore
+DOG/A10QUATER/MT13	paese_di_destinazione	text	Paese di destinazione	
+DOG/A10QUATER/MT13	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A10QUATER/MT13	valore_euro	amount	Valore (Euro)	sum
+DOG/A10QUATER/MT7	denominazione_operatore	text	Denominazione operatore	
+DOG/A10QUATER/MT7	quantita	number	Quantità	
+DOG/A10QUATER/MT7	valore_euro	amount	Valore (Euro)	sum
+DOG/A10QUATER/MT7	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG1	denominazione_operatore	text	Denominazione Operatore	
+DOG/A11C5BIS/MG1	quantita	number	Quantità	
+DOG/A11C5BIS/MG1	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A11C5BIS/MG1	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A11C5BIS/MG1	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG2	denominazione_operatore	text	Denominazione Operatore	
+DOG/A11C5BIS/MG2	quantita	number	Quantità	
+DOG/A11C5BIS/MG2	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A11C5BIS/MG2	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A11C5BIS/MG2	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG3	denominazione_operatore	text	Denominazione Operatore	
+DOG/A11C5BIS/MG3	quantita	number	Quantità	
+DOG/A11C5BIS/MG3	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A11C5BIS/MG3	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A11C5BIS/MG3	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG4	denominazione_operatore	text	Denominazione Operatore	
+DOG/A11C5BIS/MG4	quantita	number	Quantità	
+DOG/A11C5BIS/MG4	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A11C5BIS/MG4	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A11C5BIS/MG4	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG5	denominazione_operatore	text	Denominazione Operatore	
+DOG/A11C5BIS/MG5	quantita	number	Quantità	
+DOG/A11C5BIS/MG5	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A11C5BIS/MG5	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A11C5BIS/MG5	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG6	denominazione_operatore	text	Denominazione Operatore	
+DOG/A11C5BIS/MG6	quantita	number	Quantità	
+DOG/A11C5BIS/MG6	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A11C5BIS/MG6	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A11C5BIS/MG6	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG13	paese_di_destinazione	text	Paese di destinazione	
+DOG/A11C5BIS/MG13	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A11C5BIS/MG13	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG14	paese_di_destinazione	text	Paese di destinazione	
+DOG/A11C5BIS/MG14	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A11C5BIS/MG14	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG15	paese_di_destinazione	text	Paese di destinazione	
+DOG/A11C5BIS/MG15	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A11C5BIS/MG15	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG16	paese_di_destinazione	text	Paese di destinazione	
+DOG/A11C5BIS/MG16	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A11C5BIS/MG16	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG17	paese_di_destinazione	text	Paese di destinazione	
+DOG/A11C5BIS/MG17	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A11C5BIS/MG17	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG18	paese_di_destinazione	text	Paese di destinazione	
+DOG/A11C5BIS/MG18	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A11C5BIS/MG18	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG7	denominazione_operatore	text	Denominazione operatore	
+DOG/A11C5BIS/MG7	quantita	number	Quantità	
+DOG/A11C5BIS/MG7	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG7	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG8	denominazione_operatore	text	Denominazione operatore	
+DOG/A11C5BIS/MG8	quantita	number	Quantità	
+DOG/A11C5BIS/MG8	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG8	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG9	denominazione_operatore	text	Denominazione operatore	
+DOG/A11C5BIS/MG9	quantita	number	Quantità	
+DOG/A11C5BIS/MG9	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG9	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG10	denominazione_operatore	text	Denominazione operatore	
+DOG/A11C5BIS/MG10	quantita	number	Quantità	
+DOG/A11C5BIS/MG10	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG10	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG11	denominazione_operatore	text	Denominazione operatore	
+DOG/A11C5BIS/MG11	quantita	number	Quantità	
+DOG/A11C5BIS/MG11	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG11	id_ditta	company		denominazione_operatore
+DOG/A11C5BIS/MG12	denominazione_operatore	text	Denominazione operatore	
+DOG/A11C5BIS/MG12	quantita	number	Quantità	
+DOG/A11C5BIS/MG12	valore_euro	amount	Valore (Euro)	sum
+DOG/A11C5BIS/MG12	id_ditta	company		denominazione_operatore
+DOG/A1C2/MAPPENDICE	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/MAPPENDICE	codice_valuta	text	Codice valuta	
+DOG/A1C2/MAPPENDICE	ammontare_in_valuta	amount	Ammontare in valuta	
+DOG/A1C2/MAPPENDICE	quantita	number	Quantità	
+DOG/A1C2/MAPPENDICE	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A1C2/MAPPENDICE	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/MAPPENDICE	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/MAPPENDICE	id_ditta	company		denominazione_operatore
+DOG/A1C2/OAPPENDICE	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/OAPPENDICE	codice_valuta	text	Codice valuta	
+DOG/A1C2/OAPPENDICE	ammontare_in_valuta	amount	Ammontare in valuta	
+DOG/A1C2/OAPPENDICE	quantita	number	Quantità	
+DOG/A1C2/OAPPENDICE	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A1C2/OAPPENDICE	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/OAPPENDICE	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/OAPPENDICE	id_ditta	company		denominazione_operatore
+DOG/A1C2/N	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/N	codice_valuta	text	Codice valuta	
+DOG/A1C2/N	ammontare_in_valuta	amount	Ammontare in valuta	
+DOG/A1C2/N	quantita	number	Quantità	
+DOG/A1C2/N	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A1C2/N	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/N	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/N	id_ditta	company		denominazione_operatore
+DOG/A1C2/O	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/O	codice_valuta	text	Codice valuta	
+DOG/A1C2/O	ammontare_in_valuta	amount	Ammontare in valuta	
+DOG/A1C2/O	quantita	number	Quantità	
+DOG/A1C2/O	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A1C2/O	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/O	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/O	id_ditta	company		denominazione_operatore
+DOG/A1C2/P	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/P	codice_valuta	text	Codice valuta	
+DOG/A1C2/P	ammontare_in_valuta	amount	Ammontare in valuta	
+DOG/A1C2/P	quantita	number	Quantità	
+DOG/A1C2/P	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+DOG/A1C2/P	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/P	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/P	id_ditta	company		denominazione_operatore
+DOG/A1C2/N1	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/N1	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/N1	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/N1	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/N1	id_ditta	company		denominazione_operatore
+DOG/A1C2/M1APPENDICE	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/M1APPENDICE	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/M1APPENDICE	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/M1APPENDICE	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/M1APPENDICE	id_ditta	company		denominazione_operatore
+DOG/A1C2/O1	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/O1	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/O1	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/O1	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/O1	id_ditta	company		denominazione_operatore
+DOG/A1C2/O1APPENDICE	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/O1APPENDICE	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/O1APPENDICE	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/O1APPENDICE	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/O1APPENDICE	id_ditta	company		denominazione_operatore
+DOG/A1C2/P1	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C2/P1	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/P1	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/P1	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/P1	id_ditta	company		denominazione_operatore
+DOG/A1C2/N2	area_geografica	code	Area geografica	
+DOG/A1C2/N2	paese	text	Paese	
+DOG/A1C2/N2	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/N2	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/N2	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/M2	area_geografica	code	Area geografica	
+DOG/A1C2/M2	paese	text	Paese	
+DOG/A1C2/M2	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/M2	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/M2	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/M2APPENDICE	area_geografica	code	Area geografica	
+DOG/A1C2/M2APPENDICE	paese	text	Paese	
+DOG/A1C2/M2APPENDICE	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/M2APPENDICE	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/M2APPENDICE	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/O2	area_geografica	code	Area geografica	
+DOG/A1C2/O2	paese	text	Paese	
+DOG/A1C2/O2	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/O2	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/O2	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/O2APPENDICE	area_geografica	code	Area geografica	
+DOG/A1C2/O2APPENDICE	paese	text	Paese	
+DOG/A1C2/O2APPENDICE	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/O2APPENDICE	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/O2APPENDICE	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C2/P2	area_geografica	code	Area geografica	
+DOG/A1C2/P2	paese	text	Paese	
+DOG/A1C2/P2	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C2/P2	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C2/P2	utilizzo_anni_precedenti_euro	amount	Utilizzo anni precedenti (Euro)	
+DOG/A1C89/N	programma	text	Programma	
+DOG/A1C89/N	denominazione_operatore	text	Denominazione Operatore	
+DOG/A1C89/N	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A1C89/N	operazioni_svolte	number	Operazioni svolte	
+DOG/A1C89/N	id_ditta	company		denominazione_operatore
+DOG/A1C89/O	programma	text	Programma	
+DOG/A1C89/O	denominazione_operatore	text	Denominazione Operatore	
+DOG/A1C89/O	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A1C89/O	operazioni_svolte	number	Operazioni svolte	
+DOG/A1C89/O	id_ditta	company		denominazione_operatore
+DOG/A1C89/OAPPENDICE	programma	text	Programma	
+DOG/A1C89/OAPPENDICE	denominazione_operatore	text	Denominazione Operatore	
+DOG/A1C89/OAPPENDICE	stato_avanzamento_annuale_euro	amount	Stato avanzamento annuale (Euro)	sum
+DOG/A1C89/OAPPENDICE	operazioni_svolte	number	Operazioni svolte	
+DOG/A1C89/OAPPENDICE	id_ditta	company		denominazione_operatore
+DOG/A1C89/N1	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C89/N1	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C89/N1	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C89/N1	id_ditta	company		denominazione_operatore
+DOG/A1C89/O1	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C89/O1	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C89/O1	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C89/O1	id_ditta	company		denominazione_operatore
+DOG/A1C89/O1APPENDICE	denominazione_operatore	text	Denominazione operatore	
+DOG/A1C89/O1APPENDICE	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C89/O1APPENDICE	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C89/O1APPENDICE	id_ditta	company		denominazione_operatore
+MAE/A3	operatore	text	Operatore	
+MAE/A3	autorizzazioni	number	Autorizzazioni	sum
+MAE/A3	valore_euro	amount	Valore (EURO)	sum
+MAE/A3	valore_euro_cooperazione	amount	di cui, per Prog. di Cooperazione	sum
+MAE/A3	val_fini_dog	amount	Valore Fini Dog.	sum
+MAE/A3	val_fini_dog_cooperazione	amount	di cui per Prog. di Cooperazione	sum
+MAE/A3	incidenza_percento	number	Incidenza % su totale	
+MAE/A3	id_ditta	company		operatore
+MAE/A4	operatore	group		
+MAE/A4	valuta	text	Valuta	
+MAE/A4	ammontare	amount	Ammontare	
+MAE/A4	euro	amount	EURO	sum else ammontare@valuta=EUR unless val_fini_dog
+MAE/A4	val_fini_dog	amount	Val. Fini Dog.	sum
+MAE/A4	cooperazione	text	Cooperazione	
+MAE/A4	data	date	Data	
+MAE/A4	qta	number	Q.ta'	
+MAE/A4	unita_misura	text	Unita' Misura	
+MAE/A4	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+MAE/A4	tipo	code	Tipo	
+MAE/A4	cat	code	Cat.	
+MAE/A4	riga_importo	link		ammontare qta data
+MAE/A4	riga_autorizzazione	unit		
+MAE/A4	id_ditta	company		operatore
+MAE/B1	paese_di_destinazione	text	Paese di destinazione	
+MAE/B1	autorizzazioni	number	Autorizzazioni	sum
+MAE/B1	valore_euro	amount	Valore (EURO)	sum
+MAE/B1	incidenza_percento	number	Incidenza % su ammontare totale	
+MAE/B2	paese_di_destinazione	text	Paese di destinazione	
+MAE/B2	autorizzazioni	number	Autorizzazioni	sum
+MAE/B2	valore_euro	amount	Valore (EURO)	sum
+MAE/B2	incidenza_percento	number	Incidenza % su ammontare totale	
+MAE/B3	paese_di_destinazione	text	Paese di destinazione	
+MAE/B3	autorizzazioni	number	Autorizzazioni	sum
+MAE/B3	valore_euro	amount	Valore (EURO)	sum
+MAE/B3	incidenza_percento	number	Incidenza % su ammontare totale	
+MAE/B5	paese_di_destinazione	text	Paese di destinazione	
+MAE/B5	autorizzazioni	number	Autorizzazioni	sum
+MAE/B5	valore_euro	amount	Valore (EURO)	sum
+MAE/B5	val_fini_dog	amount	Valore ai fini doganali (EURO)	sum
+MAE/B5	incidenza_percento	number	Incidenza % su ammontare totale	
+MAE/C1	operatore	group		
+MAE/C1	valuta	text	Valuta	
+MAE/C1	ammontare	amount	Ammontare	
+MAE/C1	euro	amount	EURO	sum else ammontare@valuta=EUR unless val_fini_dog
+MAE/C1	val_fini_dog	amount	Val. Fini Dog.	sum
+MAE/C1	data	date	Data	
+MAE/C1	quantita	number	Quantita'	
+MAE/C1	unita_misura	text	Unita' Misura	
+MAE/C1	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+MAE/C1	tipo	code	Tipo	
+MAE/C1	cat	code	Cat.	
+MAE/C1	riga_importo	link		ammontare quantita data
+MAE/C1	riga_autorizzazione	unit		
+MAE/C1	id_ditta	company		operatore
+MAE/C2	operatore	text	Operatore	
+MAE/C2	autorizzazioni	number	Autorizzazioni	sum
+MAE/C2	valore_euro	amount	Valore (EURO)	sum
+MAE/C2	id_ditta	company		operatore
+MAE/H2	operatore	text	Operatore	
+MAE/H2	autorizzazioni	number	Autorizzazioni	sum
+MAE/H2	valore_euro	amount	Valore (EURO)	sum
+MAE/H2	id_ditta	company		operatore
+MAE/F2	operatore	text	Operatore	
+MAE/F2	autorizzazioni	number	Autorizzazioni	sum
+MAE/F2	valore_euro	amount	Valore (EURO)	sum
+MAE/F2	id_ditta	company		operatore
+MAE/H1	operatore	group		
+MAE/H1	valuta	text	Valuta	
+MAE/H1	ammontare	amount	Ammontare	
+MAE/H1	euro	amount	EURO	sum else ammontare@valuta=EUR unless val_fini_dog
+MAE/H1	val_fini_dog	amount	Valore Fini Dog.	sum
+MAE/H1	data	date	Data	
+MAE/H1	qta	number	Quantita'	
+MAE/H1	unita_misura	text	Unita' Misura	
+MAE/H1	materiale_oggetto_del_contratto	text	Materiale oggetto del contratto	
+MAE/H1	tipo	code	Tipo	
+MAE/H1	cat	code	Cat. Rif.	
+MAE/H1	riga_importo	link		ammontare qta data
+MAE/H1	riga_autorizzazione	unit		
+MAE/H1	id_ditta	company		operatore
+MAE/M1	n	code	n.	
+MAE/M1	operatore	carry	Operatore	
+MAE/M1	valore_in_euro	amount	Valore in euro	sum
+MAE/M1	categoria_materiale	text	Categoria Materiale	
+MAE/M1	riga_operatore	unit		
+MAE/M1	id_ditta	company		operatore
+MAE/M2	n	code	N.	
+MAE/M2	paese	text	Paese	
+MAE/M2	num	number	Num.	sum
+MAE/M2	valore_in_euro	amount	Valore in euro	sum
+MAE/O1	operatore	carry	Operatore	
+MAE/O1	movimentazioni	carry	Movimentazioni	
+MAE/O1	paese	text	Paese	
+MAE/O1	valore_in_euro	amount	Valore in €	sum
+MAE/O1	valore_fini_doganali_in_euro	amount	Valore fini doganali in €	sum
+MAE/O1	spedizioni_nr	number	Spedizioni nr.	sum
+MAE/O1	riga_operatore	unit		
+MAE/O1	riga_movimentazione	unit		
+MAE/O1	id_ditta	company		operatore
+MAE/O2	paese	carry	Paese	
+MAE/O2	movimentazioni	text	Movimentazioni	
+MAE/O2	valore_in_euro	amount	Valore in €	sum
+MAE/O2	valore_fini_doganali_in_euro	amount	Valore fini doganali in €	sum
+MAE/O2	spedizioni_nr	number	Spedizioni nr.	sum
+MAE/O2	riga_paese	unit		
+MAE/P1	tipologia	carry	Tipologia	
+MAE/P1	operatore	carry	Operatore	
+MAE/P1	movimentazioni	carry	Movimentazioni	
+MAE/P1	paese	text	Paese	
+MAE/P1	valore_in_euro	amount	Valore in €	sum
+MAE/P1	valore_fini_doganali_in_euro	amount	Valore fini doganali in €	sum
+MAE/P1	spedizione_nr	number	Spedizione nr.	sum
+MAE/P1	riga_operatore	unit		
+MAE/P1	id_ditta	company		operatore
+MAE/P2	tipologia	carry	Tipologia	
+MAE/P2	movimentazioni	carry	Movimentazioni	
+MAE/P2	paese	text	Paese	
+MAE/P2	valore_in_euro	amount	Valore in €	sum
+MAE/P2	valore_fini_doganali_in_euro	amount	Valore fini doganali in €	sum
+MAE/P2	spedizioni_nr	number	Spedizioni nr.	sum
+MAE/P2	riga_movimentazioni	unit		
+MAE/T22	anno	block		
+MAE/T22	tipologia	text	Tipologia	
+MAE/T22	valore_euro	amount	Valore in €	sum
+MAE/T22	percentuale	number	%	
+MAE/T22	numero	number	Numero	sum
+MEF/AA	intermediario_finanziario	carry	Intermediario finanziario	
+MEF/AA	agenzia_sportello	text	Agenzia/Sportello	
+MEF/AA	importi_segnalati	amount	Importi Segnalati	sum
+MEF/AA	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/BB	intermediario_finanziario	carry	Intermediario finanziario	
+MEF/BB	agenzia_sportello	text	Agenzia/Sportello	
+MEF/BB	importi_segnalati	amount	Importi Segnalati	sum
+MEF/BB	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/CC	intermediario_finanziario	carry	Intermediario finanziario	
+MEF/CC	agenzia_sportello	text	Agenzia/Sportello	
+MEF/CC	importi_segnalati	amount	Importi Segnalati	sum
+MEF/CC	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/DD	intermediario_finanziario	carry	Intermediario finanziario	
+MEF/DD	agenzia_sportello	text	Agenzia/Sportello	
+MEF/DD	importi_segnalati	amount	Importi Segnalati	sum
+MEF/DD	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/AA1	area_geografica	carry	Area Geografica	
+MEF/AA1	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/AA1	importi_segnalati	amount	Importi Segnalati	sum
+MEF/AA1	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/BB1	area_geografica	carry	Area Geografica	
+MEF/BB1	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/BB1	importi_segnalati	amount	Importi Segnalati	sum
+MEF/BB1	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/CC1	area_geografica	carry	Area Geografica	
+MEF/CC1	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/CC1	importi_segnalati	amount	Importi Segnalati	sum
+MEF/CC1	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/DD1	area_geografica	carry	Area Geografica	
+MEF/DD1	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/DD1	importi_segnalati	amount	Importi Segnalati	sum
+MEF/DD1	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/AA2	ditta	text	Ditta	
+MEF/AA2	importi_segnalati	amount	Importi Segnalati	sum
+MEF/AA2	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/AA2	id_ditta	company		ditta
+MEF/BB2	ditta	text	Ditta	
+MEF/BB2	importi_segnalati	amount	Importi Segnalati	sum
+MEF/BB2	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/BB2	id_ditta	company		ditta
+MEF/CC2	ditta	text	Ditta	
+MEF/CC2	importi_segnalati	amount	Importi Segnalati	sum
+MEF/CC2	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/CC2	id_ditta	company		ditta
+MEF/DD2	ditta	text	Ditta	
+MEF/DD2	importi_segnalati	amount	Importi Segnalati	sum
+MEF/DD2	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/DD2	id_ditta	company		ditta
+MEF/EE1	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/EE1	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/EE1	causale	text	Causale	
+MEF/EE1	importi_segnalati	amount	Importi Segnalati	sum
+MEF/EE1	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/EE1	riga_autorizzazione	unit		
+MEF/FF1	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/FF1	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/FF1	causale	text	Causale	
+MEF/FF1	importi_segnalati	amount	Importi Segnalati	sum
+MEF/FF1	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/FF1	riga_autorizzazione	unit		
+MEF/FG	intermediario_finanziario	text	Intermediario finanziario	
+MEF/FG	importo_per_nuove_operazioni	amount	Importo per nuove operazioni	sum
+MEF/FG	importo_per_rinnovo_operazioni	amount	Importo per rinnovo operazioni	sum
+MEF/FG	totale	amount	Totale	sum
+MEF/REL/FG	intermediario_finanziario	text	Intermediario finanziario	
+MEF/REL/FG	importo_per_nuove_operazioni	amount	Importo per nuove operazioni	sum
+MEF/REL/FG	importo_per_rinnovo_operazioni	amount	Importo per rinnovo operazioni	sum
+MEF/REL/FG	totale	amount	Totale	sum
+MEF/IAA	ditta	text	Ditta	
+MEF/IAA	acquisto_pagamento	amount	Acquisto/Pagamento	sum
+MEF/IAA	vendita_incasso	amount	Vendita/Incasso	sum
+MEF/IAA	id_ditta	company		ditta
+MEF/REL/IAA	ditta	text	Ditta	
+MEF/REL/IAA	acquisto_pagamento	amount	Acquisto/Pagamento	sum
+MEF/REL/IAA	vendita_incasso	amount	Vendita/Incasso	sum
+MEF/REL/IAA	id_ditta	company		ditta
+MEF/IBB	numero_autorizzazione	code	Numero autorizzazione	
+MEF/IBB	acquisto_pagamento	amount	Acquisto/Pagamento	sum
+MEF/IBB	vendita_incasso	amount	Vendita/Incasso	sum
+MEF/KK1	istituti_di_credito	text	Istituti di credito	
+MEF/KK1	esportazione_definitiva	amount	Esportazione definitiva	sum
+MEF/KK1	esportazione_temporanea	amount	Esportazione temporanea	sum
+MEF/KK1	esportazione_temporanea_con_successiva_reimp	amount	Esportazione temporanea con successiva reimp.	sum
+MEF/KK1	importazione_definitiva	amount	Importazione definitiva	sum
+MEF/KK1	importazione_temporanea	amount	Importazione temporanea	sum
+MEF/KK1	importazione_temporanea_con_successiva_reimp	amount	Importazione temporanea con successiva reimp.	sum
+MEF/KK1	prestazione_di_servizi	amount	Prestazione di servizi	sum
+MEF/KK1	trasferimento_intracomunitario	amount	Trasferimento intracomunitario	sum
+MEF/KK1	altro	amount	Altro	sum
+MEF/KK1	totale_complessivo	amount	Totale complessivo	sum
+MEF/LGP	ditta	text	Ditta	
+MEF/LGP	paese_utilizzatore	text	Paese utilizzatore	
+MEF/LGP	banca	text	Banca	
+MEF/LGP	importi	amount	Importi	sum
+MEF/LGP	id_ditta	company		ditta
+MEF/REL/LGP	ditta	text	Ditta	
+MEF/REL/LGP	paese_utilizzatore	text	Paese utilizzatore	
+MEF/REL/LGP	banca	text	Banca	
+MEF/REL/LGP	importi	amount	Importi	sum
+MEF/REL/LGP	id_ditta	company		ditta
+MEF/REL/SALDI	codice	code		
+MEF/REL/SALDI	voce	text		
+MEF/REL/SALDI	importi_segnalati	amount	Importi Segnalati	sum
+MEF/REL/SALDI	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/REL/UE	codice	code		
+MEF/REL/UE	voce	text		
+MEF/REL/UE	totali	amount	Totali	
+MEF/UE	nazione_di_provenienza	carry	Nazione di Provenienza	
+MEF/UE	ditta	carry	Ditta	
+MEF/UE	causale	text	Causale	
+MEF/UE	totale	amount	Totale	sum
+MEF/UE	id_ditta	company		ditta
+# MEF lines under an authorisation: riga_autorizzazione, as EE1 (maintainer, 2026-10-25).
+MEF/FF	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/FF	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/FF	causale	text	Causale	
+MEF/FF	importi_segnalati	amount	Importi Segnalati	sum
+MEF/FF	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
+MEF/FF	riga_autorizzazione	unit		
+MEF/GG	utilizzatore_finale	carry	Utilizzatore Finale	
+MEF/HH	utilizzatore_finale	carry	Utilizzatore Finale	
+MEF/GG	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/HH	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/GG	ditta	text	Ditta	
+MEF/HH	ditta	text	Ditta	
+MEF/GG	causale	text	Causale	
+MEF/HH	causale	text	Causale	
+MEF/GG	totale	amount	Totale	sum
+MEF/HH	totale	amount	Totale	sum
+MEF/GG	id_ditta	company		ditta
+MEF/HH	id_ditta	company		ditta
+MEF/GG	riga_autorizzazione	unit		
+MEF/HH	riga_autorizzazione	unit		
+MEF/GG1	utilizzatore_finale	carry	Utilizzatore Finale	
+MEF/HH1	utilizzatore_finale	carry	Utilizzatore Finale	
+MEF/GG1	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/HH1	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/GG1	ditta	text	Ditta	
+MEF/HH1	ditta	text	Ditta	
+MEF/GG1	causale	text	Causale	
+MEF/HH1	causale	text	Causale	
+MEF/GG1	totale	amount	Totale	sum
+MEF/HH1	totale	amount	Totale	sum
+MEF/GG1	id_ditta	company		ditta
+MEF/HH1	id_ditta	company		ditta
+MEF/GG1	riga_autorizzazione	unit		
+MEF/HH1	riga_autorizzazione	unit		
+MEF/II1	ditta	carry	Ditta	
+MEF/II1	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/II1	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/II1	causale	text	Causale	
+MEF/II1	totale	amount	Totale	sum
+MEF/II1	id_ditta	company		ditta
+MEF/II1	riga_autorizzazione	unit		
+MEF/JJ	ditta	carry	Ditta	
+MEF/JJ1	ditta	carry	Ditta	
+MEF/JJ	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/JJ1	numero_autorizzazione	code	Numero Autorizzazione	
+MEF/JJ	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/JJ1	utilizzatore_finale	text	Utilizzatore Finale	
+MEF/JJ	causale	text	Causale	
+MEF/JJ1	causale	text	Causale	
+MEF/JJ	totale	amount	Totale	sum
+MEF/JJ1	totale	amount	Totale	sum
+MEF/JJ	id_ditta	company		ditta
+MEF/JJ1	id_ditta	company		ditta
+MEF/JJ	riga_autorizzazione	unit		
+MEF/JJ1	riga_autorizzazione	unit		
+# Approved in round 2 of the drafts page (maintainer, 2026-10-25), siblings with them.
+MAE/T16	paese	text		
+MAE/T16	lgp	amount	LGP	sum
+MAE/T16	lgt	amount	LGT	sum
+MAE/T16	agt	amount	AGT	sum
+MAE/T16	totale	rowsum	TOTALE	lgp+lgt+agt
+MAE/T18	tipologia	text	Tipologia	
+MAE/T18	numero	code	Numero	
+MAE/T18	data	date	Data	
+MAE/T18	operatore_commerciale	text	Operatore commerciale	
+MAE/T18	id_ditta	company		operatore_commerciale
+MEF/KK	codice_programma_intergovernativo	carry	Codice Programma Intergovernativo	
+MEF/KK	abi	text	ABI	
+MEF/KK	esportazioni	amount	Esportazioni	sum
+MEF/KK	importazioni	amount	Importazioni	sum
+MEF/KK	trasferimento_intracomunitario	amount	Trasferimento Intracomunitario	sum
+MEF/KK	totale_complessivo	amount	Totale Complessivo	sum
+MAE/N1	operatore	carry	Operatore	
+MAE/N2	operatore	carry	Operatore	
+MAE/N1	licenza	code	Licenza	
+MAE/N2	licenza	code	Licenza	
+MAE/N1	data_aut	date	Data Aut.	
+MAE/N2	data_aut	date	Data Aut.	
+MAE/N1	programma	text	Programma	
+MAE/N2	programma	text	Programma	
+MAE/N1	movimentazioni	carry	Movimentazioni	
+MAE/N2	movimentazioni	carry	Movimentazioni	
+MAE/N1	paese	text	Paese	
+MAE/N2	paese	text	Paese	
+MAE/N1	valore_in_euro	amount	Valore in €	sum
+MAE/N2	valore_in_euro	amount	Valore in €	sum
+MAE/N1	val_fini_dog	amount	Valore fini doganali in €	sum
+MAE/N2	val_fini_dog	amount	Valore fini doganali in €	sum
+MAE/N1	spedizioni_nr	number	Spedizioni nr.	sum
+MAE/N2	spedizioni_nr	number	Spedizioni nr.	sum
+MAE/N1	licenze_precedenti	text	Licenze precedenti	
+MAE/N2	licenze_precedenti	text	Licenze precedenti	
+MAE/N1	riga_operatore	unit		
+MAE/N2	riga_operatore	unit		
+MAE/N1	riga_licenza	unit		
+MAE/N2	riga_licenza	unit		
+MAE/N1	id_ditta	company		operatore
+MAE/N2	id_ditta	company		operatore
+DOG/A1C89/N2	area_geografica	code	Area geografica	
+DOG/A1C89/O2	area_geografica	code	Area geografica	
+DOG/A1C89/O2APPENDICE	area_geografica	code	Area geografica	
+DOG/A1C89/N2	paese	text	Paese	
+DOG/A1C89/O2	paese	text	Paese	
+DOG/A1C89/O2APPENDICE	paese	text	Paese	
+DOG/A1C89/N2	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C89/O2	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C89/O2APPENDICE	numero_operazioni_svolte	number	Numero di operazioni svolte	
+DOG/A1C89/N2	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C89/O2	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+DOG/A1C89/O2APPENDICE	stato_avanzamento_annuale_euro	amount	Stato di avanzamento annuale (Euro)	sum
+MAE/T1	sezione	group		
+MAE/T1	tipologia_di_operazioni	text	Tipologia di operazioni	
+MAE/T1	valore_euro	years	Anno Y|Anno Y-1|Anno Y-2|Anno Y-3	sum
+MAE/T1	numero	years	Anno Y|Anno Y-1|Anno Y-2|Anno Y-3	sum
+MAE/T1	variaz_valore	text	Variaz. Y/Y-1|Variaz. Y/Y-2|Variaz. Y/Y-3	
+MAE/T1	variaz_numero	text	Variaz. Y/Y-1|Variaz. Y/Y-2|Variaz. Y/Y-3	
+MAE/T3	voce	text		
+MAE/T3	valore	periods	Y-19-Y-15|Y-14-Y-10|Y-9-Y-5|Y-4-Y	
+MAE/T4	fascia	text	In Mio EUR	
+MAE/T4	n_autorizzazioni	years	Y-4|Y-3|Y-2|Y-1|Y	sum
+MAE/T4	valore_euro	years	Y-4|Y-3|Y-2|Y-1|Y	sum
+MAE/T4	percentuale	years	Y-4|Y-3|Y-2|Y-1|Y	sum
+MAE/T5	misura	block		In Mio EUR=In Mio EUR;N. licenze=N. licenze
+MAE/T5	area	text		
+MAE/T5	valore	years	Y-4|Y-3|Y-2|Y-1|Y	sum
+MAE/T6	pos	number		
+MAE/T6	paese	text		
+MAE/T6	valore	years	Y|Y-1|Y-2|Y-3|Y-4	
+MAE/T6	unita	years	Y|Y-1|Y-2|Y-3|Y-4	
+MAE/T6	posizione	years	Y|Y-1|Y-2|Y-3|Y-4	
+MAE/T7	area_geografica	block		
+MAE/T7	voce	text		
+MAE/T7	valore	years	Y-4|Y-3|Y-2|Y-1|Y	sum
+MAE/T9	anno	years	Anno Y-4|Anno Y-3|Anno Y-2|Anno Y-1|Anno Y	
+MAE/T9	valore_mio_euro	amount	Mio €	
+MAE/T9	percentuale	number	%	
+MAE/T9	numero_licenze	number	licenze	
+MAE/T12	anno	block		
+MAE/T12	tipologia	text	Tipologia	
+MAE/T12	valore_euro	amount	Valore in €	sum
+MAE/T12	percentuale	number	%	
+MAE/T12	numero_parti	number	Numero parti	sum
+MAE/T81	paese	text		
+MAE/T82	paese	text		
+MAE/T83	paese	text		
+MAE/T84	paese	text		
+MAE/T85	paese	text		
+MAE/T86	paese	text		
+MAE/T87	paese	text		
+MAE/T88	paese	text		
+MAE/T81	n_autorizzazioni	years	N. autorizzazioni e valore in €	sum
+MAE/T82	n_autorizzazioni	years	N. autorizzazioni e valore in €	sum
+MAE/T83	n_autorizzazioni	years	N. autorizzazioni e valore in €	sum
+MAE/T84	n_autorizzazioni	years	N. autorizzazioni e valore in €	sum
+MAE/T85	n_autorizzazioni	years	N. autorizzazioni e valore in €	sum
+MAE/T86	n_autorizzazioni	years	N. autorizzazioni e valore in €	sum
+MAE/T87	n_autorizzazioni	years	N. autorizzazioni e valore in €	sum
+MAE/T88	n_autorizzazioni	years	N. autorizzazioni e valore in €	sum
+MAE/T81	valore_euro	years	N. autorizzazioni e valore in €	sum
+MAE/T82	valore_euro	years	N. autorizzazioni e valore in €	sum
+MAE/T83	valore_euro	years	N. autorizzazioni e valore in €	sum
+MAE/T84	valore_euro	years	N. autorizzazioni e valore in €	sum
+MAE/T85	valore_euro	years	N. autorizzazioni e valore in €	sum
+MAE/T86	valore_euro	years	N. autorizzazioni e valore in €	sum
+MAE/T87	valore_euro	years	N. autorizzazioni e valore in €	sum
+MAE/T88	valore_euro	years	N. autorizzazioni e valore in €	sum
+MAE/T141	pos	number		
+MAE/T142	pos	number		
+MAE/T141	operatore	years	Operatore	
+MAE/T142	operatore	years	Operatore	
+MAE/T141	id_ditta	company		operatore
+MAE/T142	id_ditta	company		operatore
+MAE/T141	n_aut	years	N. aut.	sum
+MAE/T142	n_aut	years	N. aut.	sum
+MAE/T141	valore	years	Valore in €	sum
+MAE/T142	valore	years	Valore in €	sum
+MAE/T141	percentuale	years	%	sum
+MAE/T142	percentuale	years	%	sum
+# MAE/T15: scadute by the legend (yellow = one expired), the two totals printed figures, checked (maintainer, 2026-10-25).
+MAE/T15	tipologia	text	Tipologia
+MAE/T15	valore	years	Y-14|Y-13|Y-12|Y-11|Y-10|Y-9|Y-8|Y-7|Y-6|Y-5|Y-4|Y-3|Y-2|Y-1|Y	sum
+MAE/T15	scadute	years	Y-14|Y-13|Y-12|Y-11|Y-10|Y-9|Y-8|Y-7|Y-6|Y-5|Y-4|Y-3|Y-2|Y-1|Y
+MAE/T15	totale_emesse	rowsum	Totale emesse	valore
+MAE/T15	in_vigore	rowsum	In vigore	valore-scadute
+# Round 2, last eight (maintainer, 2026-10-25); a `rowsum` is a printed total, checked, not a fact.
+MAE/B6	paese_di_destinazione	text	Paese di Destinazione	
+MAE/B6	n_aut	number	n. Aut.	sum
+MAE/B6	valore_euro	amount	Valore (EURO)	sum
+MAE/B6	prog_cooperazione	text	Prog. Cooperazione	
+MAE/B6	cat_descrizione_categoria_materiali	text	Cat. - Descrizione Categoria Materiali	
+MAE/B6	riga_paese	unit		
+MAE/B7	paese_di_destinazione	text	Paese di Destinazione	
+MAE/B7	n_aut	number	n. Aut.	sum
+MAE/B7	valore_euro	amount	Valore (EURO)	sum
+MAE/B7	cat	code	Cat.	
+MAE/B7	descrizione_categoria_materiali	text	Descrizione Categoria Materiali	
+MAE/B7	riga_paese	unit		
+MAE/E	operatore	group	Operatore	
+MAE/E	data	date	Data	
+MAE/E	tipo_operazione	text	Tipo Operazione	
+MAE/E	valuta	text	Valuta	
+MAE/E	ammontare	amount	Ammontare	
+MAE/E	valore_euro	amount	Valore EURO	sum else ammontare@valuta=EUR unless val_fd_euro
+MAE/E	val_fd_euro	amount	Val FD (EURO)	sum
+MAE/E	cat	code	Cat.	
+MAE/E	riga_autorizzazione	unit		
+MAE/E	id_ditta	company		operatore
+MAE/L	operatore	group	Operatore	
+MAE/L	data	date	Data	
+MAE/L	tipo_operazione	text	Tipo Operazione	
+MAE/L	valuta	text	Valuta	
+MAE/L	ammontare	amount	Ammontare	
+MAE/L	euro	amount	EURO	sum else ammontare@valuta=EUR unless val_fini_dog
+MAE/L	val_fini_dog	amount	Valore Fini Doganali	sum
+MAE/L	cat	code	Cat.	
+MAE/L	riga_autorizzazione	unit		
+MAE/L	id_ditta	company		operatore
+MAE/T17	operatore	text	Operatore	
+MAE/T17	agt_1	number	AGT 1	sum
+MAE/T17	agt_2	number	AGT 2	sum
+MAE/T17	agt_3	number	AGT 3	sum
+MAE/T17	agt_4	number	AGT 4	sum
+MAE/T17	agt_5	number	AGT 5	sum
+MAE/T17	agt_6	number	AGT 6	sum
+MAE/T17	agt	rowsum	AGT	agt_1+agt_2+agt_3+agt_4+agt_5+agt_6
+MAE/T17	lgp	number	LGP	sum
+MAE/T17	lgt	number	LGT	sum
+MAE/T17	tot	rowsum	Tot.	agt+lgp+lgt
+MAE/T17	id_ditta	company		operatore
+MAE/T19	tipologia	text	Tipologia	
+MAE/T19	numero	code	Numero	
+MAE/T19	data	date	Data	
+MAE/T19	operatore_commerciale	text	Operatore commerciale	
+MAE/T19	id_ditta	company		operatore_commerciale
+MAE/T21	anno	block		
+MAE/T21	tipologia	text	TIPOLOGIA	
+MAE/T21	qta	number	Q.tà	sum
+MAE/T21	valore	amount	Valore in Euro	sum
+MEF/REL/KK1	intermediari	text	Intermediari	
+MEF/REL/KK1	cab	code		
+MEF/REL/KK1	totale_complessivo	amount	Totale complessivo	sum
+MEF/REL/KK1	id_banca	bank		intermediari
+# Not imported: charts (maintainer, 2026-10-25).
+DIFESA/A2C6/3C		none		
+MEF/GF		none		
+MEF/NN		none		
+MEF/OO		none		
+MEF/PP		none		

@@ -60,3 +60,113 @@ MAE/F1	^Totale Valore in EURO	sum euro over subtotal
 MAE/F1	^Totale ai Fini Doganali	sum val_fini_dog
 MAE/F1	^di cui	-
 MAE/F1	^Totali parziali per tipo valuta ?: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog
+DIFESA/A2C6/3A	^TOTALE AUTORIZZATO NEL Y	sum volume_autorizzato
+DIFESA/A2C6/3A	^TOTALE INCASSATO DALL'INDUSTRIA NEL Y	sum incassi
+MAE/A3	^\(pari a [0-9,]+ %\)$	-
+MAE/A4	^Totale Autorizzazioni	count data
+MAE/A4	^Totale Valore in EURO	sum euro over subtotal
+MAE/A4	^Valore Fini Doganali	sum val_fini_dog
+MAE/A4	^Totali parziali per tipo valuta: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog
+MAE/A4	^Totali parziali per tipo valuta$	sum ammontare where valuta= unless val_fini_dog
+MAE/B1	^Totale :$	sum autorizzazioni
+MAE/B1	^Totale : \(2\)$	sum valore_euro
+MAE/B1	^di cui	-
+MAE/B1	^Totale ai Fini Doganali	-
+MAE/B2	^Totale :$	sum autorizzazioni
+MAE/B2	^Totale : \(2\)$	sum valore_euro
+MAE/B2	^di cui	-
+MAE/B2	^Totale ai Fini Doganali	-
+MAE/B3	^Totale :$	sum autorizzazioni
+MAE/B3	^Totale : \(2\)$	sum valore_euro
+MAE/B3	^di cui	-
+MAE/B3	^Totale ai Fini Doganali	-
+MAE/B5	^Totale :$	sum autorizzazioni
+MAE/B5	^Totale : \(2\)$	sum valore_euro
+MAE/B5	^Totale : \(3\)$	sum val_fini_dog
+MAE/B5	^Totale : \(4\)$	-
+MAE/C1	^Totale Autorizzazioni	count data
+MAE/C1	^Totale Valore in EURO	sum euro over subtotal
+MAE/C1	^Totale ai Fini Doganali	sum val_fini_dog
+MAE/C1	^di cui	-
+MAE/C1	^Totali parziali per tipo valuta: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog
+MAE/C2	^di cui	-
+MAE/C2	^Totale ai Fini Doganali	-
+MAE/H2	^di cui	-
+MAE/H2	^Totale ai Fini Doganali	-
+MAE/F2	^di cui	-
+MAE/F2	^Totale ai Fini Doganali	-
+MAE/H1	^Totale Autorizzazioni	count data
+MAE/H1	^Totale EURO	sum euro over subtotal
+MAE/H1	^Totale ai Fini Doganali	sum val_fini_dog
+MAE/H1	^di cui	-
+MAE/H1	^Totali parziali per tipo valuta ?: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog
+MAE/M1	^Totale complessivo	sum valore_in_euro
+MAE/M2	^Totale complessivo$	sum num
+MAE/M2	^Totale complessivo \(2\)$	sum valore_in_euro
+MAE/O1	^Totale complessivo$	sum valore_in_euro
+MAE/O1	^Totale complessivo \(2\)$	sum valore_fini_doganali_in_euro
+MAE/O1	^Totale complessivo \(3\)$	sum spedizioni_nr
+MAE/O1	^di cui	-
+MAE/O1	^Esportazioni (definitive|temporanee)$	-
+MAE/O1	^Importazioni (definitive|temporanee)$	-
+MAE/O2	^Totale complessivo$	sum valore_in_euro
+MAE/O2	^Totale complessivo \(2\)$	sum valore_fini_doganali_in_euro
+MAE/O2	^Totale complessivo \(3\)$	sum spedizioni_nr
+MAE/O2	^di cui	-
+MAE/O2	^Esportazioni (definitive|temporanee)$	-
+MAE/O2	^Importazioni (definitive|temporanee)$	-
+MAE/P1	^Totale complessivo$	sum valore_in_euro
+MAE/P1	^Totale complessivo \(2\)$	sum valore_fini_doganali_in_euro
+MAE/P1	^Totale complessivo \(3\)$	sum spedizione_nr
+MAE/P1	^di cui	-
+MAE/P1	^Esportazioni definitive	-
+MAE/P1	^Esportazioni temporanee	-
+MAE/P1	^Importazioni definitive	-
+MAE/P1	^Importazioni temporanee	-
+MAE/P2	^Totale complessivo$	sum valore_in_euro
+MAE/P2	^Totale complessivo \(2\)$	sum valore_fini_doganali_in_euro
+MAE/P2	^Totale complessivo \(3\)$	sum spedizioni_nr
+MAE/P2	^di cui	-
+MAE/P2	^Esportazioni definitive	-
+MAE/P2	^Esportazioni temporanee	-
+MAE/P2	^Importazioni definitive	-
+MAE/P2	^Importazioni temporanee	-
+MEF/REL/SALDI	^Totali \(Imp \+ Esp\.\)$	sum importi_segnalati
+MEF/REL/SALDI	^Totali \(Imp \+ Esp\.\) \(2\)$	sum importi_accessori_segnalati
+MAE/N1	^Totali$	sum valore_in_euro
+MAE/N2	^Totali$	sum valore_in_euro
+MAE/N1	^Totali \(2\)$	sum val_fini_dog
+MAE/N2	^Totali \(2\)$	sum val_fini_dog
+MAE/N1	^Totali \(3\)$	sum spedizioni_nr
+MAE/N2	^Totali \(3\)$	sum spedizioni_nr
+MAE/N1	^di cui	-
+MAE/N2	^di cui	-
+MAE/N1	^Esportazioni definitive	-
+MAE/N2	^Esportazioni definitive	-
+MAE/N1	^Esportazioni temporanee	-
+MAE/N2	^Esportazioni temporanee	-
+MAE/N1	^Importazioni definitive	-
+MAE/N2	^Importazioni definitive	-
+MAE/N1	^Importazioni temporanee	-
+MAE/N2	^Importazioni temporanee	-
+MAE/T141	^Primi 15 operatori$	sum rows of Y
+MAE/T142	^Primi 15 operatori$	sum rows of Y
+MAE/T141	^Restanti operatori$	-
+MAE/T142	^Restanti operatori$	-
+MAE/T141	^TOTALE$	sum lines above
+MAE/T142	^TOTALE$	sum lines above
+MAE/T141	^Operatori restanti$	-
+MAE/T142	^Operatori restanti$	-
+MAE/T141	^Numero totale operatori per anno$	-
+MAE/T142	^Numero totale operatori per anno$	-
+MAE/E	^Totale Autorizzazioni	count data
+MAE/E	^Totale Valore in EURO	sum valore_euro over subtotal
+MAE/E	^Totale ai Fini Doganali	sum val_fd_euro
+MAE/E	^di cui	-
+MAE/E	^Totali parziali per tipo valuta ?: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fd_euro
+MAE/E	^Totali parziali per tipo valuta$	sum ammontare where valuta= unless val_fd_euro
+MAE/L	^Totale Autorizzazioni	count data
+MAE/L	^Totale EURO	sum euro over subtotal
+MAE/L	^Totale ai Fini Doganali	sum val_fini_dog
+MAE/L	^di cui	-
+MAE/L	^Totali parziali per tipo valuta ?: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog

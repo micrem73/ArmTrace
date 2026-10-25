@@ -157,9 +157,17 @@ def _rows(name):
     return list(csv.DictReader(lines, delimiter="\t"))
 
 
+def not_imported():
+    """The tables the maintainer chose not to import: one `none` line each in
+    columns.tsv (charts, 2026-10-25). No spec: nothing extracts them."""
+    return {row["table"] for row in _rows("columns.tsv") if row["type"] == "none"}
+
+
 def specs():
     out = {}
     for row in _rows("columns.tsv"):
+        if row["type"] == "none":
+            continue
         col = Column(row["col"], row["type"],
                      [x for x in (row["labels"] or "").split("|")])
         rule = (row["sum"] or "").split()
@@ -204,7 +212,8 @@ def fold(label, year):
         k = int(year) - int(m.group())
         return "y" if k == 0 else f"y{-k:+d}"
     text = gra.normalise_text(label).replace("’", "'").lower()
-    return YEAR.sub(rel, text)
+    # Spaces do not tell labels apart: T88 p2 breaks `autorizzazion i`.
+    return re.sub(r"\s+", "", YEAR.sub(rel, text))
 
 
 # --------------------------------------------------------------------------
@@ -329,7 +338,7 @@ class Reader:
         labels = [" / ".join(x for x in (o, t) if x) for o, t in zip(overs, texts)]
         printed = self.spec.printed
         measures = [c for c in printed if c.type == "years"]
-        order, year_of = [], {}
+        order, year_of, seen = [], {}, {}
         if measures:
             # Fixed columns, in their order, and year columns: a year printed
             # alone (T2: the label is the year, one measure), or over a measure
@@ -352,8 +361,13 @@ class Reader:
                         and fold(text, self.year) in [x.lower() for x in measures[0].labels]:
                     year, measure = text, measures[0]
                 if year and measure is None:
-                    measure = next((m for m in measures if fold(label, self.year) in
-                                    [fold(x, self.year) for x in m.labels]), None)
+                    # Two measures may share a label printed over both (T81:
+                    # `N. autorizzazioni e valore in €` over the count and the
+                    # value): the k-th column under it is the k-th measure.
+                    same = [m for m in measures if fold(label, self.year) in
+                            [fold(x, self.year) for x in m.labels]]
+                    seen[(year, label)] = k = seen.get((year, label), -1) + 1
+                    measure = same[k] if k < len(same) else None
                 if measure is None:
                     return self._refuse(pdf_page, labels)
                 order.append(measure)
@@ -430,6 +444,7 @@ class Reader:
             return
         walls, levels = _rules(sp, frame)
         self.blocks = _rotated_cells(sp, frame, levels)
+        self.levels, self.words = levels, words
         header = geo.grid_header(sp, words, frame, is_label=gra.is_label_row)
         if header:
             header["cells"] = self.split_merged(header, words, walls)
@@ -717,6 +732,34 @@ class Reader:
         return any(gra.value_shape(t.split(" (")[0].strip()) in VALUE_SHAPES
                    for t, col in zip(row, self.order) if t and col.type not in TEXT_TYPES)
 
+    def repeats_header(self, row):
+        """A line printing the agreed labels again, two at least, each in its
+        own column (T12 prints its header over every year's block)."""
+        hits = 0
+        for text, col in zip(row, self.order):
+            if not text:
+                continue
+            if fold(text, self.year) not in [fold(x, self.year) for x in col.labels if x]:
+                return False
+            hits += 1
+        return hits >= 2
+
+    def upright_block(self, cell, v, band):
+        """The label printed upright in a cell spanning several rows (T12's
+        year, T7's area), for a row of that cell without it: the words in the
+        column between the floors that cross it above and below this row."""
+        u = (cell["u0"] + cell["u1"]) / 2
+        crossing = sorted(lv[0] for lv in self.levels if lv[1] - TOL <= u <= lv[2] + TOL)
+        above = max((x for x in crossing if x < v), default=None)
+        below = min((x for x in crossing if x > v), default=None)
+        if above is None or below is None:
+            return ""
+        mine = set(map(id, band))
+        words = sorted((w for w in self.words if cell["u0"] < w.umid < cell["u1"]
+                        and above < w.vmid < below and id(w) not in mine),
+                       key=lambda w: (round(w.v0), w.u0))
+        return " ".join(" ".join(w.text for w in words).split())
+
     def place(self, sp, row, band, first):
         """A record, a group heading, or the continuation of the record above."""
         row = [gra.normalise_text(t) for t in row]
@@ -727,9 +770,12 @@ class Reader:
                 if col.type == "block" and not row[i]:
                     cell = self.page_cells[i]
                     row[i] = next((text for u, v0, v1, text in self.blocks
-                                   if cell["u0"] < u < cell["u1"] and v0 < v < v1), "")
+                                   if cell["u0"] < u < cell["u1"] and v0 < v < v1), "") \
+                        or self.upright_block(cell, v, band)
         if not any(row):
             return
+        if self.repeats_header(row):
+            return              # the header printed again inside the grid (T12, each year)
         # A total row opens on its label (`Totale complessivo`); a description
         # that mentions a total (`... TOTALE ...` in A1's Materiale) is not one.
         lead = next(t for t in row if t)

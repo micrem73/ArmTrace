@@ -476,11 +476,13 @@ def test_importer_eval_relink_moves_one_item_to_another_amount(year, sources, tm
 
 
 @pytest.mark.parametrize("year", ["2025"])
-def test_columns_render_reads_the_header_past_a_cover_page(year, sources):
+def test_columns_render_reads_the_header_past_a_cover_page(year, sources, monkeypatch):
     """Drafting columns, the importer gets the header off the first page that
-    prints one: Dogane N1's first page is its cover (p871), the grid is on p872."""
+    prints one: Dogane N1's first page is its cover (p871), the grid is on p872.
+    (N1 has agreed columns since: the draft path is taken as if it had none.)"""
     sys.path.insert(0, str(ROOT / "tools"))
     import import_queue
+    monkeypatch.setattr(import_queue.extract, "specs", lambda: {})
     out = import_queue.render(year, "DOG/A1C2/N1", dpi=20)
     assert out["header"] == ["Denominazione operatore", "Numero di operazioni svolte",
                              "Stato di avanzamento annuale (Euro)",
@@ -718,3 +720,55 @@ def test_a_short_operator_heading_in_the_margin_is_read(year, sources):
     assert groups[-2:] == ["LARIMART S.p.A.", "LEE Srl"]
     ugello = next(x for x in r.rows if x["cells"][7].startswith("UGELLO"))
     assert ugello["group"] == "LEE Srl"
+
+
+def test_a_table_not_imported_is_decided_and_never_extracted():
+    """A `none` line in columns.tsv: the maintainer chose not to import the
+    table (charts: MEF GF, NN, OO, PP, Difesa 3C; 2026-10-25). It has no spec,
+    so nothing extracts it, and the import queue counts it done."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import import_queue
+    assert "MEF/GF" not in extract.specs()
+    assert {"MEF/GF", "MEF/NN", "MEF/OO", "MEF/PP", "DIFESA/A2C6/3C"} <= extract.not_imported()
+    action, reason, _ = import_queue.action_of("2025", "MEF/GF", extract.specs())
+    assert action == "done" and reason.startswith("not imported")
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_block_label_printed_upright_fills_every_row_of_its_cell(year, sources):
+    """T12 prints each year once, upright, in a box spanning its four rows
+    (maintainer, 2026-10-25: `anno` is a block, all four rows hold it). Only
+    the row level with the label got it."""
+    from lib import source
+    r = extract.read_table(year, "MAE/T12", pages=source.table_pages(year, "MAE/T12"))
+    data = [x["cells"] for x in r.rows if x["kind"] == "data"]
+    assert [c[:2] for c in data[:5]] == [["2022", "MATERIALI"], ["2022", "TECNOLOGIE"],
+                                         ["2022", "SERVIZI"], ["2022", "RICAMBI"],
+                                         ["2023", "MATERIALI"]]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_total_adds_up_its_own_rows_by_measure_or_by_block(year, sources):
+    """T7's `TOTALE | N. Licenze` adds up the N. Licenze rows of every area;
+    T12's `Totale` under each year adds up that year's block only."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/T7", pages=source.table_pages(year, "MAE/T7"))
+    got = Counter(c[3] for c in extract.checks(r, extract.specs()["MAE/T7"]))
+    assert not got["FAIL"] and got["PASS"], got
+    # T12's `Numero parti` totals print one unit off their rows in 2022 and
+    # 2025 (as T13's): a FAIL of the print, reported, never smoothed.
+    r = extract.read_table(year, "MAE/T12", pages=source.table_pages(year, "MAE/T12"))
+    fails = [(c[0], c[1]) for c in extract.checks(r, extract.specs()["MAE/T12"]) if c[3] == "FAIL"]
+    assert fails == [("total p48 numero_parti (2022)", "368.433.463"),
+                     ("total p48 numero_parti (2025)", "831.825.954")]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_label_broken_inside_a_word_is_the_same_label(year, sources):
+    """T88's second page prints `N. autorizzazion i` (the word broken on two
+    lines): the same agreed label, so the page is the table's, not a summary."""
+    from lib import source
+    r = extract.read_table(year, "MAE/T88", pages=source.table_pages(year, "MAE/T88"))
+    assert r.pages == {"header": 2}
+    assert not [c for c in extract.checks(r, extract.specs()["MAE/T88"]) if c[3] == "UNCHECKED"]

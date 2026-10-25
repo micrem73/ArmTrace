@@ -134,6 +134,10 @@ RULE_TOL = 2.5
 # cell high (16 pt).
 WALL_MIN_LEN = 4.0
 
+# Two rules closer than this are one wall drawn double (MAE T7, T81 frame their
+# 2024 and 2025 columns with rules 2.7-3 pt apart): no cell that narrow holds text.
+DOUBLE_RULE = 4.0
+
 # Header cells are separated by at least this much reading-space white. The
 # header of A1 is 10 boxed cells whose labels are 8-14pt apart; its *body* rows
 # are separated by ~4pt, which is why the same test cannot be reused for rows.
@@ -586,7 +590,7 @@ def grid_header(page, words, frame=None, tol=RULE_TOL, is_label=None):
         return sorted(_merge_positions(
             [u for u, v0, v1 in walls
              if v0 <= top + tol and v1 >= bottom - tol and u_lo <= u <= u_hi],
-            tol))
+            max(tol, DOUBLE_RULE)))
 
     def next_level(i):
         for j in range(i + 1, len(levels)):
@@ -641,7 +645,7 @@ def grid_header(page, words, frame=None, tol=RULE_TOL, is_label=None):
                                         _merge_positions(across, 2 * tol),
                                         top, bottom, under[0], is_label)
             if two:
-                return {"cells": _stub(two, under[0]), "v0": top, "v1": under[0]}
+                return {"cells": _no_slivers(_stub(two, under[0])), "v0": top, "v1": under[0]}
         if not two and i > 0 and top - levels[i - 1][0] >= ROW_GAP_MIN:
             # A row above whose floor runs only under its wide label (3B's
             # `INCASSO`): this row is the lower one, the labels over it are there.
@@ -653,7 +657,7 @@ def grid_header(page, words, frame=None, tol=RULE_TOL, is_label=None):
                                   _merge_positions(across, 2 * tol),
                                   prev, top, bottom, is_label)
                 if two:
-                    return {"cells": _stub(two, bottom), "v0": prev, "v1": bottom}
+                    return {"cells": _no_slivers(_stub(two, bottom)), "v0": prev, "v1": bottom}
         # A wall starting right under the header, inside one of its cells,
         # divides it: MAE B4 from p2 draws no wall between `Area Geografica`
         # and `Paese di destinazione` in its header box, only from under it.
@@ -670,8 +674,78 @@ def grid_header(page, words, frame=None, tol=RULE_TOL, is_label=None):
                           "bold": any(w.bold for w in mine)})
         if is_label is not None and not is_label([c["text"] for c in cells]):
             return None             # the grid starts with data: no header here
-        return {"cells": cells, "v0": top, "v1": bottom}
+        third = _label_row_under(cells, words, walls, levels, top, bottom, tol, is_label)
+        if third:
+            return third
+        return {"cells": _no_slivers(cells), "v0": top, "v1": bottom}
     return None
+
+
+def _label_row_under(cells, words, walls, levels, top, bottom, tol, is_label):
+    """A header on three rows, or None: MAE T81 prints the years, a label under
+    each year in the same columns (`N. autorizzazioni e valore in €`), and
+    then splits each column in two for the body, the walls starting under a
+    double floor. Each body column gets its year (`over`) and its label."""
+    edges = [cells[0]["u0"]] + [c["u1"] for c in cells]
+    full = [lv for lv in levels if lv[1] <= edges[0] + tol and lv[2] >= edges[-1] - tol]
+    below = [lv[0] for lv in full if lv[0] - bottom >= ROW_GAP_MIN]
+    if len(below) < 2:
+        return None
+    mid = below[0]
+    # A floor drawn double (T83: 160.2 and 163.1): the label row ends at its
+    # lower rule, and its text may stand between the two.
+    mid = max(v for v in below if v - mid <= DOUBLE_RULE)
+    rest = [v for v in below if v - mid >= ROW_GAP_MIN]
+    if not rest:
+        return None
+    body_end = rest[0]
+    def across(top, end, slack):
+        return sorted(_merge_positions(
+            [u for u, v0, v1 in walls if v0 <= top + slack and v1 >= end - tol
+             and edges[0] - tol <= u <= edges[-1] + tol], max(tol, DOUBLE_RULE)))
+    second = across(bottom, below[0], tol)
+    if len(second) != len(edges) or any(abs(a - b) > tol for a, b in zip(second, edges)):
+        return None
+    labels = []
+    for c in cells:
+        mine = sorted((w for w in words if c["u0"] < w.umid < c["u1"] and bottom < w.vmid < mid),
+                      key=lambda w: (round(w.v0), w.u0))
+        labels.append(" ".join(" ".join(w.text for w in mine).split()))
+    if not any(labels) or (is_label is not None and not is_label(labels)):
+        return None
+    # The body's walls may start just under a floor drawn double (DOUBLE_RULE).
+    body = across(mid, body_end, tol + DOUBLE_RULE)
+    if len(body) <= len(edges):
+        return None
+    out = []
+    for a, b in zip(body, body[1:]):
+        owner = next((c for c, lab in zip(cells, labels)
+                      if c["u0"] - tol <= a and b <= c["u1"] + tol), None)
+        lab = labels[cells.index(owner)] if owner else ""
+        out.append({"text": lab if owner else "", "over": owner["text"] if owner else "",
+                    "u0": a, "u1": b, "bold": False})
+    left = [u for u in sorted(_merge_positions([u for u, v0, v1 in walls
+                                                 if v0 <= mid + tol + DOUBLE_RULE
+                                                 and v1 >= body_end - tol], max(tol, DOUBLE_RULE)))
+            if u < edges[0] - tol]
+    stub = [{"text": "", "over": "", "u0": a, "u1": b, "bold": False}
+            for a, b in zip(left, left[1:] + [edges[0]])]
+    return {"cells": _no_slivers(stub + out), "v0": top, "v1": mid}
+
+
+def _no_slivers(cells):
+    """The cells, without the empty gap between the two rules of a double wall
+    (DOUBLE_RULE): it is given to the cell beside it."""
+    out = []
+    for c in cells:
+        if c["u1"] - c["u0"] < DOUBLE_RULE and not c["text"] and not c.get("over"):
+            if out:
+                out[-1]["u1"] = c["u1"]
+            continue
+        if out and out[-1]["u1"] < c["u0"]:
+            c = {**c, "u0": out[-1]["u1"]}
+        out.append(c)
+    return out
 
 
 def _two_levels(words, spans, walls, top, middle, bottom, is_label):

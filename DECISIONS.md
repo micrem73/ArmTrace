@@ -760,3 +760,25 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   five-year periods; Dogane M, N, O, P differ only by `Tipo di operazione`). The page stamp
   and the Parliament's running head are left out; an amount above the grid stays an issue.
   The caption is text: no value is read out of it (maintainer: no `tipo_operazione` column).
+
+## 2026-10-25 SQL extraction: the drafts page, and one rule per kind of choice
+
+- **87 tables agreed** on the drafts page (maintainer, 2026-10-25): 39 drafts approved, and
+  48 siblings their importer saw print the same header, with the same lines; a sibling whose
+  header differs is refused at extraction, never read under another's columns.
+- **Not imported: charts** (Difesa 3C; MEF GF, NN, OO, PP): no rows, listed in the catalogue.
+- **The year a value refers to is `anno`** in every table that prints one column per year
+  (one row per printed year: the `years` type), and in a table printing one block per year
+  (T12, T21: `anno` a block). `year` stays the edition. Periods (T3) are `anno_da`, `anno_a`.
+- **A row's parent is `riga_<unit>`**, the `row_ord` of the row opening its unit, as A1;
+  `row_ord` is the row's own number. One unit name, singular (`riga_movimentazione`).
+- **MEF: a line printing no authorisation number belongs to the line above that prints one**:
+  `riga_autorizzazione` (type `unit`), that line's `row_ord`, as the approved EE1 draft
+  (maintainer, 2026-10-25, choosing EE1's convention over repeating the number): MEF II, EE,
+  EE1, FF, FF1, GG, GG1, II1, JJ and every table of that layout. Nothing is copied down.
+- **A correction the maintainer authorised** (Difesa 3A's three dates, T4's band `01-ott`,
+  `Nessuna movimentazione` as 0) stores the corrected value; the row's `flags` say
+  `corrected: printed '<text>'`, and `_raw` keeps the printed text where the column has one.
+- **Banks get an id from a bank list matched by name**, as companies: `id_banca` on every MEF
+  row naming a bank. The CAB is the branch, not the bank (the same bank prints CAB 01600 in
+  KK1 and 01000 in AA): stored in its own column.

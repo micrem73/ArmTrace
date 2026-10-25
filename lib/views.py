@@ -136,7 +136,7 @@ def _group_of(row, spec):
     return row["cells"][carry[0]] if carry else None
 
 
-def _figure_checks(row, scope, spec, everything=(), above=()):
+def _figure_checks(row, scope, spec, everything=(), above=(), recent=()):
     rule = next((expr for rx, expr in spec.totals if rx.search(row["cells"][0] or "")), None)
     if rule is not None:
         return _line_checks(row, rule.split(), everything, above)
@@ -144,6 +144,19 @@ def _figure_checks(row, scope, spec, everything=(), above=()):
     # against each block on its own: both add up to it.
     at = next((i for i, c in enumerate(row["order"]) if c.type == "block"), None)
     if at is not None and row["kind"] == "total":
+        # A total naming one of the rows' measures (T7: `TOTALE | N. Licenze`)
+        # adds up that measure's rows over every block.
+        named = [(i, t) for i, (t, c) in enumerate(zip(row["cells"], row["order"]))
+                 if i != at and t and c.type == "text"
+                 and any(r["cells"][i] == t for r in scope)]
+        if named:
+            i, t = named[0]
+            return [(f"{name} ({t})", printed, computed, status) for name, printed, computed, status
+                    in _sums(row, [r for r in scope if r["cells"][i] == t], spec)]
+        # A total printed under one block only (T12: each year's `Totale`)
+        # adds up that block.
+        if recent and len({r["cells"][at] for r in recent}) == 1 and len(recent) < len(scope):
+            scope = recent
         against = row["order"][at].against or {}
         blocks = {}
         for r in scope:
@@ -245,7 +258,7 @@ def render(facts, figures, summary, spec):
 
     `kind` is `group` (a heading), `data`, `subtotal`, `total` or `summary`.
     Cells are the printed text: a fact's own, a figure's printed values."""
-    out, scope, everything, lines = [], [], [], []
+    out, scope, everything, lines, recent = [], [], [], [], []
     heading, run = object(), object()
     carry = None
     for row in sorted(facts + figures, key=lambda r: r["row_ord"]):
@@ -265,13 +278,16 @@ def render(facts, figures, summary, spec):
                         "linked": row.get("linked")})
             scope.append(row)
             everything.append(row)
+            recent.append(row)
             run = group
         else:
             within = scope if row["kind"] == "subtotal" else everything
             out.append({"kind": row["kind"], "group": row["group"], "cells": list(row["cells"]),
                         "pdf_page": row["pdf_page"],
-                        "checks": _figure_checks(row, within, spec, everything, lines)})
+                        "checks": _figure_checks(row, within, spec, everything, lines, recent)})
             lines.append(row)
+            if row["kind"] == "total":
+                recent = []
             if row["kind"] == "subtotal":
                 scope, run = [], object()
     for pdf_page, _printed_page, label, raw in summary:

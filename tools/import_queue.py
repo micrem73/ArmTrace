@@ -161,6 +161,8 @@ def action_of(year, key, specs):
         elif drafted.get("kind") == "code":
             return "fix", "header misread: " + drafted.get("cause", ""), False
     if key not in specs:
+        if key in extract.not_imported():
+            return "done", "not imported (maintainer: a chart)", False
         if (folder / "columns-proposal.tsv").exists():
             return "human", "columns drafted, to approve into lib/data/columns.tsv", False
         return "columns", "no agreed columns", False
