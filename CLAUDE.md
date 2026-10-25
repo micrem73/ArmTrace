@@ -38,6 +38,7 @@ ArmTrace makes Italian arms export data queryable for journalists, activists and
 - `Out/<year>/PDF/…` tables · `Out/<year>/TRASH/<volume>_TRASH.PDF` unclaimed pages
 - `Out/<year>/review.html` — the one page a person opens
 - `Out/<year>/tablesindex.sqlite` (+ `tablesindex.tsv`, `tablesindex-trash.tsv`, same rows as text) — the handover to SQL extraction
+- `Out/ocr/<year>/<settings>/<volume>.p<pdf page>.txt` — OCR text of scanned pages (tesseract; settings in the folder name), kept in git: slow to make, read again by later work
 - `Out/.work/` — cache, manifest, table list, trash runs, verifier report, checker verdicts. Regenerable; never read by people.
 
 ## Requirements
