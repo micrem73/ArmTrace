@@ -81,7 +81,12 @@ Decisions and their reasons are in `DECISIONS.md`; measurements live beside the 
 - SQL extraction (Phase 3 of `plan.md`) started on 2025 only (2026-10-19): catalogue 2024+2025 from the sources, one SQL table per printed table code. Pilot extracted (MAE/A1, MAE/A2, MAE/T2, MEF/EE, MEF/II, DIFESA/4, DOG/A1C2/M, DOG/A1C2/M1): every printed total and subtotal matches, 11 within 2 cents of rounding; A2 agrees with A1 operator by operator. Review stop B passed, committed. To do, in order:
   1. Two-level headers (a label over several columns): T10, T11, T13, T20, T23, Difesa 3B. Done (2026-10-24, DECISIONS.md): read, checked, importer PASS on all six.
   2. MAE summary tables printed without a ruled grid: B4, D, G1, G2, I, F1. Done (2026-10-24, DECISIONS.md): read, checked, no FAIL, columns agreed, importer PASS on all six.
-  3. The rest of 2025's 156 tables: agree each table's columns in `columns.tsv` (and its printed summaries in `totals.tsv`), extract, fix by kind of failure.
+  3. The rest of 2025's 156 tables: agree each table's columns in `columns.tsv` (and its printed summaries in `totals.tsv`), extract, fix by kind of failure. State (2026-10-27, commit 9736fc7): every table but MAE/N2 has agreed columns and reads (T1–T15 layouts in DECISIONS.md 2026-10-27); `Out/2025/armtrace-2025.*` is stale (uncommitted, from an earlier merge); about 100 tables passed an importer check on older code. Next, in order, stopping where the maintainer is needed:
+     a. Ask the maintainer to approve MAE/N2's draft (`Out/.work/2025/import/MAE_N2/columns-proposal.tsv`, O2's columns; N1's were wrongly given and withdrawn); add it to `columns.tsv`.
+     b. `python3 tools/import_queue.py 2025 --extract`, `python3 ExtractTables.py 2025 --merge Out/.work/2025/import/*/`, `python3 tools/companies.py 2025` (new spellings, banks), then extract and merge again so the ids are stored.
+     c. Show the maintainer the company clusters `companies.py` prints, each with the tables' evidence (grouped apart, register numbers) first; apply `--same`/`--apart`, re-extract the tables naming them.
+     d. Only on the maintainer's word: the check round (skill `import-year`, `table-importer` subagents, 8 at a time) on every table; fix `code` FAILs test-first; `convention` goes to the maintainer. FAILs already known to be in the print (DECISIONS.md 2026-10-26) stay FAIL.
+     e. `make check`, then commit with the regenerated `Out/2025/armtrace-2025.*` when asked.
   4. Store the A2 = A1 per-operator comparison as a check (cross-table witness).
   5. Review stop C: totals report for the year, a sample of tables against their source pages.
 - Unsupported, to be listed rather than split: 2001–2010 (no text layer), 2014 vol. I and 2015 (one table found).
