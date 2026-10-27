@@ -1,0 +1,77 @@
+Senato della Repubblica -63- Camera dei deputati
+
+ 
+
+XVI LEGISLATURA - DISEGNI DI LEGGE E RELAZIONI - DOCUMENTI
+
+ 
+
+ 
+
+Il termine *software” indica una raccolta di uno 0 più programmi 0 microprogrammi fissati su qualsiasi
+supporto di espressione materiale.
+"STATO PARTECIPANTE" (10).
+Paese che aderisce all'Intesa di Wassenaar.
+SVILUPPO" (NGT), (17).
+E' relativo a tutti gli stadi che precedono la produzione di serie quali la progettazione, ricerca di progetto,
+analisi di progetto, metodologia di progettazione, assembiaggio e collaudo di prototipi, piani di produzione
+pilota, dati di progettazione, processo di trasformazione dei dati di progetto in un prodotto, progettazione
+di configurazione, progettazione di integrazione, rappresentazioni grafiche.
+'SUPERCONDUTTORI” (18), (20).
+Materiali, cioè metalli, leghe o composti che possono perdere tutta la resistenza elettrica (cioè che
+possono raggiungere una conduttività elettrica infinita e trasportare grandissime correnti senza produrre
+calore per effetto Joule).
+N.8. Lo stato “superconduttore” di un materiale è individualmente caratterizzato per ogni materiale da
+una temperatura critica, un campo magnetico critico, che è funzione della temperatura, e una intensità di
+corrente critica, che è funzione sia del campo magnetico che della temperatura.
+
+TECNOLOGIA" (NGT).
+Informazioni specifiche necessarie allo “sviluppo”, “produzione”, o “utilizzazione” di un prodotto.
+L'informazione può rivestire la forma sia di ‘dati tecnici' che di ‘assistenza tecnica’.
+La tecnologia sottoposta ad autorizzazione è definita nella Nota Generale della Tecnologia.
+
+N.8. 1: ‘Dati tecnici
+possono presentarsi sotto forma di copie cianograliche, rappresentazioni grafiche, diagrammi, modelli,
+formule, schemi e specifiche di ingegneria, manuali ed istruzioni scritte 0 registrate su supporti 0
+dispositivi come ad es. dischi, nastri magnetici e memorie di sola lettura.
+
+N.8,.2: ‘Assistenza tecnica’
+
+può rivestire varie forme quali: istruzione, trasferimento di specializzazioni, addestramento,
+organizzazione del lavoro e servizi di consulenza. L'assistenza tecnica' può implicare il trasferimento di
+"dati tecnici
+
+“TUBI AD INTENSIFICAZIONE D'IMMAGINE DI PRIMA GENERAZIONE" (15).
+
+Tubi focalizzati elettrostaticamente, che utilizzano fibre ottiche 0 piastre vetrificate in ingresso ed usi
+fotocatodi multi-alcallini (S-20 0 S-25), ma non con amplificatori di piastra a microcanali
+“UTILIZZAZIONE” (NGT) (18) (21) (22).
+
+Comprende l'impiego, l'installazione (incluso installazione in sito), la manutenzione (verifiche), ie
+riparazione, la revisione e la rimessa a nuovo.
+
+“VETTORI DI ESPRESSIONE" (7).
+
+Portatori (cioè plasmidi 0 virus) utilizzati per introdurre materiale genetico in cellule ospiti.
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+| INDICE ANALITICO
+
+Ì
+(2-NOPA) 2- nitrodifenitammina Categoria 8
+
+(4-NDPA) 4- nitrodifenilammina Categoria 8
+
+(ADN o SR 12) Ginitrammide di ammomo Categoria 8
+

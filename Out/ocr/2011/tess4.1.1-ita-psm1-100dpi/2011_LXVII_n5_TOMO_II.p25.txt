@@ -1,0 +1,89 @@
+Senato della Repubblica -25- Camera dei deputati
+
+ 
+
+ 
+
+ 
+
+XVI LEGISLATURA - DISEGNI DI LEGGE E RELAZIONI - DOCUMENTI
+
+ 
+
+MINISTERO DELLA DIFESA Annesso 1
+
+ 
+
+Nata 1 Il precedente paragrafo b. non sottopone ad autorizzazione "aeromobili", 0 varianti di quegli
+“aeromobili”, appositamente progettati per uso militare ci
+a. non siano configurati per uso militare € non siano equipaggiati con apparecchiature 0 attacchi
+appositamente progettati o modificati per impiego militare; e
+
+b. siano stati successivamente certificati per uso civile dalle Autorità dell'Aviazione Civile di uno "Stato
+partecipante”.
+
+Nota 2 Il precedente paragrafo c. non sottopone ad autorizzazione:
+
+a. motori aeronautici progettati 0 modificati per uso militare e successivamente certificati dalle Autorità
+dell'Aviazione Civile di uno "Stato partecipante” per l'impiego su aerei civili 0 loro componenti
+appositamente progettati;
+
+b. motori a pistoni 0 loro componenti appositamente progettati.
+
+Nota 3 I precedenti paragrafi b. e c., per quanto attiene | componenti appositamente progettati e le
+relative apparecchiature per “aeromobili” o motori aeronautici non militari modificati per uso militare,
+sottopongono ad autorizzazione solamente quei componenti miliari e le relative apparecchiature militari
+necessari alla modifica per uso militare.
+
+Nota 4 #11 precedente paragrafo d. include anche tecnologie di progettazione e materiali come segue:
+
+a. tecnologla di progetto per l'integrazione della fusoliera dell'aeromobile, del sistema di propulsione, e
+delle superfici di ipersostentamento e di controllo per ottimizzare la prestazione aerodinamica nella fase
+di volo a regime di un aeromobile senza equipaggio;
+
+b. dispositivi e loro tecnologie utilizzabili per la protezione del sistemi a razzo € dei veicoli aerei senza
+equipaggio contro gli effetti nucleari [ad esempio impulso elettromagnetico (EMP), raggi X, effetti
+combinati della esplosione e del calore], come segue:
+
+1. microcircuiti e rivelatori resistenti alle radiazioni neutroniche o alle radiazioni ionizzanti transitorie;
+
+2. cupole protettive (radome) appositamente progettate per resistere ad una azione combinata di onda
+termica superiore a 4.184x10% )/m? accompagnata da un picco di sovrapressione superiore a 50 KPa (7
+libbre per pollice quadrato).
+
+ 
+
+ 
+
+ 
+
+Categoria 11
+
+Apparecchiature elettroniche, non sottoposte ad autorizzazione in altre Categorie del presente
+Elenco, appositamente progettate per Impiego militare e loro componenti appositamente
+progettati.
+
+Nota Questa Categoria comprende:
+
+a. apparati di contromisure elettroniche (ECM) e di contro-contromisure elettroniche (ECCM) (cioè,
+apparati progettati per introdurre segnali estranei od erronei nei radar o nei ricevitori di
+radiocomunicazioni 0 per ostacolare in qualsiasi aitra maniera, la ricezione, il funzionamento o l'efficacia
+dei ricevitori elettronici avversari compresi i loro apparati di contromisure), incluse le apparecchiature di
+disturbo e di contro disturbo;
+
+b. tubi ad agilità di frequenza;
+
+€. sistemi elettronici 0 apparecchiature elettroniche progettati per la sorveglianza ed il monitoraggio dello
+spettro elettromagnetico ai fini delle informazioni © della sicurezza militare © per contrastare tale
+sorveglianza e monitoraggio;
+
+d. apparecchiature di contromisure subacquee, compresi ingannatori e disturbatori acustici e magnetici,
+progettate per introdurre segnali estranei 0d erronei nel ricevitori sonar;
+
+e. apparecchiature di sicurezza per il trattamento dei dati, apparecchiature di sicurezza per dati ed
+apparecchiature di sicurezza per linee di trasmissione e di segnalazione, utilizzanti procedimenti di
+cifratura;
+
+1. apparecchiature per l'identificazione, l'autenticazione ed il caricamento di chiavi crittografiche ed
+apparecchiature per la gestione, produzione e distribuzione di chiavi crittografiche;
+

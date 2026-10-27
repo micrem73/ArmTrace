@@ -1,0 +1,90 @@
+Senato della Repubblica -62- Camera dei deputati
+
+ 
+
+XVI LEGISLATURA - DISEGNI DI LEGGE E RELAZIONI - DOCUMENTI
+
+ 
+
+ 
+
+Sostanze 0 miscele di Sostanze solide, liquide o gassose, utilizzate per la propulsione di proiettili e di
+missili 0 per la produzione di gas per azionare dispositivi ausiliari di apparecchiature militari sottoposte ad
+autorizzazione che quando innescate bruciano © deflagrano per produrre quantità di gas in grado di
+effettuare un lavoro ma nella loro applicazione queste quantità Non devono passare dallo stadio di
+deflagrazione a quello di detonazione.
+
+“QUALIFICATO PER IMPIEGO SPAZIALE" (23).
+
+Dispositivi progettati, fabbricati € collaudati per rispondere a speciali requisiti elettrici, meccanici 0
+ambientali per il lancio © lo spiegamento di satelliti 0 di sistemi per il volo ad alta quota che operano ad
+altitudine uguale 0 superiore a 100 Km.
+
+“REATTORI NUCLEARI" (17),
+
+Include gli items all'interno 0 direttamente collegati alla vasca del reattore, l'apparecchiatura che
+controlla Il livello di potenza dei nucleo, ed i componenti che normalmente contengono 0 vengono a
+diretto contatto o controllano il refrigerante primario del nuclea del reattore.
+
+"RICERCA SCIENTIFICA DI BASE" (NGT).
+
+Lavori sperimentali 0 teorici intrapresi essenzialmente per acquisire nuove conoscenze dei principi
+fondamentali di fenomeni e di fatti osservabili, non principalmente orientati verso obiettivi o scopi
+specifici 0 pratici
+
+“ROBOT” (17).
+
+Meccanismo di manipolazione del tipo a traiettoria continua 0 punto a punto che può utilizzare sensori ed
+aventi tutte le caratteristiche seguenti:
+
+a. in grado di eseguire più funzioni;
+
+b. in grado di posizionare od orientare materiali, pezzi, utensili o dispositivi speciali tramite movimenti
+variabili nello spazio tridimensionale;
+
+©. avente tre 0 più dispositivi dì asservimento ad anello chiuso od aperto (compresi i motori passo-
+passoli
+
+d. doteto di "programmabilità accessibile all'utente" usando il metodo di apprendimento (impara e ripeti)
+0 mediante calcolatore elettronico che può essere un controllore logico programmabile, ad esempio senza
+intervento meccanico.
+
+N.8.: La definizione sopra riportata non comprende | dispositivi seguenti
+
+1. meccanismi di manipolazione a comando esclusivamente manuale 0 controllabili tramite telecomando;
+2. meccanismi di manipolazione a sequenza fissa, cioè dispositivi che si muovono in modo automatizzato
+funzionanti secondo movimenti programmati con limitazione meccanica. I movimenti programmati sono
+‘imitati meccanicamente ca fermi fissi quali spine e camme, La sequenza dei movimenti e la scelta delle
+traiettorie 0 degli angoli non sono variabili 0 modificabili con mezzi meccanici, elettronici od elettrici;
+
+3. meccanismi di manipolazione a sequenza variabile e a regolazione meccanica, cioè dispositivi mobili
+automatizzati | cui movimenti Sono programmati e Gelimitati tramite mezzi meccanici, I movimenti
+programmati sono delimitati meccanicamente da mezzi fissi ma regolabili quali spine o camme. La
+sequenza dei movimenti e la scelta delle traiettorie o degli angoli sono variabili nei quadro della
+configurazione programmata. La variazione 0 le modifiche della configurazione programmata (ad esempio
+cambi di spine 0 scambi di camme) su uno 0 più assi di movimento sono realizzate esclusivamente con
+operazioni meccaniche;
+
+4. meccanismi di manipolazione 2 sequenza variabile non servoassistiti, cioè dispositivi che si muavono in
+modo automatizzato, funzionanti secondo movimenti programmati fissati meccanicamente. Il programma
+è variabile, ma la sequenza è attivata solo, dal segnale binario proveniente solo dai dispositivi elettrici
+binari 0 dai fermi regolabili fissati meccanicamente;
+
+5. carrelli gru a piattaforma definiti come sistemi di manipolazione funzionanti a coordinate cartesiane,
+costruiti come parte integrale di una cortina verticale di scompartimenti di immagazzinamento e
+progettati per accedere al contenuto degli scompartImenti per immagazzinare © prelevare.
+
+“SOFTWARE (TUTTE LE CATEGORIE).
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+

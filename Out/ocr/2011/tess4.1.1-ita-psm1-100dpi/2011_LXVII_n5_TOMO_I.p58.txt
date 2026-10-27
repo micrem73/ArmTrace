@@ -1,0 +1,78 @@
+Senato della Repubblica -58- Camera dei deputati
+
+ 
+
+ 
+
+XVI LEGISLATURA - DISEGNI DI LEGG
+
+ 
+
+RELAZIONI - DOCUMENTI
+
+ 
+
+Allegato “A”
+MINISTERO DELLA DIFESA
+
+ 
+
+Apparecchiature criogeniche e “superconduttori”, coma segue, e loro componenti ed accessori
+appositamente progettati:
+
+a. apparecchiature appositamente progettate 0 configurate per essere installate a bordo di veicoli per
+applicazioni militari terrestri, navali, aeronautiche 0 spaziali, in grado di funzionare durante il moto e di
+produrre o mantenere temperature inferiori a 103 K (-170°C);
+
+fata ll paragrafo a. include i sistemi mobili contenenti 0 utilizzanti accessori 0 componenti fabbricati con
+materiali non metallici o non Conduttori di elettricità, come le materie plastiche 0 1 materiali impregnati di
+resine epossidiche.
+
+b. apparecchiature ciettriche a ‘superconduttori’ (macchine rotanti e trasformatori), appositamente
+progettate 0 configurate per essere installate a bordo di veicoli per applicazioni militari terrestri, naval,
+aeronautiche o spaziali, ed in grado di funzionare durante il moto.
+
+Nota Il paragrafo b. non include i generatori omopolari Ibridi di corrente continua con armature metalliche
+normali 3d un solo polo ruotante in un campo magnetico prodotto dalle bobine superconduttrici, a
+condizione che queste bobine rappresentino il solo ciemento superconduttore del generatore.
+
+Categoria 21
+
+“Softwara", come segue:
+a. #"software” appositamente progettato 0 modificato per "sviluppo", “produzione” o utilizzazione” di
+equipaggiamenti 0 di materiali 0 "mezzi di produzione” sottoposti adi autorizzazione dal presente Elenco;
+b. #*software" specifico, come segue:
+
+1. #"Software" appositamente progettato per:
+
+a. # modellare, simulare 0 valutare sistemi d'arma militari;
+
+‘. sviluppare, controllare, mantenere 0 aggiornare “software” Integrato in sistemi d'arma militari;
+
+«. modellare 0 simulare scenari operativi militari non sottoposti ad autorizzazione dalla Categoria 14 del
+presente Elenco;
+
+4. applicazioni di Comando, Controllo, Comunicazioni ed Informazioni (C'1) 0 di Comando, Controllo,
+Comunicazioni, Computer ed Informazioni (C*1);
+
+2. "software" per determinare gli effetti di armi da guerra convenzionale, nucleare, chimica 0 biologica;
+
+3. “software” non sottoposto a controllo dai paragrafi a., b.i. 0 b.2. della presente Categoria,
+appositamente progettato o modificato per consentire alle apparecchiature non sottoposte a controllo del
+presente Elenco di compiere le funzioni militari delle apparecchiature sottoposte a controllo dalle
+Categorie 5,7.1., 9.c.,9.e., 10.e., 11, 14, 15, 17, 0 18.
+
+NB. La presente categoria comprende anche il software appositamente progettato per analizzare ed
+ottimizzare a fini militari le informazioni fornite da satellt.
+
+Categoria 22
+
+1. "Tecnologia", come specificato nella Nota Generale della Tecnologia del presente elenco per
+“sviluppo”, “produzione” 0 utilizzazione” dei prodotti sottoposti a controllo dal presente
+Elenco, diversa dalla "tecnologia" già indicata nelle Categorie 7 e 18.
+
+Categoria 50
+
+Attrezzature appositamente progettate per installazione, messa a punto, prove e collaudo di
+materiali sottoposti ad autorizzazione dal presente Elenco.
+

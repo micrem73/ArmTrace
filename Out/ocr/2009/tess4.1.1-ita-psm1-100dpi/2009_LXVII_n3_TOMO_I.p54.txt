@@ -1,0 +1,90 @@
+Senato della Repubblica -53- Camera dei deputati
+
+ 
+
+ 
+
+XVI LEGISLATURA - DISEGNI DI LEGGE E
+
+ 
+
+LAZIONI - DOCUMENTI
+
+ 
+
+9. #convertitori analogico-numerici impiegabili nel sistemi missilistici, ed aventi una delle caratteristiche
+seguenti
+
+1. progettati per rispondere a requisiti militari per apparecchiature rinforzate, 0
+
+2. progettati 0 modificati per uso militare ed appartenenti ad una delle upologie seguenti:
+
+a. microcircuiti convertitori analogico-numerici, resistenti alle radiazioni 0 aventi tutte le caratteristiche
+seguenti:
+
+1. risoluzione uguale © superiore 2 8 bit;
+
+2. predisposti per funzionare a temperature inferiori a -54°C o superiori a +125°C;
+
+3. sigillati ermeticamente;
+
+b. moduli e circuiti stampati convertitori analogico-numerici ad ingresso elettrico, aventi tutte le
+caratteristiche seguenti
+
+1. risoluzione uguale 0 superiore a 8 bit;
+
+2. predisposti per funzionare a temperature inferiori a -45°C 0 superiori a +55°C;
+
+3. contenenti 1 “microcircuiti” elencati al presente paragrafo g.2.a.
+
+ 
+
+Categoria 12
+
+Sistemi d'arma ad energia cinetica ad alta velocità e relative apparecchiature, come segue, e
+loro componenti appositamente progettati:
+
+a. sistemi d'arma ad energia cinetica appositamente progettati per la distruzione di un bersaglio od a far
+fallire la missione dei medesimo;
+
+D. impianti di collaudo e valutazione appositamente progettati e modelli di collaudo, incluso
+strumentazione diagnostica € bersagli, per il collaudo dinamico di proiettile sistemi ad energia cinetica
+NA. Per i sistemi d'arma che impiegano munizioni costituite da sottocalibri 0 che utilizzano solo
+propulsione chimica, e relativo munizionamento, vedere le Categorie 1, 2, 3 e 4 del presente Elenco.
+Nota ] La presente Categoria comprende quanto segue se appositamente progettato per sistemi d'arma a
+energia cinetica:
+
+sistemi di lancio-propulsione in grado di accelerare masse superiori di 0,1q a velocità superiori di 1,6
+Km/S, a fuoco singolo 0 rapido;
+
+b. apparecchiature di produzione di potenza Immediatamente disponibile, di schermatura elettrica, gi
+immagazzinamento di energia, di gestione del calore, di condizionamento, di commutazione 0 di
+manipolazione del combustibile; interfacce elettriche tra l'alimentazione d: energia, il cannone e le altre
+funzioni di comando elettrico della torretta;
+
+c. sistemi di acquisizione e di inseguimento del bersaglio, di controllo cel tiro e di valutazione del danno;
+d. sistemi autoguidati di ricerca, di guida o di propulsione deviata (accelerazione laterale) per provettil
+Nota 2 La presente Categoria sottopone ad autorizzazione sistemi d'arma che utilizzano uno dei seguenti
+metodi di propulsione.
+
+a. elettromagnetico;
+
+bo. elettrotermico;
+
+c. a plasma;
+
+d. a gas leggero; o
+
+e. chimico (se usato in combinazione con uno dei suddetti metodi).
+
+Nota 3 La presente Categoria non sottopone ad autorizzazione la tecnologia per l’induzione magnetica per
+la propulsione continua di dispositivi di trasporto civile.
+
+ 
+
+ 
+
+ 
+
+Categoria 13
+

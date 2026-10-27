@@ -1,0 +1,87 @@
+ 
+
+Codice
+
+ATS
+AUD
+BEF
+CAD
+CHF
+DEM
+DKK
+ESP
+FIM
+FRE
+GBP
+GRD
+IEP
+INR
+TL
+JPY
+NCK
+NLG
+PIE
+RIA
+SEK
+
+USD
+XEU
+
+Valuta
+
+Scellino austriaco
+Dollaro australiano
+Franco belga
+Dollaro canadese
+Franco svizzero
+Marco tedesco
+Corona danese
+Peseta spagnola
+Marco finlandese
+Franco francese
+Lira sterlina
+Dracma greca
+Lira irlandese
+Rupia indiana
+Lira italiana
+
+Yen giapponese
+Corona norvegese
+Fiorino olandese
+Escudo portoghese
+Rial
+
+Corona svedese
+Dollaro Singapore
+Dollaro USA
+ECU SME
+
+ 
+
+Cambio medio (anno 1995)
+
+161,757
+1207,163
+55311
+1186,978
+1379,871
+1137,995
+290,941
+13,075
+373,431
+326,629
+2571647
+7,036
+2612,826
+50,158
+1,000
+17,452
+257,229
+1015,935
+10,870
+4226,691
+228,399
+1147295
+1628,911
+2107,229
+

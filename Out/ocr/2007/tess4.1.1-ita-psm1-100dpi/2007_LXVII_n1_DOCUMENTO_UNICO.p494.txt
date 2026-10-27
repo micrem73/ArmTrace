@@ -1,0 +1,71 @@
+Senato della Repubblica -494- Camera dei deputati
+
+ 
+
+XVI LEGISLATURA - DISEGNI DI LEGGE E RELAZIONI - DOCUMENTI
+
+ 
+
+virus Categoria 7
+zirconio Categoria 8
+CODIFICAZIONE
+
+Il codice di identificazione della Categoria di appartenenza del materiale da sottoporre ad
+autorizzazione si compone di sei caratteri
+
+alfanumerici.
+
+1 primi due indicano la Categoria
+
+  
+
+|_1, | rimanenti {_1_1_{_l indicano paragrafi, sottoparagrafi, ecc.
+
+Il simbolo 0 (zero) completa gli spazi non utilizzati dai caratteri alfanumerici.
+
+ 
+
+SI riportano, di seguito, alcuni esem
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+ 
+
+- Armi lunghe da sparo fo ji fb [o jofo
+» Munizioni: — lo_|3 o fo |o jo
+- Cianuro di bromobenzile (CA): o {7 le |1 fo fo
+- Matore elettrico ad inversione rapidi __ JBbiplo
+- Paracadute per lancio di precisione: - bh
+- Autorespiratori a circuito chiuso: 1 ja jifolo
+- Robots: 1 |? Je fofo|o
+- Software per simulazione di scenari 2 libfilelo
+operativi:
+
+ 
+
+ 
+
