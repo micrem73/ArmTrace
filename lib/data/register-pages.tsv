@@ -14,40 +14,40 @@
 # lists: the lists printed, in page order, with the counts they or the narrative state.
 # narrative: the PDF page of the Difesa text on the register (counts; registered at
 #   31.12, when printed: a witness for the rebuilt register).
-year	volume	pdf_first	pdf_last	rotated	layer	layout	lists	narrative	note
-1990	-	-	-	-	-	-	-	213	no register yet: DM 95-96 of Feb 1991 set it up
-1991	1991_CVII_n1_DOCUMENTO_UNICO.pdf	240	244	240-241,243-244	scan	grid	iscrizioni 13/04-31/12/1991 (REG.1), sospensioni (negativo), cancellazioni (negativo)	-	the first enrolments: the register's opening
-1992	1992_CVII_n2_DOCUMENTO_UNICO.pdf	300	306	300-303	scan	grid	iscrizioni, sospese al 31.12.1992 (negativo), cancellate al 31.12.1992 (1: Luigi Franchi, decree)	307	narrative: 162 ditte iscritte
-1993	1993_CVII_n3_DOCUMENTO_UNICO.pdf	195	199	195-199	scan	grid	iscrizioni, sospensioni, cancellazioni	-
-1994	1994_LXVII_n1_DOCUMENTO_UNICO.pdf	210	214	210-211	scan	grid	sospensioni (TAB. X), cancellazioni, iscrizioni (Allegato 1)	-
-1995	1995_LXVII_n2_DOCUMENTO_UNICO.pdf	119	135	119-135	scan	snapshot+grid	ditte iscritte (Allegato 1: the whole register, 00003-00237), sospese (negativo), cancellate	118	narrative: 30 iscritte, 29 cancellate, 7 rinnovi
-1996	1996_LXVII_n1_DOCUMENTO_UNICO.pdf	112	118	112-118	scan	grid	iscritte, sospese (2), cancellate	111	narrative: 22 / 19 (3 of 1995) / 2 sospese; 173 at 31.12
-1997	1997_LXVII_n2_DOCUMENTO_UNICO.pdf	120	126	120-126	scan	grid	iscritte, cancellate, sospese (negativo)	119	narrative: 20 / 33 (15 of 1996); 160 at 31.12
-1998	1998_LXVII_n3_DOCUMENTO_UNICO.pdf	127	133	127-133	scan	grid	iscritte, sospese (negativo), cancellate	126	narrative: 20 / 28 (7 of 1997); 152 at 31.12
-1999	1999_LXVII_n4_DOCUMENTO_UNICO.pdf	118	123	118-123	scan	grid	iscritte, sospese (negativo), cancellate	117	narrative: 20 / 16 (3 of 1998) / 0; 156 at 31.12
-2000	2000_LXVII_n5_DOCUMENTO_UNICO.pdf	132	137	132-137	scan	grid	cancellate, iscritte, sospese (negativo)	131	narrative: 15 / 21 (2 of 1999) / 0; 150 at 31.12
-2001	2001_LXVII_n1_DOCUMENTO_UNICO.pdf	130	133	130-133	scan	grid	iscritte, sospese (negativo), cancellate	129	narrative: 20 / 14 (3 of 2000) / 0; 156 at 31.12
-2002	2002_LXVII_n2_DOCUMENTO_UNICO.pdf	141	144	141-144	scan	grid	iscritte, sospese (negativo), cancellate	140	narrative: 17 / 17 (6 of 2001) / 0; 156 at 31.12
-2003	2003_LXVII_n3_DOCUMENTO_UNICO.pdf	144	147	144-147	scan	grid	iscritte, sospese (negativo), cancellate	143	narrative: 17 / 9 (2 of 2002) / 0; 164 at 31.12
-2004	2004_LXVII_n4_DOCUMENTO_UNICO.pdf	161	163	161-163	scan	grid	iscritte, sospese (negativo), cancellate	158	narrative: 13 / 11 (2 of 2003) / 0; 166 at 31.12
-2005	2005_LXVII_n1_DOCUMENTO_UNICO.pdf	141	143	141-143	scan	grid	iscritte, sospese (negativo), cancellate	138	narrative: 13 / 2 / 0; 177 at 31.12
-2006	2006_LXVII_n2_DOCUMENTO_UNICO.pdf	316	319	316-319	scan	grid	iscritte, sospese (1: HI-TECK INTERNATIONAL), cancellate	313	narrative p313-314: 21 / 1 / 11 (2 of 2005); 187 at 31.12, 1 of them suspended
-2007	2007_LXVII_n1_DOCUMENTO_UNICO.pdf	495	497	-	scan	grid	iscrizioni, sospensioni (1), cancellazioni	444	narrative: 26 / 17; 196 at 31.12, 1 of them suspended
-2008	2008_LXVII_n2_VOLUME_I.pdf	597	599	-	scan	grid	iscrizioni, sospensioni (0), cancellazioni	546	narrative: 11 / 7; 200 at 31.12
-2009	2009_LXVII_n3_TOMO_I.pdf	760	762	-	scan	grid	iscrizioni, cancellazioni, sospensioni (1)	707	narrative: 15 / 1 / 11; 204 at 31.12
-2010	2010_LXVII_n4_VOLUME_I.pdf	751	755	-	scan	grid	iscrizioni, sospensioni (9), cancellazioni	700	narrative: 32 / 9 / 30; 206 at 31.12
-2011	2011_LXVII_n5_TOMO_II.pdf	61	63	-	scan	grid	iscrizioni, sospensioni, cancellazioni	10	narrative: 214 at 31.12
-2012	2012_LXVII_n1_VOLUME_I.pdf	67	69	-	ocrlayer	grid	iscrizioni, sospensioni, cancellazioni	19
-2013	2013_LXVII_n2_DOCUMENTO_UNICO.pdf	579	580	-	ocrlayer	grid	iscrizioni, cancellazioni	-
-2014	2014_LXVII_n3_VOLUME_I.pdf	649	652	-	ocrlayer	grid	iscrizioni, cancellazioni	608	p647 is the annex cover (text only); narrative gives cancellations by reason
-2015	2015_LXVII_n4_VOLUME_I.pdf	1018	1020	-	ocrlayer	grid	iscrizioni, sospensioni, cancellazioni	933	p1017 is the annex cover (text only)
-2016	2016_LXVII_n5_VOLUME_I.pdf	704	705	-	text	list	iscritte (36), sospese (nessuna), cancellate (13)	662
-2017	2017_LXVII_n1_VOLUME_I.pdf	736	740	-	text	list	iscritte (40), sospese (nessuna), cancellate (13)	693	p736 and p738 carry the arrival stamp
-2018	2018_LXVII_n2_VOLUME_I.pdf	729	731	-	ocrlayer	list	iscritte (25), sospese (nessuna), cancellate (09)	728	narrative: 25 / 0 / 9
-2019	2019_LXVII_n3_VOLUME_I.pdf	812	815	-	text	list	iscritte (31), sospese (nessuna), cancellate (18)	816
-2020	2020_LXVII_n4_VOLUME_I.pdf	717	720	-	text	list	iscritte (21), sospese (nessuna), cancellate (16)	716	narrative p716 and p696: 21 / 0 / 15 (the list heading says 16)
-2021	2021_LXVII_n5_TOMO_II.pdf	823	827	-	scan	list	-	-	declared in editions/y2021.py
-2022	2022_LXVII_n1_VOLUME_I.pdf	999	1003	-	scan	list	-	-	declared in editions/y2022.py
-2023	2023_LXVII_n2_VOLUME_I.pdf	926	930	-	scan	list	-	-	declared in editions/y2023.py
-2024	lxvii_3_volume 2_442453.pdf	51	54	-	text	list	iscritte, sospese (1), cancellate	-	extracted, 65 lines
-2025	2025_LXVII_n4_VOLUME_II.pdf	236	240	-	text	list	iscritte, sospese, cancellate	-	extracted, 95 lines
+year	volume	pdf_first	pdf_last	printed_first	rotated	layer	layout	lists	narrative	note
+1990	-	-	-	-	-	-	-	-	213	no register yet: DM 95-96 of Feb 1991 set it up
+1991	1991_CVII_n1_DOCUMENTO_UNICO.pdf	240	244	240	240-241,243-244	scan	grid	iscrizioni 13/04-31/12/1991 (REG.1), sospensioni (negativo), cancellazioni (negativo)	-	the first enrolments: the register's opening
+1992	1992_CVII_n2_DOCUMENTO_UNICO.pdf	300	306	300	300-303	scan	grid	iscrizioni, sospese al 31.12.1992 (negativo), cancellate al 31.12.1992 (1: Luigi Franchi, decree)	307	narrative: 162 ditte iscritte
+1993	1993_CVII_n3_DOCUMENTO_UNICO.pdf	195	199	195	195-199	scan	grid	iscrizioni, sospensioni, cancellazioni	-
+1994	1994_LXVII_n1_DOCUMENTO_UNICO.pdf	210	214	210	210-211	scan	grid	sospensioni (TAB. X), cancellazioni, iscrizioni (Allegato 1)	-
+1995	1995_LXVII_n2_DOCUMENTO_UNICO.pdf	119	135	119	119-135	scan	snapshot+grid	ditte iscritte (Allegato 1: the whole register, 00003-00237), sospese (negativo), cancellate	118	narrative: 30 iscritte, 29 cancellate, 7 rinnovi
+1996	1996_LXVII_n1_DOCUMENTO_UNICO.pdf	112	118	112	112-118	scan	grid	iscritte, sospese (2), cancellate	111	narrative: 22 / 19 (3 of 1995) / 2 sospese; 173 at 31.12
+1997	1997_LXVII_n2_DOCUMENTO_UNICO.pdf	120	126	120	120-126	scan	grid	iscritte, cancellate, sospese (negativo)	119	narrative: 20 / 33 (15 of 1996); 160 at 31.12
+1998	1998_LXVII_n3_DOCUMENTO_UNICO.pdf	127	133	127	127-133	scan	grid	iscritte, sospese (negativo), cancellate	126	narrative: 20 / 28 (7 of 1997); 152 at 31.12
+1999	1999_LXVII_n4_DOCUMENTO_UNICO.pdf	118	123	118	118-123	scan	grid	iscritte, sospese (negativo), cancellate	117	narrative: 20 / 16 (3 of 1998) / 0; 156 at 31.12
+2000	2000_LXVII_n5_DOCUMENTO_UNICO.pdf	132	137	132	132-137	scan	grid	cancellate, iscritte, sospese (negativo)	131	narrative: 15 / 21 (2 of 1999) / 0; 150 at 31.12
+2001	2001_LXVII_n1_DOCUMENTO_UNICO.pdf	130	133	130	130-133	scan	grid	iscritte, sospese (negativo), cancellate	129	narrative: 20 / 14 (3 of 2000) / 0; 156 at 31.12
+2002	2002_LXVII_n2_DOCUMENTO_UNICO.pdf	141	144	148	141-144	scan	grid	iscritte, sospese (negativo), cancellate	140	narrative: 17 / 17 (6 of 2001) / 0; 156 at 31.12
+2003	2003_LXVII_n3_DOCUMENTO_UNICO.pdf	144	147	144	144-147	scan	grid	iscritte, sospese (negativo), cancellate	143	narrative: 17 / 9 (2 of 2002) / 0; 164 at 31.12
+2004	2004_LXVII_n4_DOCUMENTO_UNICO.pdf	161	163	161	161-163	scan	grid	iscritte, sospese (negativo), cancellate	158	narrative: 13 / 11 (2 of 2003) / 0; 166 at 31.12
+2005	2005_LXVII_n1_DOCUMENTO_UNICO.pdf	141	143	141	141-143	scan	grid	iscritte, sospese (negativo), cancellate	138	narrative: 13 / 2 / 0; 177 at 31.12
+2006	2006_LXVII_n2_DOCUMENTO_UNICO.pdf	316	319	316	316-319	scan	grid	iscritte, sospese (1: HI-TECK INTERNATIONAL), cancellate	313	narrative p313-314: 21 / 1 / 11 (2 of 2005); 187 at 31.12, 1 of them suspended
+2007	2007_LXVII_n1_DOCUMENTO_UNICO.pdf	495	497	495	-	scan	grid	iscrizioni, sospensioni (1), cancellazioni	444	narrative: 26 / 17; 196 at 31.12, 1 of them suspended
+2008	2008_LXVII_n2_VOLUME_I.pdf	597	599	597	-	scan	grid	iscrizioni, sospensioni (0), cancellazioni	546	narrative: 11 / 7; 200 at 31.12
+2009	2009_LXVII_n3_TOMO_I.pdf	760	762	759	-	scan	grid	iscrizioni, cancellazioni, sospensioni (1)	707	narrative: 15 / 1 / 11; 204 at 31.12
+2010	2010_LXVII_n4_VOLUME_I.pdf	751	755	751	-	scan	grid	iscrizioni, sospensioni (9), cancellazioni	700	narrative: 32 / 9 / 30; 206 at 31.12
+2011	2011_LXVII_n5_TOMO_II.pdf	61	63	61	-	scan	grid	iscrizioni, sospensioni, cancellazioni	10	narrative: 214 at 31.12
+2012	2012_LXVII_n1_VOLUME_I.pdf	67	69	67	-	ocrlayer	grid	iscrizioni, sospensioni, cancellazioni	19
+2013	2013_LXVII_n2_DOCUMENTO_UNICO.pdf	579	580	579	-	ocrlayer	grid	iscrizioni, cancellazioni	-
+2014	2014_LXVII_n3_VOLUME_I.pdf	649	652	649	-	ocrlayer	grid	iscrizioni, cancellazioni	608	p647 is the annex cover (text only); narrative gives cancellations by reason
+2015	2015_LXVII_n4_VOLUME_I.pdf	1018	1020	1018	-	ocrlayer	grid	iscrizioni, sospensioni, cancellazioni	933	p1017 is the annex cover (text only)
+2016	2016_LXVII_n5_VOLUME_I.pdf	704	705	700	-	text	list	iscritte (36), sospese (nessuna), cancellate (13)	662
+2017	2017_LXVII_n1_VOLUME_I.pdf	736	740	736	-	text	list	iscritte (40), sospese (nessuna), cancellate (13)	693	p736 and p738 carry the arrival stamp
+2018	2018_LXVII_n2_VOLUME_I.pdf	729	731	725	-	ocrlayer	list	iscritte (25), sospese (nessuna), cancellate (09)	728	narrative: 25 / 0 / 9
+2019	2019_LXVII_n3_VOLUME_I.pdf	812	815	810	-	text	list	iscritte (31), sospese (nessuna), cancellate (18)	816
+2020	2020_LXVII_n4_VOLUME_I.pdf	717	720	713	-	text	list	iscritte (21), sospese (nessuna), cancellate (16)	716	narrative p716 and p696: 21 / 0 / 15 (the list heading says 16)
+2021	2021_LXVII_n5_TOMO_II.pdf	823	827	1610	-	scan	list	-	-	declared in editions/y2021.py
+2022	2022_LXVII_n1_VOLUME_I.pdf	999	1003	995	-	scan	list	-	-	declared in editions/y2022.py
+2023	2023_LXVII_n2_VOLUME_I.pdf	926	930	922	-	scan	list	-	-	declared in editions/y2023.py
+2024	lxvii_3_volume 2_442453.pdf	51	54	1057	-	text	list	iscritte, sospese (1), cancellate	-	extracted, 65 lines
+2025	2025_LXVII_n4_VOLUME_II.pdf	236	240	1274	-	text	list	iscritte, sospese, cancellate	-	extracted, 95 lines

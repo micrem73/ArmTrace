@@ -363,8 +363,8 @@ def build(year):
     return tables, trash
 
 
-def write_sqlite(year, tables, segments, trash):
-    path = layout.index_sqlite(year, ROOT)
+def write_sqlite(year, tables, segments, trash, root=ROOT):
+    path = layout.index_sqlite(year, root)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.unlink(missing_ok=True)
