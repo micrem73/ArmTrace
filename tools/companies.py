@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from lib import companies, extract, layout  # noqa: E402
+from lib import banks, companies, extract, layout  # noqa: E402
 
 
 def printed_counts(year):
@@ -52,6 +52,19 @@ def printed_counts(year):
     for printed, n in listed.items():
         counts[printed] = counts.get(printed, 0) + n
     return counts, only
+
+
+def printed_banks(year):
+    """Every bank name the year's tables print (a `bank` column's own)."""
+    db = sqlite3.connect(layout.year_dir(year, ROOT) / f"armtrace-{year}.sqlite")
+    out = []
+    for key, spec in extract.specs().items():
+        name = extract.sql_name(key)
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone():
+            continue
+        for col in (c for c in spec.columns if c.type == "bank"):
+            out += [p for (p,) in db.execute(f"SELECT DISTINCT {col.of} FROM {name}") if p]
+    return out
 
 
 def register(root=ROOT):
@@ -79,6 +92,36 @@ def by_register(rows, names):
             names[printed] = (next(iter(known[numero])), f"register {numero}")
 
 
+def _grouped():
+    """[(key, spec)]: the tables grouped by company (a `group` or `carry`
+    column holds the name: MAE A1's operator heading, MEF II's `Ditta`)."""
+    return [(key, spec) for key, spec in extract.specs().items() if spec.company and any(
+        c.key == spec.company.of and c.type in ("group", "carry") for c in spec.columns)]
+
+
+def evidence(printed, root=ROOT):
+    """[line]: what the tables say of a cluster of names, shown to the
+    maintainer with it (2026-10-25: the tables' evidence comes first). A
+    table grouped by company printing two of them apart; a register number
+    printed beside one."""
+    out, names = [], set(printed)
+    for path in sorted(Path(root, layout.OUT).glob("*/armtrace-*.sqlite")):
+        db = sqlite3.connect(path)
+        for key, spec in _grouped():
+            name, of = extract.sql_name(key), spec.company.of
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone():
+                continue
+            seen = {}
+            for year, printed in db.execute(f"SELECT DISTINCT year, {of} FROM {name}"):
+                if printed in names:
+                    seen.setdefault(year, set()).add(printed)
+            out += [f"printed apart in {key} {year}: {'; '.join(sorted(apart))}"
+                    for year, apart in sorted(seen.items()) if len(apart) > 1]
+    out += [f"register {numero}: {name} ({year})"
+            for numero, _cid, name, year in register(root) if name in names]
+    return out
+
+
 def witness(root=ROOT):
     """[warning]: where a table contradicts the ids, in every year extracted
     (maintainer, 2026-10-22: every decision stays open to the tables). The
@@ -87,8 +130,7 @@ def witness(root=ROOT):
     A1's operator heading, MEF II's `Ditta`) printing one id as two groups."""
     seen = [r for r in register(root) if r[1] is not None]
     out = []
-    grouped = [(key, spec) for key, spec in extract.specs().items() if spec.company and any(
-        c.key == spec.company.of and c.type in ("group", "carry") for c in spec.columns)]
+    grouped = _grouped()
     for path in sorted(Path(root, layout.OUT).glob("*/armtrace-*.sqlite")):
         db = sqlite3.connect(path)
         for key, spec in grouped:
@@ -178,15 +220,18 @@ def main(argv=None):
         for p in printed:
             names[p] = (cid, "spelling")
     companies.write(listed, names)
+    new_banks = banks.update(printed_banks(args.year))
     print(f"companies {args.year}: {len(counts)} printed names, {len(listed)} companies; "
           f"+{len(spellings)} spellings, +{len(new)} new; "
-          f"{len(review)} clusters for the maintainer")
+          f"{len(review)} clusters for the maintainer; +{len(new_banks)} banks")
     for warning in witness():
         print(f"  WARNING {warning}")
     for i, cluster in enumerate(review, 1):
         print(f"  {i:>2}. " + "  |  ".join(
             (f"[{node['id']}] " if node["id"] else "") + " ; ".join(node["printed"])
             for node in cluster))
+        for line in evidence([p for node in cluster for p in node["printed"]]):
+            print(f"      {line}")
     return 0
 
 

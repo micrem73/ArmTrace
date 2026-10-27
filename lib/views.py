@@ -136,18 +136,45 @@ def _group_of(row, spec):
     return row["cells"][carry[0]] if carry else None
 
 
-def _figure_checks(row, scope, spec, everything=(), above=()):
-    rule = next((expr for rx, expr in spec.totals if rx.search(row["cells"][0] or "")), None)
+def _figure_checks(row, scope, spec, everything=(), above=(), recent=()):
+    # A line's label is its first printed cell (MAE O2's `di cui` lines print
+    # it in the second column).
+    label = next((c for c in row["cells"] if c), "")
+    rule = next((expr for rx, expr in spec.totals if rx.search(label)), None)
+    # A summary rule (`sum <col>`) is for a figure printed outside the grid: a
+    # total row of the grid is checked by its column sums (MAE O2, B1).
+    if rule is not None and row["kind"] == "total" and re.fullmatch(r"sum \w+", rule):
+        rule = None
     if rule is not None:
         return _line_checks(row, rule.split(), everything, above)
     # A total over blocks (`block`: T13's Categoria and Tipologia) is checked
     # against each block on its own: both add up to it.
     at = next((i for i, c in enumerate(row["order"]) if c.type == "block"), None)
     if at is not None and row["kind"] == "total":
+        # A total naming one of the rows' measures (T7: `TOTALE | N. Licenze`)
+        # adds up that measure's rows over every block.
+        named = [(i, t) for i, (t, c) in enumerate(zip(row["cells"], row["order"]))
+                 if i != at and t and c.type == "text"
+                 and any(r["cells"][i] == t for r in scope)]
+        if named:
+            i, t = named[0]
+            return [(f"{name} ({t})", printed, computed, status) for name, printed, computed, status
+                    in _sums(row, [r for r in scope if r["cells"][i] == t], spec)]
+        # A total printed under one block only (T12: each year's `Totale`)
+        # adds up that block.
+        if recent and len({r["cells"][at] for r in recent}) == 1 and len(recent) < len(scope):
+            scope = recent
         against = row["order"][at].against or {}
         blocks = {}
         for r in scope:
             blocks.setdefault(r["cells"][at], []).append(r)
+        # A total named as a block's target adds up that block alone (MAE T5
+        # `In Mio EUR` under the In Mio EUR rows; the % blocks have none).
+        label = next((c for i, c in enumerate(row["cells"]) if c and i != at), "")
+        if label in against.values():
+            mine = {b: rows for b, rows in blocks.items() if against.get(b) == label}
+            return [(f"{name} ({b})", printed, computed, status) for b, rows in mine.items()
+                    for name, printed, computed, status in _sums(row, rows, spec)]
         out = []
         for block, rows in blocks.items():
             # A block that breaks down one row of another (T23: the categories
@@ -170,8 +197,17 @@ def _rowsum_checks(row):
         value, _ = extract.parse("amount", row["cells"][i])
         if value is None:
             continue
-        computed = sum(extract.parse("amount", c)[0] or 0
-                       for c, other in zip(row["cells"], row["order"]) if other.key == col.of)
+        # `a+b-c`: the columns added and taken away (T16 `lgp+lgt+agt`, T15
+        # `valore-scadute`); one column may be a year column (3B).
+        signs = {m.group(2): -1 if m.group(1) == "-" else 1
+                 for m in re.finditer(r"([+-]?)(\w+)", col.of)}
+        if not set(signs) <= {other.key for other in row["order"]}:
+            # A term the row does not hold: T15's total prints no `scadute`.
+            out.append((f"{row['kind']} p{row['pdf_page']} {col.key} row {row['row_ord']}",
+                        row["cells"][i], None, "UNCHECKED"))
+            continue
+        computed = sum(signs[other.key] * (extract.parse("amount", c)[0] or 0)
+                       for c, other in zip(row["cells"], row["order"]) if other.key in signs)
         out.append((f"{row['kind']} p{row['pdf_page']} {col.key} row {row['row_ord']}",
                     row["cells"][i], computed, extract._status(computed, value)))
     return out
@@ -195,7 +231,7 @@ def _line_checks(row, rule, facts, above):
             continue
         year = row["year_of"].get(i)
         name = f"{row['cells'][0]} p{row['pdf_page']} {col.key}" + (f" {year}" if year else "")
-        if rule == ["sum", "rows", "of", "Y"] and year == latest:
+        if rule == ["sum", "rows", "of", "Y"] and year == latest or rule == ["sum", "rows"]:
             scope = facts
         elif rule == ["sum", "lines", "above"]:
             scope = above
@@ -211,8 +247,10 @@ def _line_checks(row, rule, facts, above):
 
 def _printed_value(text):
     """A printed figure's value, a comment after it set aside: A2's and B4's
-    `265.139.737,31 (pari a 3,43 %)` (`ExtractTables.figures` stores it so)."""
-    return extract.parse("amount", (text or "").split(" (")[0].strip())[0]
+    `265.139.737,31 (pari a 3,43 %)` (`ExtractTables.figures` stores it so),
+    MAE O2's `€ 437.171.810,17 di cui:`."""
+    text = re.split(r" \(| di cui\b", text or "")[0]
+    return extract.parse("amount", text.strip())[0]
 
 
 def _sums(row, scope, spec):
@@ -245,7 +283,7 @@ def render(facts, figures, summary, spec):
 
     `kind` is `group` (a heading), `data`, `subtotal`, `total` or `summary`.
     Cells are the printed text: a fact's own, a figure's printed values."""
-    out, scope, everything, lines = [], [], [], []
+    out, scope, everything, lines, recent = [], [], [], [], []
     heading, run = object(), object()
     carry = None
     for row in sorted(facts + figures, key=lambda r: r["row_ord"]):
@@ -265,13 +303,27 @@ def render(facts, figures, summary, spec):
                         "linked": row.get("linked")})
             scope.append(row)
             everything.append(row)
+            recent.append(row)
             run = group
         else:
             within = scope if row["kind"] == "subtotal" else everything
+            # A total printed after another total adds up the rows since that
+            # one (MEF REL/SALDI: `Totale Esportazioni`, `Totale Importazioni`).
+            if row["kind"] == "total" and recent and any(x["kind"] == "total" for x in lines):
+                within = recent
+            # A subtotal naming the value its `carry` column carries (MEF AA:
+            # `DEUTSCHE BANK SPA (CAB 01600) Totale`) adds up that value's rows.
+            named = extract.SUBTOTAL_TAIL.match(row["cells"][0] or "") \
+                if row["kind"] == "subtotal" and carry else None
+            if named:
+                mine = [r for r in within if any(r["cells"][i] == named.group(1) for i in carry)]
+                within = mine or within
             out.append({"kind": row["kind"], "group": row["group"], "cells": list(row["cells"]),
                         "pdf_page": row["pdf_page"],
-                        "checks": _figure_checks(row, within, spec, everything, lines)})
+                        "checks": _figure_checks(row, within, spec, everything, lines, recent)})
             lines.append(row)
+            if row["kind"] == "total":
+                recent = []
             if row["kind"] == "subtotal":
                 scope, run = [], object()
     for pdf_page, _printed_page, label, raw in summary:

@@ -123,7 +123,8 @@ def render(year, key, dpi=110):
                                              encoding="utf-8")
     images = []
     for sp in source.table_pages(year, key):
-        if not agreed and sp.pdf_page == min(pages) and "header" not in out:
+        if not agreed and out.get("header") is None:
+            # The first page that prints one: a cover page (Dogane N1) prints none.
             frame, words = extract.page_words(sp)
             h = geo.grid_header(sp, words, frame, is_label=gra.is_label_row)
             out["header"] = [c["text"] for c in h["cells"]] if h else None
@@ -140,6 +141,7 @@ def render(year, key, dpi=110):
                                          for r in view if r["pdf_page"] == sp.pdf_page]
     out["images"] = images
     print(json.dumps(out, ensure_ascii=False, indent=1, default=str))
+    return out
 
 
 def _read(path):
@@ -159,6 +161,8 @@ def action_of(year, key, specs):
         elif drafted.get("kind") == "code":
             return "fix", "header misread: " + drafted.get("cause", ""), False
     if key not in specs:
+        if key in extract.not_imported():
+            return "done", "not imported (maintainer: a chart)", False
         if (folder / "columns-proposal.tsv").exists():
             return "human", "columns drafted, to approve into lib/data/columns.tsv", False
         return "columns", "no agreed columns", False

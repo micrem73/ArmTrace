@@ -64,6 +64,24 @@ def test_difesa_4_one_record_per_programme_and_its_note(year, sources):
 
 
 @pytest.mark.parametrize("year", ["2025"])
+def test_the_caption_over_the_grid_is_kept_as_printed(year, sources):
+    """What a table prints above its header is its caption, one line per
+    printed line (maintainer, 2026-10-25): Dogane M's says which operation the
+    whole table covers, T3's that its columns are five-year periods."""
+    from lib import source
+
+    def caption(key):           # the first page, clipped to the table as the run is
+        pages = source.table_pages(year, key)[:1]
+        return extract.read_table(year, key, pages=pages).caption
+    assert caption("DOG/A1C2/M") == [
+        "Tipo di operazione: Esportazione Definitiva (EX) TAB. M"]     # one printed line
+    assert caption("DIFESA/4") == [
+        "MINISTERO DELLA DIFESA – Annesso 4", "TABELLA RIASSUNTIVA DEI",
+        "PROGRAMMI DI COPRODUZIONE INTERNAZIONALE 2025"]
+    assert caption("MAE/T2") == ["Tabella 2"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
 def test_t2_wrapped_labels_years_and_footnote(year, sources):
     r = read(VOL1, 27, 27, 23, "MAE/T2", clip=[0.0, 295.84, 595.28, 513.41])
     assert [x["cells"][0] for x in r.rows] == [
@@ -311,7 +329,8 @@ def test_a_summary_agrees_with_the_table_it_summarises():
     a2 = [c for c in got if c[1] == "MAE/A2"]
     assert len(a2) == 3 * 159 and all(c[5] == "PASS" for c in a2)
     m1 = [c for c in got if c[1] == "DOG/A1C2/M1"]
-    assert len(m1) == 157 and all(c[5] == "PASS" for c in m1)
+    # 158: BERCELLA S.R.L. and BERCELLA SPA are two companies (maintainer, 2026-10-25).
+    assert len(m1) == 158 and all(c[5] == "PASS" for c in m1)
     # M1 prints `CPM ELETTRONICA SRL` twice and `C.P.M. ELETTRONICA S.R.L.`: one company.
     cpm = [c[2] for c in m1 if "CPM ELETTRONICA SRL" in c[2]]
     assert len(cpm) == 1 and "C.P.M. ELETTRONICA S.R.L." in cpm[0]
@@ -454,6 +473,20 @@ def test_importer_eval_relink_moves_one_item_to_another_amount(year, sources, tm
     amounts = {r[0] for r in db.execute("SELECT row_ord FROM mae_a1 WHERE ammontare_raw IS NOT NULL")}
     assert moved != importo and moved in amounts
     assert unit == dict((r[0], r[2]) for r in before)[moved]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_columns_render_reads_the_header_past_a_cover_page(year, sources, monkeypatch):
+    """Drafting columns, the importer gets the header off the first page that
+    prints one: Dogane N1's first page is its cover (p871), the grid is on p872.
+    (N1 has agreed columns since: the draft path is taken as if it had none.)"""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import import_queue
+    monkeypatch.setattr(import_queue.extract, "specs", lambda: {})
+    out = import_queue.render(year, "DOG/A1C2/N1", dpi=20)
+    assert out["header"] == ["Denominazione operatore", "Numero di operazioni svolte",
+                             "Stato di avanzamento annuale (Euro)",
+                             "Utilizzo anni precedenti (Euro)"]
 
 
 @pytest.mark.parametrize("year", ["2025"])
@@ -687,3 +720,554 @@ def test_a_short_operator_heading_in_the_margin_is_read(year, sources):
     assert groups[-2:] == ["LARIMART S.p.A.", "LEE Srl"]
     ugello = next(x for x in r.rows if x["cells"][7].startswith("UGELLO"))
     assert ugello["group"] == "LEE Srl"
+
+
+def test_a_table_not_imported_is_decided_and_never_extracted():
+    """A `none` line in columns.tsv: the maintainer chose not to import the
+    table (charts: MEF GF, NN, OO, PP, Difesa 3C; 2026-10-25). It has no spec,
+    so nothing extracts it, and the import queue counts it done."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import import_queue
+    assert "MEF/GF" not in extract.specs()
+    assert {"MEF/GF", "MEF/NN", "MEF/OO", "MEF/PP", "DIFESA/A2C6/3C"} <= extract.not_imported()
+    action, reason, _ = import_queue.action_of("2025", "MEF/GF", extract.specs())
+    assert action == "done" and reason.startswith("not imported")
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_block_label_printed_upright_fills_every_row_of_its_cell(year, sources):
+    """T12 prints each year once, upright, in a box spanning its four rows
+    (maintainer, 2026-10-25: `anno` is a block, all four rows hold it). Only
+    the row level with the label got it."""
+    from lib import source
+    r = extract.read_table(year, "MAE/T12", pages=source.table_pages(year, "MAE/T12"))
+    data = [x["cells"] for x in r.rows if x["kind"] == "data"]
+    assert [c[:2] for c in data[:5]] == [["2022", "MATERIALI"], ["2022", "TECNOLOGIE"],
+                                         ["2022", "SERVIZI"], ["2022", "RICAMBI"],
+                                         ["2023", "MATERIALI"]]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_total_adds_up_its_own_rows_by_measure_or_by_block(year, sources):
+    """T7's `TOTALE | N. Licenze` adds up the N. Licenze rows of every area;
+    T12's `Totale` under each year adds up that year's block only."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/T7", pages=source.table_pages(year, "MAE/T7"))
+    got = Counter(c[3] for c in extract.checks(r, extract.specs()["MAE/T7"]))
+    assert not got["FAIL"] and got["PASS"], got
+    # T12's `Numero parti` totals print one unit off their rows in 2022 and
+    # 2025 (as T13's): a FAIL of the print, reported, never smoothed.
+    r = extract.read_table(year, "MAE/T12", pages=source.table_pages(year, "MAE/T12"))
+    fails = [(c[0], c[1]) for c in extract.checks(r, extract.specs()["MAE/T12"]) if c[3] == "FAIL"]
+    assert fails == [("total p48 numero_parti (2022)", "368.433.463"),
+                     ("total p48 numero_parti (2025)", "831.825.954")]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_label_broken_inside_a_word_is_the_same_label(year, sources):
+    """T88's second page prints `N. autorizzazion i` (the word broken on two
+    lines): the same agreed label, so the page is the table's, not a summary."""
+    from lib import source
+    r = extract.read_table(year, "MAE/T88", pages=source.table_pages(year, "MAE/T88"))
+    assert r.pages == {"header": 2}
+    assert not [c for c in extract.checks(r, extract.specs()["MAE/T88"]) if c[3] == "UNCHECKED"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_rows_unit_is_the_row_printing_its_opener(year, sources):
+    """`riga_<unit>` without a `link` (DECISIONS.md 2026-10-25): the row_ord of
+    the row printing the unit's opener column; a unit listed first opens the
+    ones after it. MAE O1 p187: A.L.A. opens an operator and its EX movement,
+    SPAGNA is of both; ASE opens a new operator and a new movement."""
+    from lib import source
+    key = "MAE/O1"
+    r = extract.read_table(year, key, pages=source.table_pages(year, key)[:1])
+    db = stored(year, r, key)
+    got = db.execute("SELECT paese, riga_operatore, riga_movimentazione FROM mae_o1 "
+                     "ORDER BY row_ord LIMIT 4").fetchall()
+    assert got == [("GERMANIA", 1, 1), ("SPAGNA", 1, 1), ("GERMANIA", 3, 3), ("GERMANIA", 4, 4)]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_two_digit_year_in_a_date_label_is_the_editions(year, sources):
+    """Difesa 3A prints `Incassi dal 01/01/25 al 31/12/2025`: the agreed label
+    `Incassi dal 01/01/Y al 31/12/Y` holds for any edition."""
+    assert extract.fold("Incassi dal 01/01/25 al 31/12/2025", year) == \
+        extract.fold("Incassi dal 01/01/Y al 31/12/Y", year).replace("Y", "y")
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_block_label_on_two_lines_is_whole_on_every_row(year, sources):
+    """T7 p37 prints `PAESI EUROPEI (NON UE, NON NATO) / E PAESI OSCE EXTRA
+    EUROPA` on two lines in a cell spanning three rows: each of the three rows
+    holds the whole name, not the line level with it (importer, 2026-10-25)."""
+    from lib import source
+    r = extract.read_table(year, "MAE/T7", pages=source.table_pages(year, "MAE/T7"))
+    areas = {x["cells"][0] for x in r.rows if x["kind"] == "data"}
+    assert "PAESI EUROPEI (NON UE, NON NATO) E PAESI OSCE EXTRA EUROPA" in areas
+    assert not [a for a in areas if a in ("PAESI EUROPEI (NON UE, NON NATO)",
+                                          "E PAESI OSCE EXTRA EUROPA")]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_footnote_under_the_summary_lines_is_a_note(year, sources):
+    """B1 p678 prints `(*) Esportazioni verso più paesi ...` under its last
+    `di cui` line: a note, not the end of that line's label (importer)."""
+    from lib import source
+    r = extract.read_table(year, "MAE/B1", pages=source.table_pages(year, "MAE/B1"))
+    assert any(t.startswith("(*) Esportazioni verso") for _p, _pp, t in r.notes)
+    assert not any("(*) Esportazioni" in x["cells"][0] for x in r.rows)
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_label_the_text_layer_spaces_is_stored_as_printed(year, sources):
+    """T22 p64 prints `Numero`; its text layer reads `N umero`. The stored
+    label is the agreed spelling, which differs only by that space (importer)."""
+    from lib import source
+    r = extract.read_table(year, "MAE/T22", pages=source.table_pages(year, "MAE/T22"))
+    assert "Numero" in r.labels and "N umero" not in r.labels
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_summary_box_under_a_column_is_its_figure(year, sources):
+    """Difesa 3A p1281 prints two boxes under the grid, each under its column:
+    `TOTALE AUTORIZZATO NEL 2025 (...)` over 1.651.658.093,82 €, `TOTALE
+    INCASSATO DALL'INDUSTRIA NEL 2025` over 6.106.265,97 €. Each is that
+    summary's figure; row 107 keeps only its own 4.600.000,00 €."""
+    from collections import Counter
+    from lib import source
+    key = "DIFESA/A2C6/3A"
+    r = extract.read_table(year, key, pages=source.table_pages(year, key))
+    last = [x for x in r.rows if x["kind"] == "data"][-1]
+    assert last["cells"][0] == "107" and last["cells"][3] == "4.600.000,00 €"
+    assert sorted(raw for _p, _pp, _label, raw in r.totals) == ["1.651.658.093,82 €", "6.106.265,97 €"]
+    assert Counter(c[3] for c in extract.checks(r, extract.specs()[key])) == {"PASS": 2}
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_no_movement_is_a_row_of_zero_with_its_text(year, sources):
+    """MAE P1 prints `nessuna movimentazione di materiale nel periodo di
+    riferimento` in the value column of an operator with no movements: its own
+    row, the value 0, the printed text in its flags (maintainer, 2026-10-25,
+    DECISIONS.md: corrections in flags). Never glued to the row above."""
+    from lib import source
+    r = extract.read_table(year, "MAE/P1", pages=source.table_pages(year, "MAE/P1"))
+    assert not [i for i in r.issues if "movimentazione" in i[2]]
+    vals = [x for x in r.rows if x["kind"] == "data"
+            and any("nessuna movimentazione" in n for n in x.get("notes", []))]
+    assert vals and all(extract.parse("amount", extract._cell(x, "valore_in_euro"))[0] == 0
+                        for x in vals)
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_corrected_value_keeps_the_printed_one(year, sources):
+    """Difesa 3A n. 64 prints `27/082025`: stored 2025-08-27 as the maintainer
+    corrected it (lib/data/corrections.tsv), `_raw` and the flags keep what
+    was printed (2026-10-25)."""
+    from lib import source
+    key = "DIFESA/A2C6/3A"
+    db = stored(year, extract.read_table(year, key, pages=source.table_pages(year, key)), key)
+    got = db.execute("SELECT data_rilascio_aut, data_rilascio_aut_raw, flags FROM difesa_a2c6_3a "
+                     "WHERE n = '64'").fetchone()
+    assert got[:2] == ("2025-08-27", "27/082025")
+    assert "data_rilascio_aut: corrected, printed '27/082025'" in got[2]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_subtotal_naming_its_carried_value_adds_up_its_rows(year, sources):
+    """MEF AA p273: only DEUTSCHE BANK SPA (CAB 01600) prints branch lines and
+    its own `... Totale`; it adds up that bank's lines, not every bank's above."""
+    from collections import Counter
+    from lib import source
+    for key in ("MEF/AA", "MEF/CC"):
+        r = extract.read_table(year, key, pages=source.table_pages(year, key))
+        assert Counter(c[3] for c in extract.checks(r, extract.specs()[key])) == {"PASS": 4}, key
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_row_total_over_several_columns_is_checked(year, sources):
+    """T16's TOTALE is LGP + LGT + AGT on each row (`rowsum lgp+lgt+agt`,
+    maintainer, 2026-10-25): a printed figure checked row by row, and every
+    country's checks pass; a blank TOTALE (PRINCIPATO DI MONACO) is no check."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/T16", pages=source.table_pages(year, "MAE/T16"))
+    checks = extract.checks(r, extract.specs()["MAE/T16"])
+    assert Counter(c[3] for c in checks)["PASS"] > 20
+    # The print's own gap: the LGP rows add up to 955.027.056,39, the printed
+    # LGP total (as T1's) is 54,01 more, so the TOTALE row is too. Reported.
+    assert [(c[0], c[1]) for c in checks if c[3] == "FAIL"] == [
+        ("total p58 lgp", "955.027.110,40"), ("total p58 totale row 27", "1.443.164.007,18")]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_an_in_grid_total_is_summed_and_di_cui_lines_found_by_their_label(year, sources):
+    """MAE O2 p189: `Totale complessivo | € 437.171.810,17 di cui: | ...` is a
+    row of the grid, checked as its column sums (a `totals.tsv` rule of the
+    same label does not take it over); the `di cui` lines under it print their
+    label in the second column and are matched by it (`-`: unchecked)."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/O2", pages=source.table_pages(year, "MAE/O2"))
+    got = Counter(c[3] for c in extract.checks(r, extract.specs()["MAE/O2"]))
+    assert got == {"PASS": 3, "UNCHECKED": 11}, got     # `€ -` is no figure
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_table_that_reads_no_row_is_an_issue_not_a_crash(year, sources):
+    """DOG/A1C89/O read no row and the extractor stopped on an empty INSERT:
+    an empty table is stored with an issue saying so, never silently."""
+    import sqlite3
+    import ExtractTables as E
+    db = sqlite3.connect(":memory:")
+    db.executescript(E.SHARED)
+    E.extract_one(db, year, "DOG/A1C89/O", extract.specs()["DOG/A1C89/O"])
+    kinds = [k for (k,) in db.execute("SELECT kind FROM extract_issue")]
+    assert "empty" in kinds or db.execute("SELECT count(*) FROM dog_a1c89_o").fetchone()[0]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_small_rotated_table_is_read_in_its_own_direction(year, sources):
+    """DOG/A1C89/O p906: a few rotated rows under an upright Parliament
+    running head that has more glyphs. The head is furniture: it does not
+    decide which way the page reads, and the table's rows are read."""
+    from lib import source
+    r = extract.read_table(year, "DOG/A1C89/O", pages=source.table_pages(year, "DOG/A1C89/O"))
+    assert r.pages.get("header") and [x for x in r.rows if x["kind"] == "data"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_header_box_with_no_inner_wall_is_split_by_the_agreed_labels(year, sources):
+    """MAE B6 p693 prints its five labels in one ruled box, the column walls
+    starting under it: the box is the header when its words are the agreed
+    labels in order, and the country rows under it are read."""
+    from lib import source
+    r = extract.read_table(year, "MAE/B6", pages=source.table_pages(year, "MAE/B6"))
+    assert r.pages.get("header") and r.labels[:2] == ["Paese di Destinazione", "n. Aut."]
+    assert [x["cells"][0] for x in r.rows if x["kind"] == "data"][0] == "ALGERIA"
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_lines_of_a_unit_in_one_box_are_rows_of_the_unit(year, sources):
+    """MAE B6 p693: FRANCIA's box holds the country line and its programme
+    lines. The first programme is on the country's row, each other line a row
+    of its own, `riga_paese` the country line's row_ord (the maintainer's B6
+    answer, round 2 as shown); the page stamp in the grid is furniture."""
+    from lib import source
+    r = extract.read_table(year, "MAE/B6", pages=source.table_pages(year, "MAE/B6"))
+    data = [x for x in r.rows if x["kind"] == "data"]
+    fr = next(x for x in data if x["cells"][0] == "FRANCIA")
+    under = [x for x in data if x["units"]["riga_paese"] == fr["row_ord"]]
+    # The first programme on the country's own row (as approved), the rest under it.
+    assert [x["cells"][3] for x in under][:3] == ["EH-101", "NH-90", ""]
+    assert not any("CENTRO INFORMATICO" in c for x in data for c in x["cells"])
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_unlabelled_columns_left_of_the_grid_are_read(year, sources):
+    """MEF REL/SALDI p263 rules only its two amount columns; the code (AA..DD)
+    and the description stand left of the grid, under no header cell, as
+    the agreed columns open with two unlabelled ones."""
+    from collections import Counter
+    from lib import source
+    key = "MEF/REL/SALDI"
+    r = extract.read_table(year, key, pages=source.table_pages(year, key))
+    data = [x["cells"][:2] for x in r.rows if x["kind"] == "data"]
+    assert data == [["AA", "Esportazioni definitive per Istituti di credito"],
+                    ["BB", "Esportazioni temporanee per Istituti di credito"],
+                    ["CC", "Importazioni definitive per istituti di credito"],
+                    ["DD", "Importazioni temporanee per Istituti di credito"]]
+    # `Totali (Imp + Esp.)` under the grid is the agreed summary, two figures;
+    # the second is printed 570.708.294,23, its rows add up to ,33: the print's.
+    got = extract.checks(r, extract.specs()[key])
+    assert Counter(c[3] for c in got) == {"PASS": 5, "FAIL": 1}
+    assert [c[1] for c in got if c[3] == "FAIL"] == ["570.708.294,23"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_one_column_box_header_with_its_stub(year, sources):
+    """MEF REL/UE p263: one row, `UE | Importazioni intracomunitarie` left of a
+    one-column box headed `Totali` (€ 345.713.316,98)."""
+    from lib import source
+    key = "MEF/REL/UE"
+    r = extract.read_table(year, key, pages=source.table_pages(year, key))
+    assert [x["cells"] for x in r.rows if x["kind"] == "data"] == [
+        ["UE", "Importazioni intracomunitarie", "€ 345.713.316,98"]]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_stub_label_printed_under_the_header(year, sources):
+    """MEF KK1 p441: `Istituti di credito` is printed on the line under its
+    two-level header, left of it: the first column's label, not a row."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MEF/KK1", pages=source.table_pages(year, "MEF/KK1"))
+    data = [x["cells"][0] for x in r.rows if x["kind"] == "data"]
+    assert data[0].startswith("BANCA DI CREDITO COOPERATIVO DI BARLASSINA")
+    assert not Counter(c[3] for c in extract.checks(r, extract.specs()["MEF/KK1"]))["FAIL"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_year_box_over_each_block_is_its_anno(year, sources):
+    """MAE T21 p63 prints `Anno 2022` in a box over each year's block (header
+    and rows, its own total): `anno` (a block printed under no header cell) is
+    that year on each row; each total adds up its year's rows."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/T21", pages=source.table_pages(year, "MAE/T21"))
+    data = [x["cells"][:3] for x in r.rows if x["kind"] == "data"]
+    assert data[:3] == [["2022", "ID + PS + TIG", "309"], ["2022", "IT + ITEX", "175"],
+                        ["2023", "ID + PS + TIG", "478"]]
+    assert Counter(c[3] for c in extract.checks(r, extract.specs()["MAE/T21"])) == {"PASS": 8}
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_last_label_printed_right_of_the_header_box(year, sources):
+    """MAE E p817 prints `Cat.` right of its header box's last wall: the
+    agreed last column, with its codes under it (`016`), not lost."""
+    from lib import source
+    pages = source.table_pages(year, "MAE/E")[:2]
+    r = extract.read_table(year, "MAE/E", pages=pages)
+    assert r.labels[-1] == "Cat."
+    assert [x["cells"][-1] for x in r.rows if x["kind"] == "data"][:2] == ["016", "016"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_the_gap_between_two_header_boxes_is_no_column(year, sources):
+    """MAE T17 p59 leaves a gap between its `Autorizzazioni Generali` and
+    `Totali` boxes: no column (the agreed ones have none there); the rows
+    read and Tot. = AGT + LGP + LGT, AGT = AGT 1 + ... + AGT 6 (rowsum)."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/T17", pages=source.table_pages(year, "MAE/T17"))
+    first = next(x["cells"] for x in r.rows if x["kind"] == "data")
+    assert first[0] == "CPM ELETTRONICA SRL" and first[6] == "1"
+    got = Counter(c[3] for c in extract.checks(r, extract.specs()["MAE/T17"]))
+    assert got["PASS"] and not got["FAIL"], got
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_bank_is_its_name_and_the_cab_its_branch(year, sources, tmp_path, monkeypatch):
+    """MEF AA prints BANCA NAZIONALE DEL LAVORO SPA (CAB 01000), KK1 the same
+    bank with CAB 01600: one `id_banca`, two `cab` (maintainer, 2026-10-25:
+    banks by name, the CAB is the branch)."""
+    from lib import banks, source
+    monkeypatch.setattr(banks, "LIST", tmp_path / "banks.tsv")
+    monkeypatch.setattr(banks, "NAMES", tmp_path / "bank-names.tsv")
+    got = {}
+    for key, col in (("MEF/AA", "intermediario_finanziario"), ("MEF/KK1", "istituti_di_credito")):
+        r = extract.read_table(year, key, pages=source.table_pages(year, key))
+        banks.update([extract._cell(x, col) for x in r.rows if x["kind"] == "data"])
+        db = stored(year, r, key)
+        got[key] = db.execute(f"SELECT id_banca, cab FROM {extract.sql_name(key)} WHERE {col} "
+                              "LIKE 'BANCA NAZIONALE DEL LAVORO%'").fetchall()
+    assert got["MEF/AA"][0][1] == "01000" and got["MEF/KK1"][0][1] == "01600"
+    assert got["MEF/AA"][0][0] == got["MEF/KK1"][0][0] is not None
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_cell_stacking_two_agreed_values_fills_both_columns(year, sources):
+    """MAE N1 p181: one header cell `Licenza Data Aut.` (the agreed `licenza`
+    and `data_aut`), the licence over its date (`60596` / `20/11/2024`, the
+    date on the movement line under it). Both go on the licence's row."""
+    from lib import source
+    r = extract.read_table(year, "MAE/N1", pages=source.table_pages(year, "MAE/N1")[:1])
+    data = [x for x in r.rows if x["kind"] == "data"]
+    first = data[0]
+    assert extract._cell(first, "licenza") == "60596"
+    assert extract._cell(first, "data_aut") == "20/11/2024"
+    assert extract._cell(data[1], "data_aut") == "" and extract._cell(data[1], "licenza") == ""
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_carried_name_wrapped_over_a_valueless_line_is_one_name(year, sources):
+    """MAE P1 p191 prints `IVECO DEFENCE` / `VEHICLES S.P.A.` as one operator,
+    its first line printing no value: the next operator's name, not more of
+    the one carried down from above (`FIMAC S.p.A. IVECO DEFENCE` was read)."""
+    from lib import source
+    r = extract.read_table(year, "MAE/P1", pages=source.table_pages(year, "MAE/P1"))
+    ops = {extract._cell(x, "operatore") for x in r.rows if x["kind"] == "data"}
+    assert "IVECO DEFENCE VEHICLES S.P.A." in ops
+    assert not [o for o in ops if o.startswith(("FIMAC S.p.A. ", "GE AVIO S.R.L. ",
+                                                 "MICROTECNICA S.R.L. ", "LEONARDO S.p.A. "))]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_summary_on_a_page_with_the_header_is_the_summary(year, sources):
+    """MAE H1 p110 repeats the header, then prints the summary block
+    (`Totale Autorizzazioni : 117`, `Totale EURO`, ...): the summary, not more
+    of WASS's subtotal ending p109, which keeps its own two figures only."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/H1", pages=source.table_pages(year, "MAE/H1"))
+    wass = [x for x in r.rows if x["kind"] == "subtotal"][-1]
+    assert wass["cells"][0] == "" and wass["cells"][2:4] == ["0,00", "1.085.200,00"]
+    labels = [label for _p, _pp, label, _raw in r.totals]
+    assert any(lab.startswith("Totale Autorizzazioni") for lab in labels)
+    assert not Counter(c[3] for c in extract.checks(r, extract.specs()["MAE/H1"]))["FAIL"]
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_rows_above_the_summary_on_a_page_with_no_grid(year, sources):
+    """MAE L p168 draws no grid: WASS's heading, its last row (26/11/2025,
+    EUR 1.000.000,00) and subtotal, then the summary. The rows are read in the
+    previous page's columns; the summary labels are its own, not WASS's."""
+    from lib import source
+    r = extract.read_table(year, "MAE/L", pages=source.table_pages(year, "MAE/L"))
+    last = [x for x in r.rows if x["kind"] == "data"][-1]
+    assert last["group"] == "WASS SUBMARINE SYSTEMS SRL"
+    assert extract._cell(last, "data") == "26/11/2025"
+    assert r.totals[0][2] == "Totale Autorizzazioni" and r.totals[0][3] == "673"
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_heading_on_two_lines_is_one_group(year, sources):
+    """MAE L p117: `A.R.I.S. S.r.l. APPLICAZIONI RIELABORAZIONI IMPIANTI` /
+    `SPECIALI` is one operator heading, not two (importer, 2026-10-25)."""
+    from lib import source
+    pages = [p for p in source.table_pages(year, "MAE/L") if p.pdf_page == 117]
+    r = extract.read_table(year, "MAE/L", pages=pages)
+    groups = [x["group"] for x in r.rows if x["kind"] == "group"]
+    assert "A.R.I.S. S.r.l. APPLICAZIONI RIELABORAZIONI IMPIANTI SPECIALI" in groups
+    assert "SPECIALI" not in groups
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_year_columns_between_a_stub_and_a_margin_measure(year, sources):
+    """MAE T5 p32: the area left of the years (no wall, no header cell), the
+    measure in the right margin over each pair of rows (`In Mio EUR`, `N.
+    licenze`, `% valori`, `% licenze`); each block's total row adds its own."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/T5", pages=source.table_pages(year, "MAE/T5"))
+    data = [x["cells"] for x in r.rows if x["kind"] == "data"]
+    assert data[0][0] == "NATO-UE" and data[0][-1] == "In Mio EUR"
+    assert data[1][0] == "EXTRA NATO-UE" and data[1][-1] == "In Mio EUR"
+    got = Counter(c[3] for c in extract.checks(r, extract.specs()["MAE/T5"]))
+    assert got["PASS"] and not got["FAIL"], got
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_transposed_table_is_one_row_per_year(year, sources):
+    """MAE T9 p45 prints a year per column and a measure per row, each cell a
+    value and its unit (`261,76 Mio €`, `7,17 %`, `269 licenze`): one row per
+    year, `anno` and the three measures (maintainer, 2026-10-25)."""
+    from lib import source
+    db = stored(year, extract.read_table(year, "MAE/T9", pages=source.table_pages(year, "MAE/T9")),
+                "MAE/T9")
+    got = db.execute("SELECT anno, valore_mio_euro, percentuale, numero_licenze FROM mae_t9 "
+                     "ORDER BY anno").fetchall()
+    assert got[0] == (2021, 261.76, 7.17, 269) and got[-1][0] == 2025 and len(got) == 5
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_period_columns_are_stored_by_their_first_and_last_year(year, sources):
+    """MAE T3 p29 prints four five-year periods (`2006-2010` ... `2021-2025`):
+    one row per printed row and period, `anno_da` and `anno_a` its years
+    (maintainer, 2026-10-25: `periods`)."""
+    from lib import source
+    db = stored(year, extract.read_table(year, "MAE/T3", pages=source.table_pages(year, "MAE/T3")),
+                "MAE/T3")
+    got = db.execute("SELECT anno_da, anno_a, valore FROM mae_t3 ORDER BY row_ord, anno_da").fetchall()
+    assert got[:2] == [(2006, 2010, 22.13), (2011, 2015, 22.1)] and len(got) == 8
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_year_runs_and_a_stacked_measure(year, sources):
+    """MAE T4 p30: `In Mio EUR`, the years for the counts, the years again for
+    the values, each value with its % printed on the line under it, the value
+    line printed above the band's label. One row per band and year: count,
+    value, % (maintainer, 2026-10-25); the band `01-ott` corrected to `1 - 10`."""
+    from lib import source
+    db = stored(year, extract.read_table(year, "MAE/T4", pages=source.table_pages(year, "MAE/T4")),
+                "MAE/T4")
+    got = db.execute("SELECT fascia, anno, n_autorizzazioni, valore_euro, percentuale FROM mae_t4 "
+                     "ORDER BY row_ord, anno").fetchall()
+    assert got[4] == ("> 1.000", 2025, 1, 2591202743.0, 33.56)
+    assert got[5][:3] == ("100 -1000", 2021, 7)
+    assert "1 - 10" in {g[0] for g in got}
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_year_cell_of_value_unit_and_rank(year, sources):
+    """MAE T6 p35 prints under each year a value, its unit and the country's
+    rank, no label each (`2,591 Mrd (1)`, `243 K (76)`): the value scaled to
+    euro, the unit its multiplier, the rank a number (maintainer, 2026-10-25)."""
+    from lib import source
+    db = stored(year, extract.read_table(year, "MAE/T6", pages=source.table_pages(year, "MAE/T6")),
+                "MAE/T6")
+    got = db.execute("SELECT pos, paese, anno, valore, valore_raw, unita, unita_raw, posizione "
+                     "FROM mae_t6 WHERE paese = 'KUWAIT' ORDER BY anno DESC").fetchall()
+    assert got[0] == (1, "KUWAIT", 2025, 2591000000, "2,591", 1000000000, "Mrd", 1)
+    assert got[1][2:] == (2024, 243000, "243", 1000, "K", 76)
+    assert db.execute("SELECT count(DISTINCT paese) FROM mae_t6").fetchone() == (25,)
+
+
+@pytest.mark.parametrize("year", ["2025"])
+@pytest.mark.parametrize("key, first, eighth, top", [
+    ("MAE/T141", ("LEONARDO S.p.A.", 496, 1802287557.46),
+     ("FABBRICA D'ARMI P. BERETTA S.p.A.", 123, 86900985.5), "3.546.844.823,97"),
+    ("MAE/T142", ("LEONARDO S.p.A.", 379, 1785089325.06),
+     ("FABBRICA D'ARMI PIETRO BERETTA S.p.A.", 79, 128562279.89), "5.742.633.046,36")])
+def test_two_years_side_by_side_each_with_its_operators(year, key, first, eighth, top, sources):
+    """MAE T14.1/T14.2 print two years side by side, each its own top 15:
+    rank (on a line of its own, or the record's), operator (over two lines:
+    `FABBRICA D'ARMI PIETRO BERETTA` / `S.p.A.`), N. aut., Valore, %. One row
+    per rank and year; each year's `Primi 15 operatori` adds up its rows."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, key, pages=source.table_pages(year, key))
+    db = stored(year, r, key)
+    rows = db.execute(f"SELECT pos, anno, operatore, n_aut, valore FROM {extract.sql_name(key)} "
+                      "ORDER BY anno, pos").fetchall()
+    assert len(rows) == 30 and rows[0][2:] == first and rows[0][0] == 1
+    assert rows[7][2:] == eighth and rows[7][0] == 8
+    got = Counter(c[3] for c in extract.checks(r, extract.specs()[key]))
+    assert not got["FAIL"] and got["PASS"] >= 4, got
+    assert any(c[1] == top and c[3] == "PASS" for c in extract.checks(r, extract.specs()[key]))
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_a_record_of_a_value_over_its_count(year, sources):
+    """MAE T1 p25: three sections (ESPORTAZIONI, ...), each repeating the
+    header; a record prints its value over its count, its label a cell of up
+    to five lines beside them (`Autorizzazioni individuali per:` / `- ...`),
+    a negative variation as `-` and its figure. One row per section, record and
+    year; `Variaz. 2025/24` on 2024's row (maintainer, 2026-10-25)."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/T1", pages=source.table_pages(year, "MAE/T1"))
+    db = stored(year, r, "MAE/T1")
+    got = db.execute("SELECT sezione, tipologia_di_operazioni, anno, valore_euro, numero, "
+                     "variaz_valore, variaz_numero FROM mae_t1 ORDER BY row_ord, anno DESC").fetchall()
+    assert got[0][0] == "ESPORTAZIONI" and got[0][1].startswith("Autorizzazioni individuali per:")
+    assert got[0][1].endswith("prestazioni di servizio (PS)")
+    assert got[0][2:] == (2025, 7721114868.99, 2576, None, None)
+    assert got[1][2:] == (2024, 6451324395.0, 2569, "19,68%", "0,27%")
+    lgt = [g for g in got if g[1] == "Licenze globali di trasferimento (LGT)"]
+    assert lgt[2][2] == 2023 and lgt[2][5] == "-20,34%"
+    assert {g[0] for g in got} == {"ESPORTAZIONI", "IMPORTAZIONI", "INTERMEDIAZIONI"}
+    assert len(got) == 4 * 6
+    checks = Counter(c[3] for c in extract.checks(r, extract.specs()["MAE/T1"]))
+    assert checks["PASS"] == 4 and not checks["FAIL"], checks
+
+
+@pytest.mark.parametrize("year", ["2025"])
+def test_expired_licences_are_read_from_the_cell_colour(year, sources):
+    """MAE T15 p56 marks expired licences by the cell's fill, named by its
+    legend: orange `scadute` (all of the cell), yellow `di cui una scaduta`
+    (one). AGT6: seven orange cells, 55 of 69 expired, 14 in force; AGT5: one
+    yellow, 12 of 13 in force (maintainer, 2026-10-25)."""
+    from collections import Counter
+    from lib import source
+    r = extract.read_table(year, "MAE/T15", pages=source.table_pages(year, "MAE/T15"))
+    db = stored(year, r, "MAE/T15")
+    got = dict(((t, a), (v, s)) for t, a, v, s in db.execute(
+        "SELECT tipologia, anno, valore, scadute FROM mae_t15"))
+    assert got[("Generale AGT6 - Italia", 2017)] == (6, 6)
+    assert got[("Generale AGT5 - Italia", 2017)] == (11, 1)
+    assert got[("Generale AGT1 - Italia", 2017)] == (5, 0)
+    assert sum(s for (t, _a), (_v, s) in got.items() if t == "Generale AGT6 - Italia") == 55
+    checks = Counter(c[3] for c in extract.checks(r, extract.specs()["MAE/T15"]))
+    assert checks["PASS"] and not checks["FAIL"], checks
