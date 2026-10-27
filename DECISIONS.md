@@ -740,3 +740,27 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
   was ambiguous (V2) or missing (V3). Four checkers rendered by hand before the fix; their
   tables were re-checked.
 - **Check round 1 (2021): 161 PASS, no code or convention FAIL from the checkers.**
+
+## 2026-10-27 — the register of companies (RNI) for every year: survey, OCR, snapshot, columns
+
+- **Goal: the whole Registro Nazionale delle Imprese, 1991-2025** (maintainer, 2026-10-24),
+  from Difesa Annesso 2 (`DIFESA/A5/2`) of every edition: every register number, when it was
+  enrolled, suspended, cancelled. Plan: survey, declared pages, OCR, reader, extract 2023→1990,
+  cross-year checks.
+- **OCR is allowed for this table, checked** (maintainer, 2026-10-24; narrows "OCR is out of
+  scope"). Annesso 2 is a scan in 1990-2011 and 2021-2023 and a noisy OCR layer in 2012-2015
+  and 2018. tesseract (system binary, `ita`), no pip dependency. Every value read by OCR is
+  flagged and checked against the page image; a misread is an issue, never corrected silently.
+- **OCR text is kept in git, `Out/ocr/<year>/<settings>/`** (maintainer, 2026-10-25): slow
+  to make and read again by later work.
+- **Older editions reach the register through a declared page map, not a full split**
+  (maintainer, 2026-10-24): `lib/data/register-pages.tsv`, found by hand (survey, OCR and
+  contact sheets). 1990 has no register (DM 95-96 of February 1991 set it up). The narrative
+  counts and the number registered at 31.12 (printed 1996-2011) are recorded beside each
+  year: a witness for the rebuilt register.
+- **1995 prints the whole register at 31.12.1995** (Allegato 1, numbers 00003-00237), not the
+  year's 30 enrolments only. Stored as rows of 1995 flagged as a snapshot ("in the register at
+  31.12.1995"), not as enrolment events (maintainer, 2026-10-27).
+- **The grid years keep every printed column** (maintainer, 2026-10-27): verbale and its date,
+  U.R.N.I. protocol and its date, and on cancellations sede legale, CAP, citta and the original
+  enrolment date; empty in the years that do not print them.
