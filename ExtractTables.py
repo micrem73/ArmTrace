@@ -40,6 +40,7 @@ Shared tables:
     table_note     notes printed under a table
     company        ArmTrace's id and name of each company a table of the year names
                    (its `id_ditta`: `lib/companies.py`)
+    bank           the same for each bank a MEF table names (`id_banca`: `lib/banks.py`)
     extract_issue  what could not be read with confidence, with its reason
     check_result   every printed figure against the facts (D7): the table
                    rebuilt, compared with what it prints
@@ -52,13 +53,14 @@ refused, or a check FAILs: the run says so, it does not hide it.
 import argparse
 import hashlib
 import json
+from decimal import Decimal
 import shutil
 import sqlite3
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lib import companies, extract, layout, source, views  # noqa: E402
+from lib import banks, companies, extract, layout, source, views  # noqa: E402
 
 SQL_TYPE = {"text": "TEXT", "code": "TEXT", "group": "TEXT", "carry": "TEXT", "date": "TEXT",
             "amount": "DECIMAL", "number": "DECIMAL"}
@@ -81,28 +83,40 @@ CREATE TABLE extract_issue (year INTEGER, table_key TEXT, pdf_page INTEGER,
 CREATE TABLE check_result (year INTEGER, table_key TEXT, check_name TEXT,
     printed TEXT, computed DECIMAL, status TEXT);
 CREATE TABLE company (id INTEGER PRIMARY KEY, name TEXT);
+CREATE TABLE bank (id INTEGER PRIMARY KEY, name TEXT);
 """
 SHARED_TABLES = {"source_file", "column_def", "printed_figure", "view_def", "table_note",
-                 "extract_issue", "check_result", "company"}
-YEAR_WIDE = {"source_file", "company"}     # not per table: `finish` writes them
+                 "extract_issue", "check_result", "company", "bank"}
+YEAR_WIDE = {"source_file", "company", "bank"}     # not per table: `finish` writes them
 
 
 def columns_of(spec):
     """[(sql column, type)] of one table, in printed order."""
     out = [(spec.group.key, "group")] if spec.group else []
-    for col in spec.printed:
+    # A column read from the cells' fill (T15's `scadute`) follows the printed ones of
+    # its kind: a whole number, nothing printed (`_raw` none).
+    for col in spec.printed + spec.colours:
+        if col.colour:
+            out.append((col.key, "number"))
+            continue
         if col.type in ("rowsum", "group"):
             continue                # a figure (`printed_figure`), or the group, above
         if col.type == "years":
             # One row per printed row and year: `anno`, then each measure (T10:
             # `N.`, `Valore in €`, `%` under every `Anno <year>`).
-            out += ([] if ("anno", "year") in out else [("anno", "year")]) + [(col.key, "amount")]
+            years = [("anno_da", "year"), ("anno_a", "year_end")] if col.span is not None \
+                else [("anno", "year")]                 # periods (T3): first and last year
+            out += [y for y in years if y not in out] + [
+                (col.key, "text" if col.prints_text else "amount")]
+        elif col.type == "anno":
+            out.append((col.key, "year"))       # a transposed table's year (T9)
         else:
             out.append((col.key, col.type))
     if spec.link:
         out.append((spec.link.key, "link"))
-    if spec.unit:
-        out.append((spec.unit.key, "link"))
+    out += [(c.key, "link") for c in spec.units]
+    out += [(c.key, "link" if c.type == "bank" else "code")
+            for c in spec.columns if c.type in ("bank", "cab")]
     if spec.company:
         out.append((spec.company.key, "link"))
     out += [(c.key, "companies") for c in spec.company_lists]
@@ -112,7 +126,7 @@ def columns_of(spec):
 def create(db, name, spec):
     cols = list(META)
     for col, kind in columns_of(spec):
-        if kind in ("year", "link"):
+        if kind in ("year", "year_end", "link"):
             cols.append(f"{col} INTEGER")
         elif kind in ("amount", "number"):
             cols += [f"{col} DECIMAL", f"{col}_raw TEXT"]
@@ -128,6 +142,10 @@ def records(year, result, spec):
     """The facts of one table as SQL rows, and the issues their values raise."""
     rows, issues = [], []
     ids, unknown = companies.load()[1], set()
+    bank_ids = banks.load()[1]
+    corrected = {(r["col"], r["printed"]): r["corrected"] for r in extract._rows("corrections.tsv")
+                 if r["table"] == spec.table}
+    by_key = {c.key: c for c in spec.columns}
     for r in result.rows:
         if r["kind"] != "data":
             continue
@@ -137,8 +155,8 @@ def records(year, result, spec):
             values[spec.group.key] = r["group"]
         if spec.link:
             values[spec.link.key] = r.get("link")
-        if spec.unit:
-            values[spec.unit.key] = r.get("unit")
+        for c in spec.units:
+            values[c.key] = r.get("units", {}).get(c.key, r.get("unit"))
         flags += r.get("notes", [])
         years = {}
         for i, col in enumerate(r["order"]):
@@ -152,7 +170,13 @@ def records(year, result, spec):
                 continue
             if col.type in ("rowsum", "group"):
                 continue            # a figure; the group's heading, set above
-            value, problem = extract.parse(col.type, raw)
+            if col.type == "anno":
+                values[col.key] = int(raw)
+                continue
+            fixed = corrected.get((col.key, raw))
+            if fixed is not None:       # the maintainer's correction (corrections.tsv)
+                flags.append(f"{col.key}: corrected, printed {raw!r}")
+            value, problem = extract.parse(col.type, fixed if fixed is not None else raw)
             if problem:
                 flags.append(f"{col.key}: {problem}")
                 issues.append((r["pdf_page"], problem, f"{col.key} {raw!r}"))
@@ -170,6 +194,16 @@ def records(year, result, spec):
                 unknown.add(name)
                 issues.append((r["pdf_page"], "company", f"{spec.company.of} {name!r}: no id "
                                "in lib/data/company-names.tsv"))
+        for col in spec.columns:
+            # A bank's id by its name, the CAB its branch (lib/banks.py).
+            if col.type == "cab":
+                values[col.key] = banks.cab(values.get(col.of))
+            elif col.type == "bank" and values.get(col.of):
+                values[col.key] = banks.id_of(values[col.of], bank_ids)
+                if values[col.key] is None and values[col.of] not in unknown:
+                    unknown.add(values[col.of])
+                    issues.append((r["pdf_page"], "bank", f"{col.of} {values[col.of]!r}: no id "
+                                   "in lib/data/bank-names.tsv"))
         for col in spec.company_lists:
             # The companies a cell lists (Difesa 4): their ids, in printed order,
             # null where a name has none yet (`lib/companies.split_list`).
@@ -196,14 +230,51 @@ def records(year, result, spec):
                 for key in once:        # printed once: on the edition year's row
                     here[key] = here[f"{key}_raw"] = None
             for key, raw in measured.items():
+                col = by_key[key]
+                if col.scales:          # a unit (T6 `Mrd`): its multiplier, the value scaled
+                    continue
+                if col.colour:          # read from the fill: a number, nothing printed
+                    here[key], here[f"{key}_raw"] = (raw or None), None
+                    continue
+                if col.prints_text:     # a year's own text (T14.1's operator)
+                    here[key] = raw or None
+                    continue
+                if col.rank:            # a position, `(76)`
+                    m = extract.RANK.fullmatch(raw or "")
+                    here[key], here[f"{key}_raw"] = (m.group(1) if m else None), raw or None
+                    if raw and not m:
+                        issues.append((r["pdf_page"], "not a rank", f"{key} {anno} {raw!r}"))
+                    continue
                 value, problem = extract.parse("years", raw)
                 if problem:
                     issues.append((r["pdf_page"], problem, f"{key} {anno} {raw!r}"))
                 here[key] = str(value) if value is not None else None
                 here[f"{key}_raw"] = raw or None
+            for col in (c for c in spec.printed if c.scales):
+                raw = measured.get(col.key)
+                factor = extract.SCALES.get(raw or "")
+                here[col.key], here[f"{col.key}_raw"] = factor, raw or None
+                if raw and factor is None:
+                    issues.append((r["pdf_page"], "not a unit", f"{col.key} {anno} {raw!r}"))
+                if factor is not None and here.get(col.scales) is not None:
+                    scaled = Decimal(here[col.scales]) * factor
+                    here[col.scales] = str(scaled.normalize().quantize(1)
+                                           if scaled == scaled.to_integral() else scaled)
+            if spec.company and by_key[spec.company.of].type == "years":
+                # Each year names its own company (T14.1's operator).
+                name = here.get(spec.company.of)
+                here[spec.company.key] = ids.get(name) or None
+                if name and name not in ids and name not in unknown:
+                    unknown.add(name)
+                    issues.append((r["pdf_page"], "company", f"{spec.company.of} {name!r}: no id "
+                                   "in lib/data/company-names.tsv"))
             out = list(meta)
             for col, kind in columns_of(spec):
-                out.append(anno if kind == "year" else here.get(col))
+                if kind == "year_end":
+                    span = next(c.span for c in spec.printed if c.span is not None)
+                    out.append(anno + span if anno is not None else None)
+                    continue
+                out.append(anno if kind == "year" and anno is not None else here.get(col))
                 if kind in ("amount", "number", "date"):
                     out.append(here.get(f"{col}_raw"))
             rows.append(out + [flag])
@@ -257,7 +328,8 @@ def view_def(spec, result):
         "group": group.key if group else None,
         "group_prints": ("heading" if spec.group else "first_row") if group else None,
         "summed": {c.key: c.sum_sql() for c in spec.printed if c.sum},
-        "years": ({"year_col": "anno", "value_cols": [c.key for c in spec.printed
+        "years": ({"year_col": "anno_da" if any(c.span is not None for c in spec.printed)
+                   else "anno", "value_cols": [c.key for c in spec.printed
                                                       if c.type == "years"]}
                   if spec.years else None),
         "subtotals": any(r["kind"] == "subtotal" for r in result.rows),
@@ -283,8 +355,10 @@ def extract_one(db, year, key, spec):
         return 0, str(exc)
     create(db, name, spec)
     rows, issues = records(year, result, spec)
-    width = len(rows[0]) if rows else 0
-    db.executemany(f"INSERT INTO {name} VALUES ({','.join('?' * width)})", rows)
+    if rows:
+        db.executemany(f"INSERT INTO {name} VALUES ({','.join('?' * len(rows[0]))})", rows)
+    else:
+        issues.append((None, "empty", "no row read: no header matched, or nothing under it"))
     for i, (label, col) in enumerate(zip(result.labels, result.columns)):
         db.execute("INSERT OR IGNORE INTO column_def VALUES (?,?,?,?,?,?,?,?)",
                    (name, key, int(year), i, col.key, col.type, label, col.sum_sql()))
@@ -353,6 +427,15 @@ def finish(db, year, out_dir):
     views.add_register(db)
     db.execute("DELETE FROM company")
     db.executemany("INSERT INTO company VALUES (?,?)", [(i, named[i]) for i in sorted(used)])
+    # The banks the year's MEF tables name (lib/banks.py).
+    bank_names, banked = banks.load()[0], set()
+    for key, spec in extract.specs().items():
+        name = extract.sql_name(key)
+        cols = [c.key for c in spec.columns if c.type == "bank"]
+        if cols and db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone():
+            banked |= {i for (i,) in db.execute(f"SELECT DISTINCT {cols[0]} FROM {name}") if i}
+    db.execute("DELETE FROM bank")
+    db.executemany("INSERT INTO bank VALUES (?,?)", [(i, bank_names[i]) for i in sorted(banked)])
     db.commit()
     dump = out_dir / f"armtrace-{year}.sql"
     with open(dump, "w", encoding="utf-8", newline="\n") as fh:

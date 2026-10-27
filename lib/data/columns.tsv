@@ -23,9 +23,12 @@
 #           quantity), flagged `copied from row N`, and is a row of its own. No amount: each
 #           item gets an amount of 0, nothing printed (`_raw` NULL), flagged. Anything else
 #           links nothing and is an issue (maintainer, 2026-10-21, A1 matching page).
-#   unit    not printed: on each row of a `link` table, the `row_ord` of the row that opens
+#   unit    not printed: on each row, the `row_ord` of the row that opens
 #           its unit (MAE A1: the dated line of its authorisation). Derived, not an
-#           official number: A1 prints none (maintainer, 2026-10-21)
+#           official number: A1 prints none (maintainer, 2026-10-21). In a table with no
+#           `link`, the sum field names the column whose printed value opens the unit
+#           (MEF: `numero_autorizzazione`); a unit listed first opens the ones after it
+#           (N1: a new operator opens a new licence)
 #   Rule (maintainer, 2026-10-21): a table whose rows nest (lines under one printed unit)
 #   gets a `riga_*` column naming each row's unit, so the nesting is never lost; `riga_`
 #   marks a row of the same table, never a value or code the report prints.
@@ -53,8 +56,30 @@
 #   rowsum  a row's own printed total of a year column (3B's `Nel quadriennio`), sum field
 #           the column it adds: a printed figure, not a fact (`printed_figure` kind rowsum),
 #           checked row by row (maintainer, 2026-10-24)
+#   scale <col>  in the sum field of a year column: the unit printed after <col>'s value
+#           (`2,591 Mrd`), stored as its multiplier (K 1.000, Mio 1.000.000, Mrd
+#           1.000.000.000); <col> is stored scaled, its printed number in `<col>_raw`. The
+#           year's cell prints value, unit and `rank` with no label each (MAE T6;
+#           maintainer, 2026-10-25)
+#   text    in the sum field of a year column: each year prints its own text there (MAE
+#           T14.1's operator: each year its own top 15), stored as text
+#   under <col>  in the sum field of a year column: printed on the line under <col>'s value,
+#           in the same cell (MAE T1: each record's value over its count); a `Variaz. Y/Y-k`
+#           column is stored on the row of year Y-k (maintainer, 2026-10-25)
+#   colour <label>=<value>;...  in the sum field of a year column not printed: read from the
+#           fill of the cell of the year's value, the colour the legend prints beside
+#           <label>; <value> a column (all of that cell) or a number; no fill, 0. Flagged
+#           `from the cell's colour` (MAE T15: orange `scadute`, yellow `di cui una
+#           scaduta`; maintainer, 2026-10-25)
+#   rank    in the sum field: a position printed in brackets, `(76)`, stored as 76
 #   once    in the sum field: stored on the row of the edition's year only, NULL on the
 #           others, so a sum is the printed one (3B's Importo, Residuo; maintainer, 2026-10-24)
+#   bank    not printed: ArmTrace's id of the bank named in the column the sum field gives
+#           (`lib/banks.py`: its name, the CAB left out; maintainer, 2026-10-25)
+#   cab     not printed: the branch's CAB the bank's name prints, `(CAB 01600)` -> 01600
+#   periods as `years`, each column a span of years (MAE T3 `2006-2010`): `anno_da`, `anno_a`
+#   anno    a transposed table (MAE T9): each printed year column is one row, `anno` its
+#           year; each printed row a measure column, known by the unit its cells print
 #   none    the whole table is not imported (maintainer, 2026-10-25: charts): one line, no col
 #   years   the printed year columns of a table that prints a year window (T2): one
 #           row per printed row and year, `anno` + `valore` (amount). Several measures
@@ -95,6 +120,7 @@ MEF/EE	utilizzatore_finale	text	Utilizzatore Finale
 MEF/EE	causale	text	Causale
 MEF/EE	importi_segnalati	amount	Importi Segnalati|Importo Segnalazioni	sum
 MEF/EE	importi_accessori_segnalati	amount	Importi Accessori Segnalati|Importi Acc. Segnalati	sum
+MEF/EE	riga_autorizzazione	unit		numero_autorizzazione
 DIFESA/4	nr	code	NR.
 DIFESA/4	programma	text	PROGRAMMA
 DIFESA/4	tipologia	text	TIPOLOGIA
@@ -121,6 +147,7 @@ MEF/II	utilizzatore_finale	text	Utilizzatore Finale
 MEF/II	causale	text	Causale
 MEF/II	totale	amount	Totale	sum
 MEF/II	id_ditta	company		ditta
+MEF/II	riga_autorizzazione	unit		numero_autorizzazione
 DOG/A1C2/M	denominazione_operatore	text	Denominazione operatore
 DOG/A1C2/M	codice_valuta	text	Codice valuta
 DOG/A1C2/M	ammontare_in_valuta	amount	Ammontare in valuta
@@ -495,7 +522,7 @@ MAE/M1	n	code	n.
 MAE/M1	operatore	carry	Operatore	
 MAE/M1	valore_in_euro	amount	Valore in euro	sum
 MAE/M1	categoria_materiale	text	Categoria Materiale	
-MAE/M1	riga_operatore	unit		
+MAE/M1	riga_operatore	unit		operatore
 MAE/M1	id_ditta	company		operatore
 MAE/M2	n	code	N.	
 MAE/M2	paese	text	Paese	
@@ -507,15 +534,15 @@ MAE/O1	paese	text	Paese
 MAE/O1	valore_in_euro	amount	Valore in €	sum
 MAE/O1	valore_fini_doganali_in_euro	amount	Valore fini doganali in €	sum
 MAE/O1	spedizioni_nr	number	Spedizioni nr.	sum
-MAE/O1	riga_operatore	unit		
-MAE/O1	riga_movimentazione	unit		
+MAE/O1	riga_operatore	unit		operatore
+MAE/O1	riga_movimentazione	unit		movimentazioni
 MAE/O1	id_ditta	company		operatore
 MAE/O2	paese	carry	Paese	
 MAE/O2	movimentazioni	text	Movimentazioni	
 MAE/O2	valore_in_euro	amount	Valore in €	sum
 MAE/O2	valore_fini_doganali_in_euro	amount	Valore fini doganali in €	sum
 MAE/O2	spedizioni_nr	number	Spedizioni nr.	sum
-MAE/O2	riga_paese	unit		
+MAE/O2	riga_paese	unit		paese
 MAE/P1	tipologia	carry	Tipologia	
 MAE/P1	operatore	carry	Operatore	
 MAE/P1	movimentazioni	carry	Movimentazioni	
@@ -523,7 +550,7 @@ MAE/P1	paese	text	Paese
 MAE/P1	valore_in_euro	amount	Valore in €	sum
 MAE/P1	valore_fini_doganali_in_euro	amount	Valore fini doganali in €	sum
 MAE/P1	spedizione_nr	number	Spedizione nr.	sum
-MAE/P1	riga_operatore	unit		
+MAE/P1	riga_operatore	unit		operatore
 MAE/P1	id_ditta	company		operatore
 MAE/P2	tipologia	carry	Tipologia	
 MAE/P2	movimentazioni	carry	Movimentazioni	
@@ -531,7 +558,7 @@ MAE/P2	paese	text	Paese
 MAE/P2	valore_in_euro	amount	Valore in €	sum
 MAE/P2	valore_fini_doganali_in_euro	amount	Valore fini doganali in €	sum
 MAE/P2	spedizioni_nr	number	Spedizioni nr.	sum
-MAE/P2	riga_movimentazioni	unit		
+MAE/P2	riga_movimentazione	unit		movimentazioni
 MAE/T22	anno	block		
 MAE/T22	tipologia	text	Tipologia	
 MAE/T22	valore_euro	amount	Valore in €	sum
@@ -590,13 +617,13 @@ MEF/EE1	utilizzatore_finale	text	Utilizzatore Finale
 MEF/EE1	causale	text	Causale	
 MEF/EE1	importi_segnalati	amount	Importi Segnalati	sum
 MEF/EE1	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
-MEF/EE1	riga_autorizzazione	unit		
+MEF/EE1	riga_autorizzazione	unit		numero_autorizzazione
 MEF/FF1	numero_autorizzazione	code	Numero Autorizzazione	
 MEF/FF1	utilizzatore_finale	text	Utilizzatore Finale	
 MEF/FF1	causale	text	Causale	
 MEF/FF1	importi_segnalati	amount	Importi Segnalati	sum
 MEF/FF1	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
-MEF/FF1	riga_autorizzazione	unit		
+MEF/FF1	riga_autorizzazione	unit		numero_autorizzazione
 MEF/FG	intermediario_finanziario	text	Intermediario finanziario	
 MEF/FG	importo_per_nuove_operazioni	amount	Importo per nuove operazioni	sum
 MEF/FG	importo_per_rinnovo_operazioni	amount	Importo per rinnovo operazioni	sum
@@ -617,12 +644,12 @@ MEF/IBB	numero_autorizzazione	code	Numero autorizzazione
 MEF/IBB	acquisto_pagamento	amount	Acquisto/Pagamento	sum
 MEF/IBB	vendita_incasso	amount	Vendita/Incasso	sum
 MEF/KK1	istituti_di_credito	text	Istituti di credito	
-MEF/KK1	esportazione_definitiva	amount	Esportazione definitiva	sum
-MEF/KK1	esportazione_temporanea	amount	Esportazione temporanea	sum
-MEF/KK1	esportazione_temporanea_con_successiva_reimp	amount	Esportazione temporanea con successiva reimp.	sum
-MEF/KK1	importazione_definitiva	amount	Importazione definitiva	sum
-MEF/KK1	importazione_temporanea	amount	Importazione temporanea	sum
-MEF/KK1	importazione_temporanea_con_successiva_reimp	amount	Importazione temporanea con successiva reimp.	sum
+MEF/KK1	esportazione_definitiva	amount	Ammontare Introiti / Esportazione definitiva|Esportazione definitiva	sum
+MEF/KK1	esportazione_temporanea	amount	Ammontare Introiti / Esportazione temporanea|Esportazione temporanea	sum
+MEF/KK1	esportazione_temporanea_con_successiva_reimp	amount	Ammontare Introiti / Esportazione temporanea con successiva reimp.|Esportazione temporanea con successiva reimp.	sum
+MEF/KK1	importazione_definitiva	amount	Ammontare Esborsi / Importazione definitiva|Importazione definitiva	sum
+MEF/KK1	importazione_temporanea	amount	Ammontare Esborsi / Importazione temporanea|Importazione temporanea	sum
+MEF/KK1	importazione_temporanea_con_successiva_reimp	amount	Ammontare Esborsi / Importazione temporanea con successiva reimp.|Importazione temporanea con successiva reimp.	sum
 MEF/KK1	prestazione_di_servizi	amount	Prestazione di servizi	sum
 MEF/KK1	trasferimento_intracomunitario	amount	Trasferimento intracomunitario	sum
 MEF/KK1	altro	amount	Altro	sum
@@ -655,7 +682,7 @@ MEF/FF	utilizzatore_finale	text	Utilizzatore Finale
 MEF/FF	causale	text	Causale	
 MEF/FF	importi_segnalati	amount	Importi Segnalati	sum
 MEF/FF	importi_accessori_segnalati	amount	Importi Accessori Segnalati	sum
-MEF/FF	riga_autorizzazione	unit		
+MEF/FF	riga_autorizzazione	unit		numero_autorizzazione
 MEF/GG	utilizzatore_finale	carry	Utilizzatore Finale	
 MEF/HH	utilizzatore_finale	carry	Utilizzatore Finale	
 MEF/GG	numero_autorizzazione	code	Numero Autorizzazione	
@@ -668,8 +695,8 @@ MEF/GG	totale	amount	Totale	sum
 MEF/HH	totale	amount	Totale	sum
 MEF/GG	id_ditta	company		ditta
 MEF/HH	id_ditta	company		ditta
-MEF/GG	riga_autorizzazione	unit		
-MEF/HH	riga_autorizzazione	unit		
+MEF/GG	riga_autorizzazione	unit		numero_autorizzazione
+MEF/HH	riga_autorizzazione	unit		numero_autorizzazione
 MEF/GG1	utilizzatore_finale	carry	Utilizzatore Finale	
 MEF/HH1	utilizzatore_finale	carry	Utilizzatore Finale	
 MEF/GG1	numero_autorizzazione	code	Numero Autorizzazione	
@@ -682,15 +709,15 @@ MEF/GG1	totale	amount	Totale	sum
 MEF/HH1	totale	amount	Totale	sum
 MEF/GG1	id_ditta	company		ditta
 MEF/HH1	id_ditta	company		ditta
-MEF/GG1	riga_autorizzazione	unit		
-MEF/HH1	riga_autorizzazione	unit		
+MEF/GG1	riga_autorizzazione	unit		numero_autorizzazione
+MEF/HH1	riga_autorizzazione	unit		numero_autorizzazione
 MEF/II1	ditta	carry	Ditta	
 MEF/II1	numero_autorizzazione	code	Numero Autorizzazione	
 MEF/II1	utilizzatore_finale	text	Utilizzatore Finale	
 MEF/II1	causale	text	Causale	
 MEF/II1	totale	amount	Totale	sum
 MEF/II1	id_ditta	company		ditta
-MEF/II1	riga_autorizzazione	unit		
+MEF/II1	riga_autorizzazione	unit		numero_autorizzazione
 MEF/JJ	ditta	carry	Ditta	
 MEF/JJ1	ditta	carry	Ditta	
 MEF/JJ	numero_autorizzazione	code	Numero Autorizzazione	
@@ -703,8 +730,8 @@ MEF/JJ	totale	amount	Totale	sum
 MEF/JJ1	totale	amount	Totale	sum
 MEF/JJ	id_ditta	company		ditta
 MEF/JJ1	id_ditta	company		ditta
-MEF/JJ	riga_autorizzazione	unit		
-MEF/JJ1	riga_autorizzazione	unit		
+MEF/JJ	riga_autorizzazione	unit		numero_autorizzazione
+MEF/JJ1	riga_autorizzazione	unit		numero_autorizzazione
 # Approved in round 2 of the drafts page (maintainer, 2026-10-25), siblings with them.
 MAE/T16	paese	text		
 MAE/T16	lgp	amount	LGP	sum
@@ -723,31 +750,18 @@ MEF/KK	importazioni	amount	Importazioni	sum
 MEF/KK	trasferimento_intracomunitario	amount	Trasferimento Intracomunitario	sum
 MEF/KK	totale_complessivo	amount	Totale Complessivo	sum
 MAE/N1	operatore	carry	Operatore	
-MAE/N2	operatore	carry	Operatore	
 MAE/N1	licenza	code	Licenza	
-MAE/N2	licenza	code	Licenza	
 MAE/N1	data_aut	date	Data Aut.	
-MAE/N2	data_aut	date	Data Aut.	
 MAE/N1	programma	text	Programma	
-MAE/N2	programma	text	Programma	
 MAE/N1	movimentazioni	carry	Movimentazioni	
-MAE/N2	movimentazioni	carry	Movimentazioni	
 MAE/N1	paese	text	Paese	
-MAE/N2	paese	text	Paese	
 MAE/N1	valore_in_euro	amount	Valore in €	sum
-MAE/N2	valore_in_euro	amount	Valore in €	sum
 MAE/N1	val_fini_dog	amount	Valore fini doganali in €	sum
-MAE/N2	val_fini_dog	amount	Valore fini doganali in €	sum
 MAE/N1	spedizioni_nr	number	Spedizioni nr.	sum
-MAE/N2	spedizioni_nr	number	Spedizioni nr.	sum
 MAE/N1	licenze_precedenti	text	Licenze precedenti	
-MAE/N2	licenze_precedenti	text	Licenze precedenti	
-MAE/N1	riga_operatore	unit		
-MAE/N2	riga_operatore	unit		
-MAE/N1	riga_licenza	unit		
-MAE/N2	riga_licenza	unit		
+MAE/N1	riga_operatore	unit		operatore
+MAE/N1	riga_licenza	unit		licenza
 MAE/N1	id_ditta	company		operatore
-MAE/N2	id_ditta	company		operatore
 DOG/A1C89/N2	area_geografica	code	Area geografica	
 DOG/A1C89/O2	area_geografica	code	Area geografica	
 DOG/A1C89/O2APPENDICE	area_geografica	code	Area geografica	
@@ -763,27 +777,27 @@ DOG/A1C89/O2APPENDICE	stato_avanzamento_annuale_euro	amount	Stato di avanzamento
 MAE/T1	sezione	group		
 MAE/T1	tipologia_di_operazioni	text	Tipologia di operazioni	
 MAE/T1	valore_euro	years	Anno Y|Anno Y-1|Anno Y-2|Anno Y-3	sum
-MAE/T1	numero	years	Anno Y|Anno Y-1|Anno Y-2|Anno Y-3	sum
-MAE/T1	variaz_valore	text	Variaz. Y/Y-1|Variaz. Y/Y-2|Variaz. Y/Y-3	
-MAE/T1	variaz_numero	text	Variaz. Y/Y-1|Variaz. Y/Y-2|Variaz. Y/Y-3	
+MAE/T1	numero	years	Anno Y|Anno Y-1|Anno Y-2|Anno Y-3	sum under valore_euro
+MAE/T1	variaz_valore	years	Variaz. Y/Y-1|Variaz. Y/Y-2|Variaz. Y/Y-3	text
+MAE/T1	variaz_numero	years	Variaz. Y/Y-1|Variaz. Y/Y-2|Variaz. Y/Y-3	text under variaz_valore
 MAE/T3	voce	text		
 MAE/T3	valore	periods	Y-19-Y-15|Y-14-Y-10|Y-9-Y-5|Y-4-Y	
 MAE/T4	fascia	text	In Mio EUR	
 MAE/T4	n_autorizzazioni	years	Y-4|Y-3|Y-2|Y-1|Y	sum
 MAE/T4	valore_euro	years	Y-4|Y-3|Y-2|Y-1|Y	sum
 MAE/T4	percentuale	years	Y-4|Y-3|Y-2|Y-1|Y	sum
-MAE/T5	misura	block		In Mio EUR=In Mio EUR;N. licenze=N. licenze
 MAE/T5	area	text		
 MAE/T5	valore	years	Y-4|Y-3|Y-2|Y-1|Y	sum
+MAE/T5	misura	block		In Mio EUR=In Mio EUR;N. licenze=N. licenze
 MAE/T6	pos	number		
 MAE/T6	paese	text		
 MAE/T6	valore	years	Y|Y-1|Y-2|Y-3|Y-4	
-MAE/T6	unita	years	Y|Y-1|Y-2|Y-3|Y-4	
-MAE/T6	posizione	years	Y|Y-1|Y-2|Y-3|Y-4	
+MAE/T6	unita	years	Y|Y-1|Y-2|Y-3|Y-4	scale valore
+MAE/T6	posizione	years	Y|Y-1|Y-2|Y-3|Y-4	rank
 MAE/T7	area_geografica	block		
 MAE/T7	voce	text		
 MAE/T7	valore	years	Y-4|Y-3|Y-2|Y-1|Y	sum
-MAE/T9	anno	years	Anno Y-4|Anno Y-3|Anno Y-2|Anno Y-1|Anno Y	
+MAE/T9	anno	anno	Anno Y-4|Anno Y-3|Anno Y-2|Anno Y-1|Anno Y	
 MAE/T9	valore_mio_euro	amount	Mio €	
 MAE/T9	percentuale	number	%	
 MAE/T9	numero_licenze	number	licenze	
@@ -818,8 +832,8 @@ MAE/T87	valore_euro	years	N. autorizzazioni e valore in €	sum
 MAE/T88	valore_euro	years	N. autorizzazioni e valore in €	sum
 MAE/T141	pos	number		
 MAE/T142	pos	number		
-MAE/T141	operatore	years	Operatore	
-MAE/T142	operatore	years	Operatore	
+MAE/T141	operatore	years	Operatore	text
+MAE/T142	operatore	years	Operatore	text
 MAE/T141	id_ditta	company		operatore
 MAE/T142	id_ditta	company		operatore
 MAE/T141	n_aut	years	N. aut.	sum
@@ -831,7 +845,7 @@ MAE/T142	percentuale	years	%	sum
 # MAE/T15: scadute by the legend (yellow = one expired), the two totals printed figures, checked (maintainer, 2026-10-25).
 MAE/T15	tipologia	text	Tipologia
 MAE/T15	valore	years	Y-14|Y-13|Y-12|Y-11|Y-10|Y-9|Y-8|Y-7|Y-6|Y-5|Y-4|Y-3|Y-2|Y-1|Y	sum
-MAE/T15	scadute	years	Y-14|Y-13|Y-12|Y-11|Y-10|Y-9|Y-8|Y-7|Y-6|Y-5|Y-4|Y-3|Y-2|Y-1|Y
+MAE/T15	scadute	years	Y-14|Y-13|Y-12|Y-11|Y-10|Y-9|Y-8|Y-7|Y-6|Y-5|Y-4|Y-3|Y-2|Y-1|Y	colour scadute=valore;di cui una scaduta=1
 MAE/T15	totale_emesse	rowsum	Totale emesse	valore
 MAE/T15	in_vigore	rowsum	In vigore	valore-scadute
 # Round 2, last eight (maintainer, 2026-10-25); a `rowsum` is a printed total, checked, not a fact.
@@ -840,13 +854,13 @@ MAE/B6	n_aut	number	n. Aut.	sum
 MAE/B6	valore_euro	amount	Valore (EURO)	sum
 MAE/B6	prog_cooperazione	text	Prog. Cooperazione	
 MAE/B6	cat_descrizione_categoria_materiali	text	Cat. - Descrizione Categoria Materiali	
-MAE/B6	riga_paese	unit		
+MAE/B6	riga_paese	unit		paese_di_destinazione
 MAE/B7	paese_di_destinazione	text	Paese di Destinazione	
 MAE/B7	n_aut	number	n. Aut.	sum
 MAE/B7	valore_euro	amount	Valore (EURO)	sum
 MAE/B7	cat	code	Cat.	
 MAE/B7	descrizione_categoria_materiali	text	Descrizione Categoria Materiali	
-MAE/B7	riga_paese	unit		
+MAE/B7	riga_paese	unit		paese_di_destinazione
 MAE/E	operatore	group	Operatore	
 MAE/E	data	date	Data	
 MAE/E	tipo_operazione	text	Tipo Operazione	
@@ -855,7 +869,7 @@ MAE/E	ammontare	amount	Ammontare
 MAE/E	valore_euro	amount	Valore EURO	sum else ammontare@valuta=EUR unless val_fd_euro
 MAE/E	val_fd_euro	amount	Val FD (EURO)	sum
 MAE/E	cat	code	Cat.	
-MAE/E	riga_autorizzazione	unit		
+MAE/E	riga_autorizzazione	unit		data
 MAE/E	id_ditta	company		operatore
 MAE/L	operatore	group	Operatore	
 MAE/L	data	date	Data	
@@ -865,7 +879,7 @@ MAE/L	ammontare	amount	Ammontare
 MAE/L	euro	amount	EURO	sum else ammontare@valuta=EUR unless val_fini_dog
 MAE/L	val_fini_dog	amount	Valore Fini Doganali	sum
 MAE/L	cat	code	Cat.	
-MAE/L	riga_autorizzazione	unit		
+MAE/L	riga_autorizzazione	unit		data
 MAE/L	id_ditta	company		operatore
 MAE/T17	operatore	text	Operatore	
 MAE/T17	agt_1	number	AGT 1	sum
@@ -889,7 +903,7 @@ MAE/T21	tipologia	text	TIPOLOGIA
 MAE/T21	qta	number	Q.tà	sum
 MAE/T21	valore	amount	Valore in Euro	sum
 MEF/REL/KK1	intermediari	text	Intermediari	
-MEF/REL/KK1	cab	code		
+MEF/REL/KK1	cab	cab		intermediari
 MEF/REL/KK1	totale_complessivo	amount	Totale complessivo	sum
 MEF/REL/KK1	id_banca	bank		intermediari
 # Not imported: charts (maintainer, 2026-10-25).
@@ -898,3 +912,22 @@ MEF/GF		none
 MEF/NN		none		
 MEF/OO		none		
 MEF/PP		none		
+# Banks named in the MEF tables (maintainer, 2026-10-25: id by name, the CAB its branch).
+MEF/AA	id_banca	bank		intermediario_finanziario
+MEF/AA	cab	cab		intermediario_finanziario
+MEF/BB	id_banca	bank		intermediario_finanziario
+MEF/BB	cab	cab		intermediario_finanziario
+MEF/CC	id_banca	bank		intermediario_finanziario
+MEF/CC	cab	cab		intermediario_finanziario
+MEF/DD	id_banca	bank		intermediario_finanziario
+MEF/DD	cab	cab		intermediario_finanziario
+MEF/FG	id_banca	bank		intermediario_finanziario
+MEF/FG	cab	cab		intermediario_finanziario
+MEF/REL/FG	id_banca	bank		intermediario_finanziario
+MEF/REL/FG	cab	cab		intermediario_finanziario
+MEF/KK1	id_banca	bank		istituti_di_credito
+MEF/KK1	cab	cab		istituti_di_credito
+MEF/LGP	id_banca	bank		banca
+MEF/LGP	cab	cab		banca
+MEF/REL/LGP	id_banca	bank		banca
+MEF/REL/LGP	cab	cab		banca

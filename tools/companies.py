@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from lib import companies, extract, layout  # noqa: E402
+from lib import banks, companies, extract, layout  # noqa: E402
 
 
 def printed_counts(year):
@@ -52,6 +52,19 @@ def printed_counts(year):
     for printed, n in listed.items():
         counts[printed] = counts.get(printed, 0) + n
     return counts, only
+
+
+def printed_banks(year):
+    """Every bank name the year's tables print (a `bank` column's own)."""
+    db = sqlite3.connect(layout.year_dir(year, ROOT) / f"armtrace-{year}.sqlite")
+    out = []
+    for key, spec in extract.specs().items():
+        name = extract.sql_name(key)
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (name,)).fetchone():
+            continue
+        for col in (c for c in spec.columns if c.type == "bank"):
+            out += [p for (p,) in db.execute(f"SELECT DISTINCT {col.of} FROM {name}") if p]
+    return out
 
 
 def register(root=ROOT):
@@ -207,9 +220,10 @@ def main(argv=None):
         for p in printed:
             names[p] = (cid, "spelling")
     companies.write(listed, names)
+    new_banks = banks.update(printed_banks(args.year))
     print(f"companies {args.year}: {len(counts)} printed names, {len(listed)} companies; "
           f"+{len(spellings)} spellings, +{len(new)} new; "
-          f"{len(review)} clusters for the maintainer")
+          f"{len(review)} clusters for the maintainer; +{len(new_banks)} banks")
     for warning in witness():
         print(f"  WARNING {warning}")
     for i, cluster in enumerate(review, 1):

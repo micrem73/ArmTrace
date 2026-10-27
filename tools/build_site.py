@@ -110,8 +110,8 @@ def copy_rows(dst, year, path):
                 # in the extractor (DECISIONS.md 2026-10-19), not a guess here.
                 sys.exit(f"{table}: {year} has columns {cols}, earlier years {have}")
             names = ", ".join(f'"{c}"' for c in cols)
-            # `company` is the same list in every year (lib/data/companies.tsv).
-            insert = "INSERT OR IGNORE" if table == "company" else "INSERT"
+            # `company` and `bank` are the same lists in every year (lib/data).
+            insert = "INSERT OR IGNORE" if table in ("company", "bank") else "INSERT"
             dst.execute(f'{insert} INTO "{table}" ({names}) SELECT {names} '
                         f'FROM src."{table}" ORDER BY {order_by(cols)}')
         dst.commit()

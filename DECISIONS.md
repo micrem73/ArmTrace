@@ -782,3 +782,70 @@ Measurements and thresholds stay beside the code that uses them (`lib/geometry.p
 - **Banks get an id from a bank list matched by name**, as companies: `id_banca` on every MEF
   row naming a bank. The CAB is the branch, not the bank (the same bank prints CAB 01600 in
   KK1 and 01000 in AA): stored in its own column.
+- **The bank list** (`lib/banks.py`, `lib/data/banks.tsv`, `bank-names.tsv`): a bank is its
+  printed name with the `(CAB …)` left out, spelling set aside as for companies; `id_banca`
+  (type `bank`) and `cab` (type `cab`, the branch printed with the name) on MEF AA, BB, CC,
+  DD, FG, KK1, LGP and their relation exhibits; `tools/companies.py` assigns new banks in
+  the same run. MEF KK prints the ABI (the bank's code) and no name: no `id_banca` there yet.
+- **Corrections the maintainer authorised** are listed in `lib/data/corrections.tsv` (table,
+  column, printed, corrected): only a value printed exactly so is corrected, `_raw` keeps it.
+  `Nessuna movimentazione …` in a value column is a row of 0, the text in its flags.
+
+## 2026-10-26 SQL extraction: reader rules from the 2025 checks
+
+Each fixed test-first, from an importer's FAIL or a refused header:
+- A double rule (two walls under 4 pt apart) is one wall (T7, T81); a header on three rows
+  (years, a label under each, two columns under it: T81–T88); two measures under one label
+  are taken in printed order; a label broken inside a word, or spaced by the text layer
+  (`N umero`), is the agreed one.
+- A header in one ruled box with no inner wall is split by the agreed labels (B6, REL/UE);
+  unlabelled columns left of the grid, a stub label printed under the header (KK1), a last
+  label right of the box (E) complete it; an empty header cell between two boxes is no
+  column (T17); a two-level label matches by its own (lower) label too.
+- A block's label is the whole of its cell on every row of it (T7, T12); a block printed
+  under no header cell takes the year line over it (`Anno 2022`, T21); a header printed
+  again in the grid is skipped.
+- Totals: a total naming a measure adds that measure over the blocks (T7); a total under
+  one block, or after another total, adds the rows since (T12, REL/SALDI); a subtotal
+  naming its carried value adds that value's rows (MEF AA's Deutsche Bank); a total row of
+  the grid is checked by its sums even when `totals.tsv` names it; a row total over several
+  columns (`rowsum a+b-c`, T15, T16, T17); an agreed summary line under the grid, or in a
+  box under a column (Difesa 3A), is read as a summary; `(*) …` closing a box is a note.
+- A unit opened by a text column (B6, B7: a country) never joins its lines into one record;
+  the page stamp inside the grid is furniture; the Parliament's running head does not decide
+  which way a page reads (Dogane A1C89 O, O1, O2); a table that reads no row is an issue.
+- Kept as printed, FAIL for the maintainer: T16's LGP total (54,01 over its rows), REL/SALDI's
+  `Totali (Imp + Esp.)` (10 cents), B1 and B7's euro totals (3 cents), C1's LEAT subtotal
+  (euro added into the customs value), T12 and T13's `Numero` (1 unit).
+
+## 2026-10-27 SQL extraction: the MAE summary tables of one layout each
+
+The tables refused so far (T1, T3, T4, T5, T6, T9, T14.1, T14.2, T15) are read as the
+maintainer agreed (2026-10-25), each layout named by a mark in `columns.tsv`, not by the
+table's key, so a later edition printing the same layout reads the same:
+- `periods` (T3): year columns, each a span of years, stored as `anno_da`, `anno_a`.
+- `anno` (T9): a year per printed column, a measure per printed row, known by the unit its
+  cells print: one row per year.
+- Bare years repeated (T4): the k-th run of years is the k-th measure; a measure printed on
+  the line under the last run's values (T4's %) belongs to the record above.
+- `scale <col>`, `rank` (T6): under each year a value, its unit, its rank, no label each;
+  a word goes to the nearest year, its part by shape; the value stored in euro, the unit as
+  its multiplier, the printed number in `_raw`. A zero alone (`0,0`) is nothing that year.
+- `text` on a year column (T14.1, T14.2): two years side by side, each its own top 15; a
+  half's columns are the walls; a rank alone, or a name's other line, belongs to the nearest
+  record; the k-th records of the halves are row k, ranks equal or an issue. Each year's
+  `Primi 15 operatori` adds that year's rows (`sum rows`, every year: each half lists its
+  own operators, unlike T20's).
+- `under <col>` (T1): a value over its count in one cell, sections repeating the header; the
+  label lines between two rules across the table go to the nearest record; `Variaz. Y/Y-k`
+  is stored on the row of year Y-k; a `-` printed apart from its figure is its sign.
+- `colour` (T15): `scadute` read from the fill of each value's cell, by the legend's swatch
+  nearest in colour (two oranges, 0.8 and 0.75, are one); its row by the label between the
+  same two rules. A filled shape with no stroke is a shaded cell, never a rule, drawn as a
+  box or as lines (`geometry._shaded`). A row check a row cannot compute (T15's total prints
+  no `scadute`) is UNCHECKED. T15's total `AGT + LGP + LGT` adds every row (`totals.tsv`).
+- Also: H1's Tipo code glued to the material (`(P/N01`) is cut where a short digit tail
+  falls past the wall; a summary starting on a page that repeats the header (H1 p110), or
+  under the last rows of a page with no grid (L p168), is the summary; an operator heading
+  on two lines is one (L); a legend line, or text across the walls of value columns (T15's
+  `Totali per anno`), is a note.

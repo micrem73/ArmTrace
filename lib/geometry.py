@@ -506,7 +506,8 @@ def rule_segments(page, frame=None, min_len=RULE_MIN_LEN):
 
     A stroked rectangle wider than a hairline is a cell drawn as a box (2025
     `EE` draws its grid that way), so its four edges are rules too; a filled
-    box with no stroke is a shaded cell and is not.
+    box with no stroke is a shaded cell and is not, whether drawn as a box or
+    as lines (MAE T15's coloured cells: their edges are no walls).
 
     `min_len` is the shortest segment kept. The grid header lowers it: 2025
     `T2` draws its column walls cell by cell, each one row high, under 20 pt.
@@ -528,6 +529,8 @@ def rule_segments(page, frame=None, min_len=RULE_MIN_LEN):
         drawings = []
     for path in drawings:
         stroked = "s" in (path.get("type") or "")
+        if _shaded(path):
+            continue
         for item in path.get("items", ()):
             if item[0] == "l":
                 add(item[1], item[2])
@@ -543,6 +546,41 @@ def rule_segments(page, frame=None, min_len=RULE_MIN_LEN):
                     for a, b in ((r.tl, r.tr), (r.bl, r.br), (r.tl, r.bl), (r.tr, r.br)):
                         add(a, b)
     return {"walls": walls, "floors": floors}
+
+
+def _shaded(path):
+    """A cell's outline drawn in lines, filled, with no stroke, not thin either
+    way: a shaded cell, not a rule (MAE T15). One outline, of up to five lines:
+    a path holding several thin boxes is rules (Difesa 4: their path spans the
+    page); boxes (`re`) are judged one by one in `rule_segments`."""
+    r, items = path.get("rect"), path.get("items") or ()
+    return ((path.get("type") or "") == "f" and r is not None
+            and 0 < len(items) <= 5 and all(it[0] == "l" for it in items)
+            and min(abs(r.width), abs(r.height)) > HAIRLINE_MAX)
+
+
+def fills(page, frame=None):
+    """[(u0, v0, u1, v1, (r, g, b))]: every shaded cell of the page, in
+    reading space, white left out (MAE T15's coloured cells and legend)."""
+    frame = frame or Frame.for_page(page)
+    out = []
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        drawings = []
+    for path in drawings:
+        colour = tuple(path.get("fill") or ())
+        if not colour or colour == (1.0, 1.0, 1.0) or (path.get("type") or "") != "f":
+            continue
+        r = path.get("rect")
+        if r is None or min(abs(r.width), abs(r.height)) <= HAIRLINE_MAX or not (
+                _shaded(path) or [it[0] for it in path.get("items") or ()] == ["re"]):
+            continue
+        r = path["rect"]
+        us = [frame.u(x, y) for x in (r.x0, r.x1) for y in (r.y0, r.y1)]
+        vs = [frame.v(x, y) for x in (r.x0, r.x1) for y in (r.y0, r.y1)]
+        out.append((min(us), min(vs), max(us), max(vs), colour))
+    return out
 
 
 class _P:
@@ -1029,6 +1067,32 @@ def column_bands(band, gap_em=CELL_GAP_EM):
     return out
 
 
+def _cut_at_walls(band, columns):
+    """The band, a word crossing a column wall with digits only beyond it cut
+    there: MAE H1's text layer prints `(P/N01` as one word, `(P/N` ending the
+    Materiale cell and `01` the Tipo cell. Only a tail of up to four digits is
+    cut, when it falls beyond the wall counted back from the word's end
+    (characters taken as evenly wide: a word holds no positions of its own)."""
+    out = []
+    for w in band:
+        text = w.text.rstrip()
+        wall = next((c["u1"] for c in columns[:-1] if w.u0 < c["u1"] - 1 < w.u1 - 1), None)
+        cut = None
+        tail = re.search(r"(?<=\D)\d{1,4}$", text)
+        if wall is not None and tail:
+            width = (w.u1 - w.u0) / len(w.text)
+            # Counted back from the word's end: its letters are wider than digits.
+            if w.u1 - len(tail.group()) * width >= wall:
+                cut = tail.start()
+        if cut is None:
+            out.append(w)
+            continue
+        u = max(wall, w.u1 - (len(text) - cut) * (w.u1 - w.u0) / len(w.text))
+        out += [Word(text[:cut], w.u0, u, w.v0, w.v1, w.size, w.bold, w.font, w.foreign),
+                Word(text[cut:], u, w.u1, w.v0, w.v1, w.size, w.bold, w.font, w.foreign)]
+    return out
+
+
 def cell_matrix(bands, columns):
     """Place each band's words into `columns`, returning one list of cells per band.
 
@@ -1044,7 +1108,7 @@ def cell_matrix(bands, columns):
     for band in bands:
         cells = [""] * len(columns)
         last = [None] * len(columns)
-        for word in _reading_order(band):
+        for word in _reading_order(_cut_at_walls(band, columns)):
             best, best_overlap = None, CELL_OVERLAP
             for i, col in enumerate(columns):
                 overlap = min(word.u1, col["u1"]) - max(word.u0, col["u0"])

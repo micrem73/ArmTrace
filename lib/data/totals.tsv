@@ -18,6 +18,8 @@
 #   sum rows of Y                  the facts, in the edition's year only: another year's
 #                                  line may cover rows the table does not print (T20's
 #                                  2024 `Primi 10 Paesi` is 2024's own top ten)
+#   sum rows                       the facts, in every year: each year's own rows (T14.1:
+#                                  each year prints its own top 15)
 #   sum lines above                the summary lines printed above it
 #   sum over subtotal              the subtotals above it (B4's total: its countries are rounded,
 #                                  its areas are not, as A1's)
@@ -60,30 +62,20 @@ MAE/F1	^Totale Valore in EURO	sum euro over subtotal
 MAE/F1	^Totale ai Fini Doganali	sum val_fini_dog
 MAE/F1	^di cui	-
 MAE/F1	^Totali parziali per tipo valuta ?: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog
-DIFESA/A2C6/3A	^TOTALE AUTORIZZATO NEL Y	sum volume_autorizzato
-DIFESA/A2C6/3A	^TOTALE INCASSATO DALL'INDUSTRIA NEL Y	sum incassi
+DIFESA/A2C6/3A	^TOTALE AUTORIZZATO NEL \d{4}	sum volume_autorizzato
+DIFESA/A2C6/3A	^TOTALE INCASSATO DALL'INDUSTRIA NEL \d{4}	sum incassi
 MAE/A3	^\(pari a [0-9,]+ %\)$	-
 MAE/A4	^Totale Autorizzazioni	count data
 MAE/A4	^Totale Valore in EURO	sum euro over subtotal
 MAE/A4	^Valore Fini Doganali	sum val_fini_dog
 MAE/A4	^Totali parziali per tipo valuta: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog
 MAE/A4	^Totali parziali per tipo valuta$	sum ammontare where valuta= unless val_fini_dog
-MAE/B1	^Totale :$	sum autorizzazioni
-MAE/B1	^Totale : \(2\)$	sum valore_euro
 MAE/B1	^di cui	-
 MAE/B1	^Totale ai Fini Doganali	-
-MAE/B2	^Totale :$	sum autorizzazioni
-MAE/B2	^Totale : \(2\)$	sum valore_euro
 MAE/B2	^di cui	-
 MAE/B2	^Totale ai Fini Doganali	-
-MAE/B3	^Totale :$	sum autorizzazioni
-MAE/B3	^Totale : \(2\)$	sum valore_euro
 MAE/B3	^di cui	-
 MAE/B3	^Totale ai Fini Doganali	-
-MAE/B5	^Totale :$	sum autorizzazioni
-MAE/B5	^Totale : \(2\)$	sum valore_euro
-MAE/B5	^Totale : \(3\)$	sum val_fini_dog
-MAE/B5	^Totale : \(4\)$	-
 MAE/C1	^Totale Autorizzazioni	count data
 MAE/C1	^Totale Valore in EURO	sum euro over subtotal
 MAE/C1	^Totale ai Fini Doganali	sum val_fini_dog
@@ -134,23 +126,15 @@ MAE/P2	^Importazioni temporanee	-
 MEF/REL/SALDI	^Totali \(Imp \+ Esp\.\)$	sum importi_segnalati
 MEF/REL/SALDI	^Totali \(Imp \+ Esp\.\) \(2\)$	sum importi_accessori_segnalati
 MAE/N1	^Totali$	sum valore_in_euro
-MAE/N2	^Totali$	sum valore_in_euro
 MAE/N1	^Totali \(2\)$	sum val_fini_dog
-MAE/N2	^Totali \(2\)$	sum val_fini_dog
 MAE/N1	^Totali \(3\)$	sum spedizioni_nr
-MAE/N2	^Totali \(3\)$	sum spedizioni_nr
 MAE/N1	^di cui	-
-MAE/N2	^di cui	-
 MAE/N1	^Esportazioni definitive	-
-MAE/N2	^Esportazioni definitive	-
 MAE/N1	^Esportazioni temporanee	-
-MAE/N2	^Esportazioni temporanee	-
 MAE/N1	^Importazioni definitive	-
-MAE/N2	^Importazioni definitive	-
 MAE/N1	^Importazioni temporanee	-
-MAE/N2	^Importazioni temporanee	-
-MAE/T141	^Primi 15 operatori$	sum rows of Y
-MAE/T142	^Primi 15 operatori$	sum rows of Y
+MAE/T141	^Primi 15 operatori$	sum rows
+MAE/T142	^Primi 15 operatori$	sum rows
 MAE/T141	^Restanti operatori$	-
 MAE/T142	^Restanti operatori$	-
 MAE/T141	^TOTALE$	sum lines above
@@ -170,3 +154,4 @@ MAE/L	^Totale EURO	sum euro over subtotal
 MAE/L	^Totale ai Fini Doganali	sum val_fini_dog
 MAE/L	^di cui	-
 MAE/L	^Totali parziali per tipo valuta ?: ([A-Z]{3})$	sum ammontare where valuta=$1 unless val_fini_dog
+MAE/T15	^AGT \+ LGP \+ LGT$	sum rows

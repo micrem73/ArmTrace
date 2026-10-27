@@ -1,0 +1,8 @@
+# A printed value the maintainer corrected: the column stores `corrected`, its `_raw`
+# keeps the printed text, the row's flags say `<col>: corrected, printed '<printed>'`
+# (DECISIONS.md 2026-10-25). Only a value printed exactly as `printed` is corrected.
+table	col	printed	corrected	decided
+DIFESA/A2C6/3A	data_rilascio_aut	27/082025	27/08/2025	maintainer, 2026-10-25
+DIFESA/A2C6/3A	data_rilascio_aut	15/102025	15/10/2025	maintainer, 2026-10-25
+DIFESA/A2C6/3A	data_rilascio_aut	05/1172025	05/11/2025	maintainer, 2026-10-25
+MAE/T4	fascia	01-ott	1 - 10	maintainer, 2026-10-25: a spreadsheet date artefact for the band 1 - 10

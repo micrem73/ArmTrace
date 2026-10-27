@@ -663,3 +663,15 @@ def test_a_label_row_under_the_years_over_two_columns_each(year, sources):
     label = "N. autorizzazioni e valore in €"
     assert [(c.get("over", ""), c["text"]) for c in h["cells"]] == [("", "")] + [
         (str(y), label) for y in range(2021, 2026) for _ in (0, 1)]
+
+
+def test_digits_glued_to_a_word_across_a_column_wall_are_cut_off():
+    """MAE H1 p109: the text layer prints `(P/N01` as one word, `(P/N` ending
+    the Materiale cell and `01` the Tipo cell beside it: cut at the wall."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from lib import geometry as geo
+    cols = [{"u0": -380.0, "u1": -185.0}, {"u0": -185.0, "u1": -160.0}]
+    word = geo.Word("(P/N01", -197.0, -173.0, 190.0, 196.0, 7.0, False, "f")
+    assert geo.cell_matrix([[word]], cols) == [["(P/N", "01"]]
