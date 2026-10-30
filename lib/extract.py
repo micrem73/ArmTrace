@@ -37,7 +37,6 @@ with groups), `group`, `data`.
 import csv
 import difflib
 import re
-from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -1906,7 +1905,8 @@ BLOCK_GAP_EM = 1.0      # 2016-2019 cancellations: lines of an item <= 0.4 em ap
 GRID_HEADING = re.compile(r"^DATI\s+SULLE\s+(ISCRIZIONI|SOSPENSIONI|CANCELLAZIONI)\b.*?"
                           r"((?:19|20)\d\d)\W*$", re.IGNORECASE)
 GRID_EVENT = {"ISCRIZIONI": "ISCRITTE", "SOSPENSIONI": "SOSPESE", "CANCELLAZIONI": "CANCELLATE"}
-EMPTY_LIST = re.compile(r"^(?:NESSUNA|NEGATIVO)\.?$", re.IGNORECASE)
+EMPTY_LIST = re.compile(r"^(?:NESSUNA|NEGATIVO)\.?$|^NON\s+SONO\s+STATE\s+EFFETTUATE\b",
+                        re.IGNORECASE)
 # What every list page repeats over the list (a continuation page starts under it).
 LIST_FURNITURE = re.compile(r"MINISTERO\s+DELLA\s+DIFESA|SERVIZIO\s+DEL\s+REGISTRO|"
                             r"^Allegato\s+[A-Z]$|^\W*$")
@@ -2012,7 +2012,11 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
         lines = [" ".join(w.text for w in band) for band in geo.row_bands(list(ws))]
         return ("" if joined else " ").join(lines)
 
-    for v0, v1 in zip(levels, levels[1:]):
+    pairs = list(zip(levels, levels[1:]))
+    header_end = None
+    for v0, v1 in pairs:
+        if header_end is not None and v1 <= header_end:
+            continue            # within the header read already
         # A word of punctuation alone is a speck of the scan (`. SOCIETÀ`, 2015 p1018),
         # but for `&` (`CANEPA & CAMPI`).
         here = sorted((w for w in words if inside(w, v0, v1)
@@ -2022,21 +2026,52 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
         walls = sorted({round(u) for u, a, b in segs["walls"]
                         if a <= mid <= b and left + 3 < u < right - 3})
         if columns is None:
-            # The grid's columns: the walls most of its rows draw (2012 p67's header
-            # row lost the one between SOCIETÀ and NUMERO ISCRIZIONE).
-            seen = Counter()
-            for a, b in zip(levels, levels[1:]):
-                m = (a + b) / 2
-                seen.update({round(u / 3) for u, w0, w1 in segs["walls"]
-                             if w0 <= m <= w1 and left + 3 < u < right - 3})
-            common = sorted(k * 3 for k, n in seen.items()
-                            if n >= (len(levels) - 1) / 3 and seen.get(k - 1, 0) <= n)
+            # A table printed empty under its header (2012 p68: `NON SONO STATE
+            # EFFETTUATE SOSPENSIONI ...`) needs no columns: none of its walls may show.
+            body = " ".join(text_of(w for w in words if v1 < w.vmid <= levels[-1]
+                                    and not re.fullmatch(r"[^\w&]+", w.text)).split())
+            if body and EMPTY_LIST.match(body):
+                return None, [], []
+            # The header: down to the first row holding a register number, however
+            # many thin rows the scan's specks cut it into (2012 p67). The grid's
+            # columns: the walls most of its data rows draw (2012 p67's header lost
+            # the one between SOCIETÀ and NUMERO ISCRIZIONE).
+            # A data row: a register number or a date (2012 p67's numbers OCR mangles).
+            numbered = [i for i, (a, b) in enumerate(pairs)
+                        if any(re.fullmatch(r"\d{5}|\d{2}/\d{2}/\d{4}", w.text)
+                               for w in words if inside(w, a, b))]
+            first = numbered[0] if numbered else None
+            if first:
+                header_end = pairs[first][0]
+                here = [w for w in words if inside(w, v0, header_end)
+                        and not re.fullmatch(r"[^\w&]+", w.text)]
+                walls = sorted({round(u) for u, a, b in segs["walls"] for h0, h1 in pairs[:first]
+                                if a <= (h0 + h1) / 2 <= b and left + 3 < u < right - 3})
+            data = numbered or range(len(pairs))
+            crossings = sorted((u, i) for i, (a, b) in enumerate(pairs) if i in data
+                               for u, w0, w1 in segs["walls"]
+                               if w0 <= (a + b) / 2 <= w1 and left + 3 < u < right - 3)
+            groups = []         # walls within 4 pt of each other: one column edge
+            for u, i in crossings:
+                if groups and u - groups[-1][-1][0] <= 4:
+                    groups[-1].append((u, i))
+                else:
+                    groups.append([(u, i)])
+            common = [sum(u for u, _i in g) / len(g) for g in groups
+                      if len({i for _u, i in g}) >= len(data) / 3]
             edges = [left] + sorted({*walls, *(u for u in common
                                                if all(abs(u - x) > 4 for x in walls))}) + [right]
             columns = []
             for u0, u1 in zip(edges, edges[1:]):
-                text = text_of(w for w in here if u0 <= w.umid <= u1)
+                # A header's letter alone is what is left of a faded wall (2012 p67: `PATA i`).
+                text = text_of(w for w in here if u0 <= w.umid <= u1
+                               and not re.fullmatch(r"[IÌÍÎil|1]", w.text))
                 said = " ".join(text.split()).lower()
+                if len(re.sub(r"[\W_]", "", said)) < 2:
+                    # No label, a speck at most (`È`): a wall the scan doubled (2012
+                    # p67-68, by the frame).
+                    columns.append((None, u0, u1, ""))
+                    continue
                 key = label_of.get(said)
                 if key is None and any(ocr.confidence(w) is not None for w in here):
                     # OCR's misreading of an agreed label (`PROT. RNA.`): the one
@@ -2075,6 +2110,8 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
             rows[-1]["reason"] = re.sub(r"^Motivazion[ei]\s*:?\s*", "", text)
             continue
         if not walls and not numbered:      # one cell across the table
+            if EMPTY_LIST.match(text):
+                continue    # `NON SONO STATE EFFETTUATE SOSPENSIONI ...` (2012 p68)
             if walled:
                 issues.append((sp.pdf_page, "grid", f"row {text[:60]!r} across the table"))
             continue        # above the grid on a page it goes on to: the running head
@@ -2084,9 +2121,12 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
         cells = {key: _unspecked(" ".join(text_of((w for w in here if u0 <= w.umid <= u1),
                                                   key in tight).split()))
                  for key, u0, u1, _label in columns}
+        stray = cells.pop(None, "")
+        if stray and not re.fullmatch(r"[IÌÍÎil|1\s]*", stray):
+            issues.append((sp.pdf_page, "grid", f"{stray!r} under no label"))
         bare = {re.sub(r"[\W_]", "", lab): k for lab, k in label_of.items()}
         if sum(1 for key, _u0, _u1, _label in columns
-               if bare.get(re.sub(r"[\W_]", "", cells[key].lower())) == key) > len(columns) / 2:
+               if key and bare.get(re.sub(r"[\W_]", "", cells[key].lower())) == key) > len(columns) / 2:
             continue        # the header again, at the top of a page it goes on to
         if (not re.fullmatch(r"\d{5}", cells.get("numero_iscrizione", ""))
                 and all(re.fullmatch(r"//|/|[Il]{1,2}", v) for v in cells.values() if v)):
@@ -2198,8 +2238,7 @@ def read_list(year, key, spec, pages):
         for col_key, extra in item.get("extra", ()):
             row["notes"].append(f"{col_key}: also read {extra!r} under it")
         if item["conf"]:        # a scan (lib/ocr.py): every value as tesseract read it
-            row["notes"].append(f"ocr: read by {ocr.SETTINGS}, least sure word "
-                                f"{min(item['conf']):.0f}%")
+            row["notes"].append(ocr.note(item["conf"], ocr.SETTINGS))
         row["cells"] = [cells.get(c.key, "") for c in order]
         result.rows.append(row)
 
@@ -2236,8 +2275,7 @@ def read_list(year, key, spec, pages):
                                     f"(after {last_enrolled[0]})")
             last_enrolled[0] = number
         if got["conf"]:
-            row["notes"].append(f"ocr: read by {ocr.GRID_SETTINGS}, least sure word "
-                                f"{min(got['conf']):.0f}%")
+            row["notes"].append(ocr.note(got["conf"], ocr.GRID_SETTINGS))
         row["cells"] = [cells.get(c.key, "") for c in order]
         result.rows.append(row)
 
@@ -2299,7 +2337,7 @@ def read_list(year, key, spec, pages):
                     row_ord += 1
                     emit_grid(got_row, sp, row_ord)
                 if grid:
-                    seen_labels.update({k: label for k, _u0, _u1, label in grid})
+                    seen_labels.update({k: label for k, _u0, _u1, label in grid if k})
             if row_ord == 0:
                 result.caption += [" ".join(w.text for w in b) for b in page_bands
                                    if b and heads[0][0] is not None

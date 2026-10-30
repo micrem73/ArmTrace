@@ -159,7 +159,7 @@ DOG/A1C2/M	id_ditta	company		denominazione_operatore
 DIFESA/A5/2	numero_iscrizione	code	N. Iscr.|Nr.|N° Iscr.|N° Iscr|NUMERO ISCRIZIONE|N° ISCR.	
 DIFESA/A5/2	denominazione	text	Società	
 DIFESA/A5/2	data_iscrizione	date	DATA ISCRIZIONE|DATA ISCR.	event ISCRITTE
-DIFESA/A5/2	data_sospensione	date		event SOSPESE
+DIFESA/A5/2	data_sospensione	date	DATA SOSPENSIONE	event SOSPESE
 DIFESA/A5/2	data_cancellazione	date	Data Canc.|Data Canc|Data Cane.	event CANCELLATE
 DIFESA/A5/2	motivazione	text	Motivazione	
 DIFESA/A5/2	verbale	code	VERBALE	

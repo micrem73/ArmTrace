@@ -11,12 +11,12 @@
 # rule h 1447.5 208 2273 6
 # rule h 1450.0 546 674 1
 # rule h 1488.0 208 2273 7
-# rule v 209.5 1205 1492 4
+# rule v 210.0 1205 1492 5
 # rule v 619.5 1204 1326 4
 # rule v 990.0 1204 1326 3
 # rule v 1203.5 1203 1325 4
 # rule v 1558.5 1203 1325 4
-# rule v 1780.5 1203 1325 4
+# rule v 1780.0 1203 1325 5
 # rule v 2024.5 1203 1324 4
 # rule v 2270.5 1202 1489 4
 level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	text

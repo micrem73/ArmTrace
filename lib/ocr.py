@@ -20,6 +20,12 @@ own: read with its neighbours, a two-line header label is lost (2015 p1019's
 `DATA CANC.` came back `GANO`; alone, right). The cell's words replace the
 page's there (TSV `block_num` from `CELL_BLOCK`).
 
+Where the volume's own OCR layer reads better than tesseract does here (`layer`
+`ocrlayer-kept` in the page map: 2012, a 350 dpi scan whose 7 pt rows tesseract
+garbles), its words are taken instead, the rules still found in the image
+(`LAYER_SETTINGS`: the file keeps the rules only). Such a word's confidence is
+`LAYER` (none given).
+
 An `OcrPage` stands in for a `source.SourcePage`: `get_texttrace` gives one
 span per word, upright, in points of the turned image, so `lib/geometry` and
 `extract.read_list` read it as they read a text layer. The span's font is
@@ -50,18 +56,23 @@ GRID_PSM = 6
 GRID_SETTINGS = f"tess4.1.1-ita-psm{GRID_PSM}-{DPI}dpi-unruled"
 RULE_MIN = {"h": 0.4 * DPI, "v": 0.25 * DPI}    # pixels: no glyph runs that long
 DARK = 140
+BRIDGE = 4
 CELL_BLOCK = 1000
+LAYER = -1.0
+LAYER_SETTINGS = f"layer-rules-{DPI}dpi"
 FONT = "ocr:"
 
 
 def reads(year, key):
     """True where `key`'s pages of `year` are read by OCR."""
     pages = register_pages.load().get(int(year))
-    return key == KEY and pages is not None and pages.layer in ("scan", "ocrlayer")
+    return key == KEY and pages is not None and pages.layer in ("scan", "ocrlayer",
+                                                                "ocrlayer-kept")
 
 
-def tsv_path(year, volume, pdf_page, root=".", grid=False):
-    return Path(root, layout.OUT, "ocr", str(year), GRID_SETTINGS if grid else SETTINGS,
+def tsv_path(year, volume, pdf_page, root=".", grid=False, layer=False):
+    settings = LAYER_SETTINGS if layer else GRID_SETTINGS if grid else SETTINGS
+    return Path(root, layout.OUT, "ocr", str(year), settings,
                 f"{Path(volume).stem}.p{pdf_page}.tsv")
 
 
@@ -118,9 +129,17 @@ def _lines(dark, min_len, gap=8):
 
 
 def rules(gray):
-    """{"h": [...], "v": [...]}: the page's rules, as `_lines` gives them."""
+    """{"h": [...], "v": [...]}: the page's rules, as `_lines` gives them. A wall
+    the scan broke into dashes (2012 p68: white gaps of a few pixels all along
+    it) is bridged first: a light pixel with dark ones within `BRIDGE` above and
+    below it, in its column, is dark for the walls (never grown past an end)."""
+    import numpy as np
     dark = gray < DARK
-    return {"h": _lines(dark, RULE_MIN["h"]), "v": _lines(dark.T, RULE_MIN["v"])}
+    above, below = np.zeros_like(dark), np.zeros_like(dark)
+    for e in range(1, BRIDGE + 1):
+        above[e:] |= dark[:-e]
+        below[:-e] |= dark[e:]
+    return {"h": _lines(dark, RULE_MIN["h"]), "v": _lines((dark | (above & below)).T, RULE_MIN["v"])}
 
 
 def _unruled(gray, found):
@@ -213,23 +232,29 @@ def _with_cells(out, clean, found):
                      + _cell_words(clean, cells)) + "\n"
 
 
-def read(doc, year, pdf_page, sideways, root=".", grid=False):
+def read(doc, year, pdf_page, sideways, root=".", grid=False, layer=False):
     """(rotation, TSV text) of one page: the saved reading if there is one,
     else tesseract's, saved first (written aside and moved into place, so an
-    interrupted run leaves no half page). `rotation`: pymupdf's, degrees."""
-    path = tsv_path(year, doc.name, pdf_page, root, grid)
+    interrupted run leaves no half page). `rotation`: pymupdf's, degrees.
+    `layer`: the rules only, the words being the volume's own."""
+    path = tsv_path(year, doc.name, pdf_page, root, grid, layer)
     if path.exists():
         text = path.read_text(encoding="utf-8")
         return int(text.split("\n", 1)[0].split()[-1]), text
+    if layer and sideways:
+        raise ValueError(f"p{pdf_page}: a page printed sideways keeps no own layer here")
     tries = []
     for rotation in ((90, 270) if sideways else (0,)):
         gray = _render(doc[pdf_page - 1], rotation)
         found = rules(gray) if grid else {"h": [], "v": []}
+        if layer:
+            tries.append((0, 0, 0, gray, found, ""))
+            break
         out, conf = _tesseract(_unruled(gray, found) if grid else gray,
                                GRID_PSM if grid else PSM)
         tries.append((conf, -rotation, rotation, gray, found, out))  # a tie: the first turn
     *_, rotation, gray, found, out = max(tries, key=lambda t: t[:2])
-    if grid:
+    if grid and not layer:
         out = _with_cells(out, _unruled(gray, found), found)
     kept = "".join(f"# rule {d} {pos:.1f} {a} {b} {t}\n"
                    for d in ("h", "v") for pos, a, b, t in sorted(found[d]))
@@ -248,13 +273,18 @@ class OcrPage:
     clip = None
     direction = None
 
-    def __init__(self, doc, year, pdf_page, printed_page, sideways=False, root=".", grid=False):
+    def __init__(self, doc, year, pdf_page, printed_page, sideways=False, root=".", grid=False,
+                 layer=False):
         self.doc = doc
         self.page = doc[pdf_page - 1]
         self.pdf_page = pdf_page
         self.printed_page = printed_page
-        self.rotation, text = read(doc, year, pdf_page, sideways, root, grid)
-        self.words = _words(text)
+        self.rotation, text = read(doc, year, pdf_page, sideways, root, grid, layer)
+        k = DPI / 72
+        self.words = ([{"text": t, "box": (x0 * k, y0 * k, x1 * k, y1 * k), "conf": LAYER,
+                        "line": (b, ln, 0)}
+                       for x0, y0, x1, y1, t, b, ln, _w in self.page.get_text("words")]
+                      if layer else _words(text))
         self.rules = [ln.split()[2:] for ln in text.splitlines() if ln.startswith("# rule ")]
         r = self.page.rect
         w, h = (r.height, r.width) if self.rotation in (90, 270) else (r.width, r.height)
@@ -298,3 +328,10 @@ class OcrPage:
 def confidence(word):
     """A `geometry.Word`'s OCR confidence, or None if it was not read by OCR."""
     return float(word.font[len(FONT):]) if word.font.startswith(FONT) else None
+
+
+def note(confs, settings):
+    """A row's flag: how OCR read it, and the least sure word."""
+    if min(confs) == LAYER:
+        return "ocr: the volume's own text layer, rules found in the image"
+    return f"ocr: read by {settings}, least sure word {min(confs):.0f}%"

@@ -5,7 +5,8 @@
 #
 # volume: the file in In/<year>/. pdf_first, pdf_last: the list pages, PDF indices
 #   (1-based). rotated: the PDF pages printed sideways (the reader turns them).
-# layer: text (born-digital text layer), ocrlayer (a scan carrying a noisy OCR layer),
+# layer: text (born-digital text layer), ocrlayer (a scan carrying a noisy OCR layer:
+#   read again), ocrlayer-kept (its OCR layer kept: better than tesseract here),
 #   scan (no text layer: OCR).
 # layout: grid (a ruled or columned table: numero, verbale, data verbale, data
 #   iscrizione, prot. U.R.N.I., data; cancellations add sede legale, CAP, citta, data
@@ -39,7 +40,7 @@ year	volume	pdf_first	pdf_last	printed_first	rotated	layer	layout	lists	narrativ
 2009	2009_LXVII_n3_TOMO_I.pdf	760	762	759	-	scan	grid	iscrizioni, cancellazioni, sospensioni (1)	707	narrative: 15 / 1 / 11; 204 at 31.12	-
 2010	2010_LXVII_n4_VOLUME_I.pdf	751	755	751	-	scan	grid	iscrizioni, sospensioni (9), cancellazioni	700	narrative: 32 / 9 / 30; 206 at 31.12	-
 2011	2011_LXVII_n5_TOMO_II.pdf	61	63	61	-	scan	grid	iscrizioni, sospensioni, cancellazioni	10	narrative: 214 at 31.12	-
-2012	2012_LXVII_n1_VOLUME_I.pdf	67	69	67	-	ocrlayer	grid	iscrizioni, sospensioni, cancellazioni	19		-
+2012	2012_LXVII_n1_VOLUME_I.pdf	67	69	67	-	ocrlayer-kept	grid	iscrizioni, sospensioni, cancellazioni	19	its own OCR layer reads the 7 pt grid better than tesseract (00558, 20/01/2012 where tesseract gave `00° 59`, `200018 012`): kept, rules from the image (2026-10-30)	-
 2013	2013_LXVII_n2_DOCUMENTO_UNICO.pdf	579	580	579	-	ocrlayer	grid	iscrizioni, cancellazioni	-		-
 2014	2014_LXVII_n3_VOLUME_I.pdf	649	652	649	-	ocrlayer	grid	iscrizioni, cancellazioni	608	p647 is the annex cover (text only); narrative gives cancellations by reason	-
 2015	2015_LXVII_n4_VOLUME_I.pdf	1018	1020	1018	-	ocrlayer	grid	iscrizioni, sospensioni, cancellazioni	933	p1017 is the annex cover (text only)	-

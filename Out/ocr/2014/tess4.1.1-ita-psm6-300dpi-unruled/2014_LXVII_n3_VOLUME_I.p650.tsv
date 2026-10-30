@@ -30,7 +30,7 @@
 # rule v 1216.0 709 2396 5
 # rule v 1450.0 710 2395 5
 # rule v 1699.0 711 2394 5
-# rule v 1859.0 711 2394 5
+# rule v 1858.5 711 2394 6
 # rule v 2102.0 712 2394 5
 level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	text
 1	1	0	0	0	0	0	0	2480	3505	-1	

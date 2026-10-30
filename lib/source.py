@@ -168,7 +168,8 @@ def table_pages(year, key, root="."):
                                  f"rebuild the table index")
             if scanned:         # the register's scans, read by OCR (lib/ocr.py)
                 pages.append(ocr.OcrPage(doc, year, p, printed, p in sideways, root,
-                                         grid=register.layout != "list"))
+                                         grid=register.layout != "list",
+                                         layer=register.layer == "ocrlayer-kept"))
             else:
                 pages.append(SourcePage(doc, p, printed, clips.get(str(p))))
     if register and register.order:     # bound out of reading order (2021)

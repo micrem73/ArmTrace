@@ -914,3 +914,34 @@ table's key, so a later edition printing the same layout reads the same:
   15): the count check FAILs, a disagreement in the print, for the maintainer.
 - **Off-page text is not read**: 2019 p813 carries an old `Società Sospese: 2016` and
   `prot. RNI` outside the page box.
+
+## 2026-10-30 — the register (RNI): the grid years (1991-2015)
+
+- **A scanned grid is read by its rules.** `lib/ocr.py` finds the rules in the image (dark
+  runs at least 0.4 inch across, 0.25 inch down: a shorter wall, even from rule to rule,
+  let letters touching the rules pass as walls),
+  whites them out, reads the page with tesseract psm 6 (`tess4.1.1-ita-psm6-300dpi-unruled`),
+  then reads each cell of each grid again on its own and keeps those words: read with its
+  row, 2015 p1019's `DATA CANC.` came back `GANO`; alone, right. The rules are kept with the
+  words, so the reader sees the page's lines as on a born-digital page.
+- **Rows and columns come from the rules**: rows between long rules (a rule the scan broke
+  in pieces is one), columns at the walls most rows draw (2012's header row lost one). A
+  row holding a register number is a row of the grid even where its walls faded (2013). A
+  `Motivazione`/`Motivazioni` line is the reason of the row above, whatever rules cross it
+  or are lost around it. The header repeated on a page is no row.
+- **A header label OCR misread** is the agreed one it is closest to, compared on letters
+  and digits (`PROT. RNA.` → `PROT. R.N.I.`, `N'ISCRO` → `N° ISCR.`), at least 0.75
+  alike and 0.1 ahead of any other column; otherwise the table is refused. Born-digital
+  headers still match exactly. The label as read is kept.
+- **Specks are no values**: a word of punctuation alone (but `&`), `//` in every cell of a
+  row (an empty table), and `I`/`Ì`/`Î`/`l`/`|` left of a faded wall beside a figure.
+- **A table printed empty** (`NON SONO STATE EFFETTUATE ...`, `NESSUNA`) has no rows, and
+  needs no columns: 2012 p68's header row is too short for its walls to be found.
+- **A figure wrapped in a narrow column** goes on with no space (2014: `0042` over `1`).
+- **Values OCR may misread into valid ones are noted, not corrected**: a date after the
+  edition's next year (`25/03/2073`), an enrolment number out of the run (`00809` between
+  00608 and 00610), a register number that is not five digits (`0042I`).
+- **Column names**: `protocollo`, `data_protocollo` (2015 prints `PROT. R.N.I.`, the older
+  years `U.R.N.I.`), `verbale`, `data_verbale`, `sede_legale`, `cap`, `citta`. A
+  cancellation's printed enrolment date fills `data_iscrizione` (the view takes the
+  latest per number, so it adds no enrolment).
