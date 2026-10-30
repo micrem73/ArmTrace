@@ -901,6 +901,15 @@ table's key, so a later edition printing the same layout reads the same:
   `14/10/209` (so printed); 2018's cancellation dates, whose last digit the scan cuts
   (`09/04/201:`), and two OCR could not read (`e`, `Ualazei`); 2020's `6/08/2020` (a
   one-digit day, so printed: read as a date).
+- **2018's cancellation dates are 2018** (maintainer, 2026-10-30, reading p731): the scan
+  cuts each year's last digit (`09/04/201:`, once read `09/04/2011`), and OCR read two dates
+  not at all (GEMELLI `e`: 28/05/2018; T.C.S. GROUP `Ualazei`: 08/10/2018). In
+  `corrections.tsv`, which gains a `year` column: a correction for one edition only, since a
+  value read alike may be true in another (2011's register may print 09/04/2011).
+- **A register's events are its edition's year's** (maintainer, 2026-10-30): an enrolment,
+  suspension or cancellation dated another year is a misreading or a misprint. The check
+  `event dates within <year>` (ExtractTables) FAILs on it, stopping the run, after the
+  maintainer's corrections. 2019 FAREM's printed `14/10/209` is 14/10/2019 (maintainer).
 - **2020's CANCELLATE heading says 16, the list prints 15 items** (the narrative also says
   15): the count check FAILs, a disagreement in the print, for the maintainer.
 - **Off-page text is not read**: 2019 p813 carries an old `Società Sospese: 2016` and

@@ -144,7 +144,7 @@ def records(year, result, spec):
     ids, unknown = companies.load()[1], set()
     bank_ids = banks.load()[1]
     corrected = {(r["col"], r["printed"]): r["corrected"] for r in extract._rows("corrections.tsv")
-                 if r["table"] == spec.table}
+                 if r["table"] == spec.table and r["year"] in ("", str(year))}
     by_key = {c.key: c for c in spec.columns}
     for r in result.rows:
         if r["kind"] != "data":
@@ -343,6 +343,33 @@ def view_def(spec, result):
     }, sort_keys=True)
 
 
+def event_years(year, result, spec):
+    """(check, issues): a register's events are its edition's year's (maintainer,
+    2026-10-30: a report lists the enrolments, suspensions and cancellations of
+    its year). Each row's own event date (`event`, set by the list and grid
+    readers; implied where none is printed), as corrected, must fall in `year`:
+    another year is a misreading (2018 p731: OCR's `09/04/2011`). FAIL stops the
+    run; each such row is an issue."""
+    corrected = {(r["col"], r["printed"]): r["corrected"] for r in extract._rows("corrections.tsv")
+                 if r["table"] == spec.table and r["year"] in ("", str(year))}
+    keys = [c.key for c in result.columns] or [c.key for c in spec.printed]
+    dated, issues = 0, []
+    for r in result.rows:
+        if r["kind"] != "data" or not r.get("event") or r["event"] in r.get("implied", {}):
+            continue
+        cells = dict(zip(keys, r["cells"]))
+        raw = cells.get(r["event"], "")
+        value, _ = extract.parse("date", corrected.get((r["event"], raw), raw))
+        dated += 1
+        if value is None or value[:4] != str(year):
+            issues.append((r["pdf_page"], "event year",
+                           f"{cells.get('numero_iscrizione', '')} {r['event']} {raw!r}: "
+                           f"not in {year}"))
+    check = (f"event dates within {year}", str(dated), dated - len(issues),
+             "FAIL" if issues else "PASS")
+    return check, issues
+
+
 def extract_one(db, year, key, spec):
     """Read one table into `db`. Returns (fails, refusal or None)."""
     name = extract.sql_name(key)
@@ -364,6 +391,10 @@ def extract_one(db, year, key, spec):
                    (name, key, int(year), i, col.key, col.type, label, col.sum_sql()))
     shown, problems = figures(year, key, result)
     issues += problems
+    events = None
+    if any(r.get("event") for r in result.rows):
+        events, problems = event_years(year, result, spec)
+        issues += problems
     db.executemany("INSERT INTO printed_figure VALUES (?,?,?,?,?,?,?,?,?,?,?)", shown)
     db.execute("INSERT INTO view_def VALUES (?,?,?,?,?)",
                (int(year), key, name, view_def(spec, result), "\n".join(result.caption) or None))
@@ -372,7 +403,7 @@ def extract_one(db, year, key, spec):
     db.executemany("INSERT INTO extract_issue VALUES (?,?,?,?,?)",
                    [(int(year), key, p, kind, detail)
                     for p, kind, detail in result.issues + issues])
-    results = extract.checks(result, spec)
+    results = extract.checks(result, spec) + ([events] if events else [])
     db.executemany("INSERT INTO check_result VALUES (?,?,?,?,?,?)",
                    [(int(year), key, name_, printed,
                      str(c) if c is not None else None, status)

@@ -167,7 +167,8 @@ def table_pages(year, key, root="."):
                 raise ValueError(f"{key}: cut page {p} has no clip; "
                                  f"rebuild the table index")
             if scanned:         # the register's scans, read by OCR (lib/ocr.py)
-                pages.append(ocr.OcrPage(doc, year, p, printed, p in sideways, root))
+                pages.append(ocr.OcrPage(doc, year, p, printed, p in sideways, root,
+                                         grid=register.layout != "list"))
             else:
                 pages.append(SourcePage(doc, p, printed, clips.get(str(p))))
     if register and register.order:     # bound out of reading order (2021)

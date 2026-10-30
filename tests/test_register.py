@@ -167,7 +167,7 @@ def test_cancellations_in_columns_keep_name_and_reason_apart(year, sources):
         # The scan cuts the year's last digit: kept as read, never completed.
         "2018": ("00740", "NAVALTECH ITALIA SRL", "28/05/201:",
                  "LA SOC. HA CHIESTO LA CANCELLAZIONE PER FALLIMENTO"),
-        # `209`: so printed.
+        # `209`: so printed (the maintainer: 14/10/2019, corrections.tsv).
         "2019": ("00509", "FAREM S.R.L.", "14/10/209",
                  "La Soc. nonostante il sollecito scritto, non ha presentato sei mesi prima "
                  "della scadenza del triennio di validità, ai sensi dell’art. 130 del D.P.R. "
@@ -195,3 +195,96 @@ def test_a_reason_read_without_its_colon_is_still_the_reason(year, sources):
     row = next(x for x in rows if x["numero_iscrizione"] == "00807")
     assert row["denominazione"] == "MANUFACTURING PROCESS SPECIFICATION S.r.l."
     assert row["motivazione"].startswith("la Società non ha versato")
+
+
+@pytest.mark.parametrize("year", ["2015"])
+def test_a_ruled_scan_reads_cell_by_cell(year, sources):
+    """2015 prints three ruled grids, scanned. Its rules are found in the image
+    and each cell read alone (read with its row, `DATA CANC.` came back `GANO`):
+    every agreed column, the reason under each cancellation, and an empty
+    suspension table (`//` in every cell) gives no row."""
+    r, rows, _checks = _register(year)
+    assert not r.issues
+    enrolled = [x for x in rows if x["data_iscrizione"] and not x["data_cancellazione"]]
+    gone = [x for x in rows if x["data_cancellazione"]]
+    assert (len(enrolled), len(gone), len(rows)) == (22, 5, 27)
+    first = enrolled[0]
+    assert {k: first[k] for k in ("numero_iscrizione", "denominazione", "verbale",
+                                  "data_verbale", "data_iscrizione", "protocollo",
+                                  "data_protocollo")} == {
+        "numero_iscrizione": "00652", "denominazione": "B-MAX", "verbale": "01/2015",
+        "data_verbale": "23/02/2015", "data_iscrizione": "30/01/2015",
+        "protocollo": "0006345", "data_protocollo": "30/01/2015"}
+    assert next(x for x in enrolled if x["numero_iscrizione"] == "00662")[
+        "denominazione"] == "CANEPA & CAMPI"
+    bremach = next(x for x in gone if x["numero_iscrizione"] == "00581")
+    assert (bremach["sede_legale"], bremach["cap"], bremach["citta"],
+            bremach["data_iscrizione"], bremach["data_cancellazione"]) == (
+        "VIA CREMONA N. 139", "25124", "BRESCIA", "10/07/2012", "05/10/2015")
+    assert bremach["motivazione"].startswith("NON HA PRESENTATO LA DOMANDA DI RINNOVO")
+    assert all(any(n.startswith("ocr:") for n in x["notes"]) for x in rows)
+
+
+@pytest.mark.parametrize("year", ["2018"])
+def test_2018s_cut_dates_are_stored_as_the_maintainer_read_them(year, sources):
+    """2018 p731's scan cuts each cancellation date's last digit; OCR reads
+    `09/04/201:`, one `09/04/2011`, two not at all (`e`, `Ualazei`). The
+    maintainer read the page: the year is 2018 (corrections.tsv, for 2018 only:
+    `09/04/2011` may be a true date of 2011's register). `_raw` keeps the reading."""
+    from lib import extract, source
+    from tests.test_extract import stored
+    key = "DIFESA/A5/2"
+    db = stored(year, extract.read_table(year, key, pages=source.table_pages(year, key)), key)
+    got = {n: (d, raw) for n, d, raw in db.execute(
+        "SELECT numero_iscrizione, data_cancellazione, data_cancellazione_raw "
+        "FROM difesa_a5_2 WHERE data_cancellazione_raw IS NOT NULL")}
+    assert got["00652"] == ("2018-04-09", "09/04/2011")
+    assert got["00612"] == ("2018-04-09", "09/04/201:")
+    assert got["00473"] == ("2018-05-28", "e")
+    assert got["00591"] == ("2018-10-08", "Ualazei")
+    assert len(got) == 9 and all(d.startswith("2018-") for d, _raw in got.values())
+
+
+@pytest.mark.parametrize("year", ["2018"])
+def test_an_event_dated_outside_the_edition_stops_the_run(year, sources):
+    """A report lists the events of its own year only (maintainer, 2026-10-30):
+    an enrolment, suspension or cancellation dated another year is a misreading
+    (2018 p731: OCR's `09/04/2011` for B-MAX). The check FAILs, so
+    ExtractTables exits 1, and names the row. A cancellation's printed
+    enrolment date (the grid years) is no event of the year."""
+    import ExtractTables as E
+    from lib import extract, source
+    key = "DIFESA/A5/2"
+    spec = extract.specs()[key]
+    r = extract.read_table(year, key, pages=source.table_pages(year, key))
+    check, issues = E.event_years(year, r, spec)
+    assert check[3] == "PASS" and not issues       # B-MAX corrected by the maintainer
+    at = [c.key for c in r.columns].index("data_cancellazione")
+    bmax = next(x for x in r.rows if x["cells"][at] == "09/04/2011")
+    bmax["cells"][at] = "09/04/2001"                # a reading no correction covers
+    check, issues = E.event_years(year, r, spec)
+    assert check[3] == "FAIL"
+    assert any("00652" in detail and "2001" in detail for _p, _kind, detail in issues)
+
+
+@pytest.mark.parametrize("year", ["2014"])
+def test_boxed_cancellations_read_whole(year, sources):
+    """2014 boxes each cancellation apart, its walls one row high; each page
+    repeats the header; the `Motivazione` row is the box's last, walls or not;
+    a narrow column wraps a figure (`0042` over `1`, `19/01/200` over `6`)."""
+    import ExtractTables as E
+    from lib import extract
+    r, rows, _checks = _register(year)
+    assert not r.issues
+    assert E.event_years(year, r, extract.specs()["DIFESA/A5/2"])[0][3] == "PASS"
+    assert not any(x["denominazione"].startswith("SOCIET") for x in rows)   # no header row
+    gone = {x["denominazione"]: x for x in rows if x["data_cancellazione"]}
+    frasa = gone["IMPRESA COSTRUZIONI FRASA S.R.L."]
+    assert (frasa["numero_iscrizione"], frasa["data_cancellazione"]) == ("00503", "24/11/2014")
+    assert frasa["motivazione"].startswith("non ha versato il contributo")
+    security = gone["SECURITY SYSTEM S.R.L. UNIPERSONALE"]
+    assert (security["data_iscrizione"], security["data_cancellazione"]) == (
+        "19/01/2006", "24/11/2014")
+    # OCR reads the wrapped `1` as `I`: kept as read, noted.
+    assert security["numero_iscrizione"] == "0042I"
+    assert "numero_iscrizione: '0042I' is not five digits" in security["notes"]

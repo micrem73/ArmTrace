@@ -1,8 +1,17 @@
 # A printed value the maintainer corrected: the column stores `corrected`, its `_raw`
 # keeps the printed text, the row's flags say `<col>: corrected, printed '<printed>'`
 # (DECISIONS.md 2026-10-25). Only a value printed exactly as `printed` is corrected.
-table	col	printed	corrected	decided
-DIFESA/A2C6/3A	data_rilascio_aut	27/082025	27/08/2025	maintainer, 2026-10-25
-DIFESA/A2C6/3A	data_rilascio_aut	15/102025	15/10/2025	maintainer, 2026-10-25
-DIFESA/A2C6/3A	data_rilascio_aut	05/1172025	05/11/2025	maintainer, 2026-10-25
-MAE/T4	fascia	01-ott	1 - 10	maintainer, 2026-10-25: a spreadsheet date artefact for the band 1 - 10
+# year: the edition the correction is for; empty, any (a value printed alike in
+#   another year may be true there: 2018's `09/04/2011` is OCR's, 2011's would not be).
+table	year	col	printed	corrected	decided
+DIFESA/A2C6/3A		data_rilascio_aut	27/082025	27/08/2025	maintainer, 2026-10-25
+DIFESA/A2C6/3A		data_rilascio_aut	15/102025	15/10/2025	maintainer, 2026-10-25
+DIFESA/A2C6/3A		data_rilascio_aut	05/1172025	05/11/2025	maintainer, 2026-10-25
+MAE/T4		fascia	01-ott	1 - 10	maintainer, 2026-10-25: a spreadsheet date artefact for the band 1 - 10
+DIFESA/A5/2	2018	data_cancellazione	09/04/201:	09/04/2018	maintainer, 2026-10-30: 2018 p731, the scan cuts the year's last digit
+DIFESA/A5/2	2018	data_cancellazione	28/05/201:	28/05/2018	maintainer, 2026-10-30: 2018 p731, the scan cuts the year's last digit
+DIFESA/A5/2	2018	data_cancellazione	08/10/201:	08/10/2018	maintainer, 2026-10-30: 2018 p731, the scan cuts the year's last digit
+DIFESA/A5/2	2018	data_cancellazione	e	28/05/2018	maintainer, 2026-10-30: 2018 p731, GEMELLI SPA (00473), the date OCR could not read
+DIFESA/A5/2	2018	data_cancellazione	Ualazei	08/10/2018	maintainer, 2026-10-30: 2018 p731, T.C.S. GROUP (00591), the date OCR could not read
+DIFESA/A5/2	2018	data_cancellazione	09/04/2011	09/04/2018	maintainer, 2026-10-30: 2018 p731, B-MAX (00652): OCR read the cut year's last digit as 1
+DIFESA/A5/2	2019	data_cancellazione	14/10/209	14/10/2019	maintainer, 2026-10-30: 2019 p814, FAREM S.R.L. (00509): so printed, the year 2019
