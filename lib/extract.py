@@ -1888,12 +1888,141 @@ def set_units(result, spec):
             r.setdefault("units", {})[c.key] = opened[c.key]
 
 
-LIST_HEADING = re.compile(r"^SOCIET\S*\s+([A-Z]+)\s+(\d{4})\s*\((\d+)\)\s*:?$")
-LIST_ITEM = re.compile(r"^(\d+)\.\s*(.*)$")
+# `SOCIETA’CANCELLATE 2021 (15):` as OCR reads it; no count over a list printed
+# `NESSUNA` (2020-2022 SOSPESE).
+LIST_HEADING = re.compile(r"^SOCIET\S*?['’”]?\s*([A-Z]+)\s+(\d{4})\s*(?:\((\d+)\))?\s*:?$")
+# `l.`, `I.`, `Il.`, `19,`: as OCR reads them; only alone, so `I.D.S.` is no item.
+LIST_ITEM = re.compile(r"^(\d+)\.\s*(.*)$|^([\dlI]+)[.,]$")
+# 2016-2019: `Società Iscritte : 2016`, `Società Cancellate: : 2017`; the count is
+# over the names (`Società (36)`).
+LIST_HEADING_OLD = re.compile(r"^Societ\S*\s+(Iscritte|Sospese|Cancellate)\s*[:\s]*"
+                              r"((?:19|20)\d\s?\d)\s*:?$", re.IGNORECASE)
+LIST_COUNT = re.compile(r"^[({]\s*(\d+)\s*[)}]$")      # `(13)`, OCR's `{09)`
+FOLIO = re.compile(r"^[\dlI]{1,3}$")       # the page's own number, under the list
+BLOCK_GAP_EM = 1.0      # 2016-2019 cancellations: lines of an item <= 0.4 em apart, items >= 1.8
+EMPTY_LIST = re.compile(r"^(?:NESSUNA|NEGATIVO)\.?$", re.IGNORECASE)
+# What every list page repeats over the list (a continuation page starts under it).
+LIST_FURNITURE = re.compile(r"MINISTERO\s+DELLA\s+DIFESA|SERVIZIO\s+DEL\s+REGISTRO|"
+                            r"^Allegato\s+[A-Z]$|^\W*$")
+# A digital signature's stamp, three lines: `Digitally signed by <NAME>`, the
+# name's rest, `Date: ...` (2020, 2021, under the last list).
+SIGNATURE = re.compile(r"^Digitally\s+signed\b")
 REGISTER_NO = re.compile(r"^(?:(Nr\.?)\s*)?(\d{5})$")
-DATE_WORD = re.compile(r"^\d{2}/\d{2}/\d{4}$")
+DATE_WORD = re.compile(r"^\d{1,2}/\d{2}/\d{4}$")    # 2020 prints `6/08/2020`
 REASON = "Motivazione:"
 TOUCH = 0.5         # pt between two spans of one word
+
+
+def _list_labels(text, label_of):
+    """{column key: printed label} if the line is the list's labels and nothing
+    else (`Società N° Iscr. Data Canc.`, however OCR cut it into words), else
+    None. `label_of`: each agreed label, lower case, to its column. 2016-2019
+    print the list's count after `Società` (`Società (13)`, key `count`) and
+    head the item numbers `N` (no column)."""
+    rest, found = " ".join(text.split()), {}
+    labels = sorted(label_of, key=len, reverse=True)
+    while rest:
+        word = rest.split()[0]
+        if (m := LIST_COUNT.match(word)) and found:
+            found["count"] = m.group(1)
+            rest = rest[len(word):].strip()
+            continue
+        if word == "N" and not found:
+            rest = rest[1:].strip()
+            continue
+        lab = next((lab for lab in labels if rest.lower() == lab
+                    or rest.lower().startswith(lab + " ")), None)
+        if lab is None:
+            return None
+        found[label_of[lab]] = rest[:len(lab)]
+        rest = rest[len(lab):].strip()
+    return found if set(found) - {"count"} else None
+
+
+def _joined(band):
+    """The band's words, a word cut in touching pieces joined (2019's text layer:
+    `00 | 7 | 75`, `( | 31 | )`), the blanks between words left out."""
+    out, blank = [], False
+    for w in band:
+        if not w.text.strip():
+            blank = True
+            continue
+        prev = out[-1] if out else None
+        # Blanks part words, wherever the text layer puts them: a word of their
+        # own, opening the next (2017: `      Data Canc.`), closing the last (2019:
+        # `Società ` then `Cancellate`). OCR has cut its words already.
+        joins = (prev is not None and not blank and not w.text[:1].isspace()
+                 and ocr.confidence(w) is None and w.u0 - prev.u1 < TOUCH)
+        blank = w.text[-1:].isspace()
+        if joins:
+            out[-1] = geo.Word(prev.text.strip() + w.text.strip(), prev.u0, w.u1,
+                               min(prev.v0, w.v0), max(prev.v1, w.v1), max(prev.size, w.size),
+                               prev.bold, prev.font)
+        else:
+            out.append(geo.Word(w.text.strip(), w.u0, w.u1, w.v0, w.v1, w.size, w.bold, w.font))
+    return out
+
+
+def _column_item(block, cols, reason_u):
+    """One cancellation printed in columns (2016-2019) from its block of lines:
+    {ordinal, name, reason, code, date, extra}. Number and date are what stands
+    under their labels; left of the reason column's edge `reason_u`, the name
+    (its first word the item number, `1.MICRODATA` or `1`); the rest, the
+    reason. What else stands under the number or the date is kept in `extra`."""
+    out = {"ordinal": None, "name": [], "reason": [], "code": None, "date": None,
+           "extra": [], "conf": []}
+    dated = []
+    for band in block:
+        out["conf"] += [c for c in map(ocr.confidence, band) if c is not None]
+        for w in band:
+            t = w.text
+            if w.u0 >= cols["data_cancellazione"] - 15:
+                dated.append(t)
+            elif w.u0 >= cols["numero_iscrizione"] - 10:     # numbers start <= 7 pt left of it
+                if out["code"] is None and REGISTER_NO.match(t):
+                    out["code"] = REGISTER_NO.match(t).group(2)
+                elif t.strip(".,;:'"):
+                    out["extra"].append(("numero_iscrizione", t))
+            elif reason_u is None or w.u0 < reason_u - 2:
+                out["name"].append(t)
+            else:
+                out["reason"].append(t)
+    # The date: the word under its label shaped as one (2018's scan cuts the year:
+    # `28/05/201:`), else the first; OCR's specks beside it are kept, as notes.
+    if dated:
+        out["date"] = next((t for t in dated if re.match(r"\d{1,2}/\d{2}/", t)), dated[0])
+        out["extra"] += [("data_cancellazione", t) for t in dated if t != out["date"]]
+    # 2016's `N` column centres the number by a two-line name: a bare number left
+    # of every other name word is the item's, wherever it stands.
+    names = [w for band in block for w in band if w.text in out["name"]]
+    bare = [w for w in names if re.fullmatch(r"[\dlI]{1,3}[.,]?", w.text)
+            and all(w.u1 < x.u0 for x in names if x is not w)]
+    if bare and out["name"][0] != bare[0].text:
+        out["name"].remove(bare[0].text)
+        out["name"].insert(0, bare[0].text)
+    if out["name"]:
+        head = out["name"][0]
+        if m := re.fullmatch(r"([\dlI]+)[.,]?(.*)", head):
+            if not m.group(2) or head[len(m.group(1))] in ".,":
+                out["ordinal"] = int(m.group(1).replace("l", "1").replace("I", "1"))
+                rest = m.group(2).strip()
+                out["name"] = ([rest] if rest else []) + out["name"][1:]
+                if out["name"][:1] == ["."]:      # `11 | . | FLEXIDER` (2019)
+                    out["name"] = out["name"][1:]
+    out["name"] = [" ".join(t.split()) for t in out["name"]]
+    out["reason"] = [" ".join(t.split()) for t in out["reason"]]
+    return out
+
+
+def _reason_edge(bands, name_u1):
+    """Where the reason column starts on a page of 2016-2019 cancellations: the
+    nearest left edge of a line that starts right of the name's label."""
+    text = (" ".join(w.text for w in b) for b in bands)
+    starts = [b[0].u0 for b, t in zip(bands, text) if b and b[0].u0 > name_u1
+              and not REGISTER_NO.match(b[0].text) and not DATE_WORD.match(b[0].text)
+              and not (RUNNING_HEAD.search(t) or STAMP.search(t) or LIST_FURNITURE.search(t)
+                       or LIST_HEADING_OLD.match(t) or FOLIO.match(t))]
+    return min(starts) if starts else None
 
 
 def read_list(year, key, spec, pages):
@@ -1928,61 +2057,165 @@ def read_list(year, key, spec, pages):
         if not date:
             row["implied"] = {col.key: str(year)}
             row["notes"].append(f"{col.key}: no date printed, the edition's year")
+        if item["unread"]:
+            row["notes"].append(f"item number not read: taken as {item['number']}")
+        for col_key, extra in item.get("extra", ()):
+            row["notes"].append(f"{col_key}: also read {extra!r} under it")
         if item["conf"]:        # a scan (lib/ocr.py): every value as tesseract read it
             row["notes"].append(f"ocr: read by {ocr.SETTINGS}, least sure word "
                                 f"{min(item['conf']):.0f}%")
         row["cells"] = [cells.get(c.key, "") for c in order]
         result.rows.append(row)
 
+    signature = 0
+    cols = None             # a list in columns (2016-2019 cancellations): label edges
+    block, counted = [], True
+
+    def flush(bands):
+        """The block of lines gathered so far, as one item of a columned list."""
+        nonlocal item, number, row_ord
+        if not block:
+            return
+        got = _column_item(block, cols, _reason_edge(bands, cols["name_u1"]))
+        block.clear()
+        if got["code"] is None and not got["reason"]:
+            text = " ".join(got["name"])
+            result.issues.append((sp.pdf_page, "list", f"line {text[:60]!r} outside an item"))
+            return
+        close()
+        unread = got["ordinal"] is None
+        n = number + 1 if unread else got["ordinal"]
+        if n != number + 1:
+            result.issues.append((sp.pdf_page, "list", f"item {n} after {number}"))
+        number, row_ord = n, row_ord + 1
+        item = {"name": got["name"], "reason": got["reason"], "code": got["code"],
+                "date": got["date"], "sp": sp, "row_ord": row_ord, "in_reason": False,
+                "conf": got["conf"], "unread": unread, "number": n, "extra": got["extra"]}
+
     for sp in pages:
-        _frame, words = page_words(sp)
+        frame, words = page_words(sp)
+        # Only what is on the page: 2019 p813 carries old text off it (`prot. RNI`).
+        corners = [frame.point(x, y) for x, y in (sp.rect.tl, sp.rect.br)]
+        u_lo, u_hi = sorted(c[0] for c in corners)
+        v_lo, v_hi = sorted(c[1] for c in corners)
+        words = [w for w in words if u_lo <= w.umid <= u_hi and v_lo <= w.vmid <= v_hi]
         started = False
-        for band in geo.row_bands(words):
-            band = [w for w in sorted(band, key=lambda w: w.u0) if w.text.strip()]
-            text = " ".join(w.text.strip() for w in band)
+        page_bands = [_joined(sorted(b, key=lambda w: w.u0)) for b in geo.row_bands(words)]
+        for band in page_bands:
+            text = " ".join(w.text for w in band)
             if not text:
                 continue
+            if SIGNATURE.match(text):
+                signature = 2
+                continue
+            if signature:       # the stamp's name, then its date
+                signature = 0 if text.startswith("Date:") else signature - 1
+                continue
             heading = LIST_HEADING.match(text)
-            first = LIST_ITEM.match(band[0].text.strip())
-            if heading:
+            if old := LIST_HEADING_OLD.match(text):
+                heading = re.match(r"(\w+) (\d{4})()", f"{old.group(1).upper()} "
+                                   f"{old.group(2).replace(' ', '')}")
+            head = band[0].text.strip()
+            if (len(band) > 1 and re.fullmatch(r"[\dlI]+", head)
+                    and band[1].text.strip().startswith(".")):
+                # `14 | . HI TECH`: the number and its stop read as two words.
+                head += "."
+                rest = band[1].text.strip()[1:].strip()
+                w = band[1]
+                band = band[:1] + ([geo.Word(rest, w.u0, w.u1, w.v0, w.v1, w.size, w.bold, w.font)]
+                                   if rest else []) + band[2:]
+            first = LIST_ITEM.match(head)
+            if (not first and len(band) > 1 and re.fullmatch(r"\d{1,3}", head)
+                    and (int(head) == number + 1
+                         or any(REGISTER_NO.match(w.text) for w in band))):
+                first = LIST_ITEM.match(head + ".")
+            if heading and heading.group(1) in by_event:
+                if cols:
+                    flush(page_bands)
                 close()
-                item, number = None, 0
-                event = heading.group(1)
-                if event not in by_event:
-                    raise Refused(f"list `{text}`: no `event {event}` column in columns.tsv")
-                result.totals.append((sp.pdf_page, sp.printed_page,
-                                      f"SOCIETA' {event} {heading.group(2)}", heading.group(3)))
+                item, number, cols = None, 0, None
+                event, list_year = heading.group(1), heading.group(2)
+                counted = bool(heading.group(3))
+                if counted:
+                    result.totals.append((sp.pdf_page, sp.printed_page,
+                                          f"SOCIETA' {event} {list_year}", heading.group(3)))
                 started = True
                 continue
+            if heading:
+                raise Refused(f"list `{text}`: no `event {heading.group(1)}` column in "
+                              "columns.tsv")
+            if started and item is None and EMPTY_LIST.match(text):
+                continue        # the list is empty
             if not started and not (first and event):
-                # Above the list: its caption before the first item, furniture after.
-                if row_ord == 0 and not RUNNING_HEAD.search(text) and not STAMP.search(text):
+                # Above the list: its caption before the first item, furniture after;
+                # on a page that goes on with an item, what follows the furniture.
+                furniture = (RUNNING_HEAD.search(text) or STAMP.search(text)
+                             or LIST_FURNITURE.search(text))
+                if row_ord == 0 and not furniture:
                     result.caption.append(" ".join(text.split()))
-                continue
+                if row_ord == 0 or furniture or item is None:
+                    continue
             started = True
-            labels = [label_of.get(w.text.strip().lower()) for w in band]
-            if all(labels):
-                seen_labels.update({k: w.text.strip() for k, w in zip(labels, band)})
+            labels = _list_labels(text, label_of)
+            if labels:
+                if "count" in labels and not counted:
+                    result.totals.append((sp.pdf_page, sp.printed_page,
+                                          f"SOCIETA' {event} {list_year}", labels["count"]))
+                    counted = True
+                labels.pop("count", None)
+                seen_labels.update(labels)
+                if "motivazione" in labels:     # name, reason, number, date side by side
+                    at = {k: next(w for w in band if w.text.lower().startswith(
+                        lab.split()[0].lower())) for k, lab in labels.items()}
+                    cols = {k: w.u0 for k, w in at.items()}
+                    name_end = [w for w in band if w.u0 >= at["denominazione"].u0
+                                and w.u0 < cols["motivazione"]]
+                    cols["name_u1"] = max(w.u1 for w in name_end)
                 continue
-            if first:
+            if re.fullmatch(r"\W+", text):
+                continue        # a stray mark (2021 p825: item 7's stop, read a line low)
+            if started and (RUNNING_HEAD.search(text) or STAMP.search(text)):
+                continue        # the stamp at the page's foot (2017: `Camera dei Deputati ARRIVO`)
+            if FOLIO.match(text) and not (first and int(first.group(1) or 0) == number + 1):
+                continue        # the page's number under the list
+            if cols:
+                last = block[-1] if block else None
+                if last and (min(w.v0 for w in band) - max(w.v1 for w in last)
+                             > BLOCK_GAP_EM * max(w.size for w in last)):
+                    flush(page_bands)
+                block.append(band)
+                continue
+            # An item's first line carries its register number: a second number in an
+            # item is the next item, its number not read (2021 p825 `7.`, a faint italic).
+            unread = (not first and item is not None and item["code"] is not None
+                      and not text.startswith(REASON)
+                      and any(REGISTER_NO.match(w.text.strip()) for w in band))
+            if first or unread:
                 close()
-                n = int(first.group(1))
+                n = (number + 1 if unread else
+                     int((first.group(1) or first.group(3)).replace("l", "1").replace("I", "1")))
                 if n != number + 1:
                     result.issues.append((sp.pdf_page, "list", f"item {n} after {number}"))
                 number = n
                 row_ord += 1
                 item = {"name": [], "reason": [], "code": None, "date": None, "sp": sp,
-                        "row_ord": row_ord, "in_reason": False, "conf": []}
-                band = band[1:]
-                if first.group(2).strip():          # `13. VULKAN ...` as one word
-                    item["name"].append(first.group(2).strip())
+                        "row_ord": row_ord, "in_reason": False, "conf": [], "unread": unread,
+                        "number": n}
+                if first:
+                    band = band[1:]
+                    if (first.group(2) or "").strip():  # `13. VULKAN ...` as one word
+                        item["name"].append(first.group(2).strip())
             if item is None:
                 result.issues.append((sp.pdf_page, "list", f"line {text[:60]!r} outside an item"))
                 continue
             item["conf"] += [c for c in map(ocr.confidence, band) if c is not None]
             prev = None
-            for w in band:
+            for i, w in enumerate(band):
                 t = " ".join(w.text.split())
+                after = band[i + 1].text.strip() if i + 1 < len(band) else ""
+                if re.fullmatch(r"Nr\.?", t) and REGISTER_NO.match(after):
+                    seen_labels.setdefault("numero_iscrizione", t)     # `Nr. | 00892` (OCR)
+                    continue
                 # Two spans that touch are one word (p1276: bold `S.r.l`, then `.`).
                 touching = prev is not None and w.u0 - prev.u1 < TOUCH and not w.text[:1].isspace()
                 prev = w
@@ -1992,7 +2225,7 @@ def read_list(year, key, spec, pages):
                         seen_labels.setdefault("numero_iscrizione", m.group(1))
                 elif DATE_WORD.match(t) and item["date"] is None:
                     item["date"] = t
-                elif t.startswith(REASON):
+                elif t.startswith(REASON) or (i == 0 and t == REASON[:-1]):    # OCR: no `:`
                     item["in_reason"] = True
                     seen_labels.setdefault("motivazione", REASON.rstrip(":"))
                     if t[len(REASON):].strip():
@@ -2003,6 +2236,8 @@ def read_list(year, key, spec, pages):
                         words[-1] += t
                     else:
                         words.append(t)
+        if cols:
+            flush(page_bands)
         result.pages[("header" if started else "cover")] = \
             result.pages.get("header" if started else "cover", 0) + 1
     close()

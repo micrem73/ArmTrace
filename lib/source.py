@@ -154,7 +154,8 @@ def table_pages(year, key, root="."):
     register is a scan), in reading order."""
     from lib import ocr, register_pages
     scanned = ocr.reads(year, key)
-    sideways = register_pages.load()[int(year)].rotated if scanned else ()
+    register = register_pages.load()[int(year)] if scanned else None
+    sideways = register.rotated if scanned else ()
     pages = []
     for seg in segments(year, key, root):
         doc = open_volume(year, seg["source_file"], seg["sha256"], root)
@@ -169,4 +170,6 @@ def table_pages(year, key, root="."):
                 pages.append(ocr.OcrPage(doc, year, p, printed, p in sideways, root))
             else:
                 pages.append(SourcePage(doc, p, printed, clips.get(str(p))))
+    if register and register.order:     # bound out of reading order (2021)
+        pages.sort(key=lambda sp: register.order.index(sp.pdf_page))
     return pages

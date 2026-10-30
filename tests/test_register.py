@@ -71,3 +71,127 @@ def test_a_scanned_register_page_reads_through_geometry(year, sources):
     assert "9 TECNOLOGIE INDUSTRIALI &ZAERONAUTICHE SRL 00758" in lines
     assert "25 POGGIPOLINI SRL 00774" in lines
     assert all(0 <= ocr.confidence(w) <= 100 for w in words)
+
+
+def _register(year):
+    """The rows read from `year`'s register pages, by register number and event,
+    with the heading checks."""
+    from lib import extract, source
+    key = "DIFESA/A5/2"
+    r = extract.read_table(str(year), key, pages=source.table_pages(year, key))
+    order = [c.key for c in extract.specs()[key].printed]
+    rows = [dict(zip(order, x["cells"]), notes=x.get("notes", []))
+            for x in r.rows if x["kind"] == "data"]
+    checks = sorted(c[3] for c in extract.checks(r, extract.specs()[key]))
+    return r, rows, checks
+
+
+@pytest.mark.parametrize("year, counts", [
+    ("2016", (36, 0, 13)),
+    ("2017", (40, 0, 13)),
+    ("2018", (25, 0, 9)),
+    ("2019", (31, 0, 18)),
+    ("2020", (21, 0, 15)),      # the heading says 16, the narrative 15: 15 printed
+    ("2021", (40, 0, 15)),
+    ("2022", (23, 0, 14)),
+    ("2023", (37, 2, 15)),
+])
+def test_every_list_year_meets_its_counts(year, sources, counts):
+    """2020-2023 print 2025's list (`SOCIETA' ISCRITTE 2021 (40):`, numbered
+    items, `Motivazione:`), as scans read by OCR. 2016-2019 print the count
+    over the names (`Società (36)`) and the cancellations in columns: name,
+    reason, number, date. Every count is met, every row read by OCR is
+    flagged, nothing is left outside an item. A list printed `NESSUNA` has
+    no rows."""
+    from lib import ocr
+    r, rows, checks = _register(year)
+    assert not r.issues
+    by_event = tuple(sum(1 for x in rows if x[k]) for k in
+                     ("data_iscrizione", "data_sospensione", "data_cancellazione"))
+    # A row with no date printed carries the edition's year, flagged: count by notes too.
+    implied = {k: sum(1 for x in rows if any(n.startswith(k) for n in x["notes"]))
+               for k in ("data_iscrizione", "data_sospensione", "data_cancellazione")}
+    assert len(rows) == sum(counts), (by_event, implied)
+    assert all(any(n.startswith("ocr:") for n in x["notes"]) == ocr.reads(year, "DIFESA/A5/2")
+               for x in rows)
+    # 2020's CANCELLATE heading counts 16 over 15 items: the print disagrees with itself.
+    assert checks == (["FAIL", "PASS"] if year == "2020" else ["PASS"] * len(checks))
+    assert all(not x["denominazione"].endswith("Nr.") for x in rows)
+
+
+@pytest.mark.parametrize("year", ["2021"])
+def test_2021_reads_its_cancellations_in_printed_order(year, sources):
+    """2021's scan binds the cancellations' second page (items 8-15, p824)
+    before the first (the heading and items 1-7, p825); the page map gives the
+    reading order. The signature stamp under the last list is no company."""
+    _r, rows, _checks = _register(year)
+    gone = [x for x in rows if x["data_cancellazione"]]
+    assert [x["numero_iscrizione"] for x in gone[:2]] == ["00710", "00770"]
+    st_protect = gone[6]
+    assert (st_protect["denominazione"], st_protect["numero_iscrizione"]) == (
+        "ST PROTECT S.p.A.", "00746")
+    assert "item number not read: taken as 7" in st_protect["notes"]
+    assert gone[-1]["numero_iscrizione"] == "00766"
+    assert rows[39]["denominazione"] == "T. MARIOTTI S.p.A."
+
+
+@pytest.mark.parametrize("year", ["2020"])
+def test_2020_is_read_again_not_from_its_ocr_layer(year, sources):
+    """2020's text layer is an old OCR (`PANZERAEVENTI SRL`, `6/08/2020`):
+    tesseract reads the page better."""
+    _r, rows, _checks = _register(year)
+    names = {x["numero_iscrizione"]: x["denominazione"] for x in rows}
+    assert names["00808"] == "PANZERA EVENTI SRL"
+    assert names["00807"] == "MANUFACTURING PROCESS SPECIFICATION SRL"
+    # Item 8's reason goes on at the top of p720, under the page's furniture.
+    praxair = next(x for x in rows if x["numero_iscrizione"] == "00707")
+    assert praxair["motivazione"].endswith("al RN. e la relativa documentazione.")
+    # Printed with a one-digit day.
+    assert next(x for x in rows if x["numero_iscrizione"] == "00545")[
+        "data_cancellazione"] == "3/09/2020"
+
+
+@pytest.mark.parametrize("year", ["2016", "2017", "2018", "2019"])
+def test_cancellations_in_columns_keep_name_and_reason_apart(year, sources):
+    """2016-2019 print each cancellation as a block: the name (over one or more
+    lines) beside the reason, the number and date on the right, the reason's
+    first line often above the item's number. A value is placed by its column,
+    each block one item."""
+    _r, rows, _checks = _register(year)
+    gone = {x["numero_iscrizione"]: x for x in rows if x["data_cancellazione"]}
+    expect = {
+        "2016": ("00544", "SELEX ES MUAS SPA", "08/02/2016",
+                 "CANCELLAZIONE CHIESTA DALLA SOCIETA' A SEGUITO DI FUSIONE IN \"SELEX ES SPA\""),
+        "2017": ("00594", "SELEX ELECTRONIC SYSTEMS S.P.A. (SELEX ES S.P.A. O SES S.P.A.)",
+                 "24/07/2017", "CANCELLAZIONE CHIESTA DALLA SOCIETA'"),
+        # The scan cuts the year's last digit: kept as read, never completed.
+        "2018": ("00740", "NAVALTECH ITALIA SRL", "28/05/201:",
+                 "LA SOC. HA CHIESTO LA CANCELLAZIONE PER FALLIMENTO"),
+        # `209`: so printed.
+        "2019": ("00509", "FAREM S.R.L.", "14/10/209",
+                 "La Soc. nonostante il sollecito scritto, non ha presentato sei mesi prima "
+                 "della scadenza del triennio di validità, ai sensi dell’art. 130 del D.P.R. "
+                 "15 marzo 2010, n. 90, la domanda di rinnovo dell’iscrizione al R.N.I. e la "
+                 "relativa documentazione."),
+    }[year]
+    row = gone[expect[0]]
+    assert (row["denominazione"], row["data_cancellazione"], row["motivazione"]) == expect[1:]
+    if year == "2016":
+        # Item 8's number stands centred by its two-line name.
+        assert gone["00496"]["denominazione"] == "S.I.R.M.I. Soc. Ita Rappr. Montaggi Ind. SRL"
+    if year == "2019":
+        # A justified reason runs close to the numbers: its last word stays in it.
+        assert gone["00552"]["motivazione"].endswith("(iscritta al RNI al n. 265).")
+        assert not any(n.startswith("numero_iscrizione") for n in gone["00552"]["notes"])
+    if year == "2018":
+        # OCR reads GEMELLI's date as a speck: kept as read, for a person to see.
+        assert gone["00473"]["data_cancellazione"] == "e"
+
+
+@pytest.mark.parametrize("year", ["2022"])
+def test_a_reason_read_without_its_colon_is_still_the_reason(year, sources):
+    """OCR reads 2022's fourth `Motivazione:` as `Motivazione`."""
+    _r, rows, _checks = _register(year)
+    row = next(x for x in rows if x["numero_iscrizione"] == "00807")
+    assert row["denominazione"] == "MANUFACTURING PROCESS SPECIFICATION S.r.l."
+    assert row["motivazione"].startswith("la Società non ha versato")

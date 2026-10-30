@@ -26,6 +26,7 @@ class RegisterPages:
     lists: str
     narrative: int | None
     note: str
+    order: tuple        # the PDF pages in reading order, or () for page order
 
     @property
     def printed_last(self):
@@ -60,5 +61,6 @@ def load(path=PATH):
                 rotated=_pages(r["rotated"]), layer=r["layer"], layout=r["layout"],
                 lists=r["lists"],
                 narrative=None if r["narrative"] == "-" else int(r["narrative"]),
-                note=r["note"])
+                note=r["note"],
+                order=() if r["order"] == "-" else tuple(int(p) for p in r["order"].split(",")))
         return out

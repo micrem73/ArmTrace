@@ -341,6 +341,8 @@ def checks(facts, figures, summary, spec):
 def _summary_check(label, raw, facts, figures, spec):
     rule = next(((m, expr) for rx, expr in spec.totals if (m := rx.search(label))), None)
     value, _ = extract.parse("amount", raw)
+    if rule and rule[1].split()[0] == "count" and (raw or "").isdigit():
+        value = int(raw)        # a printed count: 2018's `Società (09)`
     if rule is None or value is None:
         return (f"printed {label!r}", raw, None, "UNCHECKED")
     m, expr = rule
@@ -350,7 +352,7 @@ def _summary_check(label, raw, facts, figures, spec):
     if words[0] == "count":
         computed = sum(1 for r in facts if extract._cell(r, words[1])
                        or words[1] in r.get("implied", {}))
-        value = gra.parse_number(raw)
+        value = int(raw) if raw.isdigit() else gra.parse_number(raw)
     elif words[-2:] == ["over", "subtotal"]:
         # The printed subtotals added up: A1's grand EURO total is theirs,
         # each subtotal rounded, and the facts give the roundings' sum more.

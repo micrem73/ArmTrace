@@ -873,3 +873,35 @@ table's key, so a later edition printing the same layout reads the same:
 - **The grid years keep every printed column** (maintainer, 2026-10-27): verbale and its date,
   U.R.N.I. protocol and its date, and on cancellations sede legale, CAP, citta and the original
   enrolment date; empty in the years that do not print them.
+
+## 2026-10-30 — the register (RNI): the OCR reader and the list years 2016-2023
+
+- **tesseract psm 4 at 300 dpi** (`lib/ocr.py`, `tess4.1.1-ita-psm4-300dpi`). psm 6, the
+  plan's, read 2018 p729's 00771 as 00774 and ran words together; 400 dpi read 2021 p825's
+  faint `7.` but lost three other items. No one setting reads every page; the reader carries
+  what OCR misses (below). A sideways page: both turns tried, the surer one kept.
+- **2020 is read again by OCR** (`layer` ocrlayer): its text layer is an old OCR
+  (`PANZERAEVENTI SRL`, dates without their first digit).
+- **2021's scan binds the register in reverse** after the narrative page: the page map's
+  `order` column gives the reading order (823, 827, 826, 825, 824).
+- **What the reader takes as OCR or a noisy layer gives it**, every row read by OCR noted
+  `ocr: … least sure word N%`: headings with other quotes or run together
+  (`SOCIETA’CANCELLATE`); item numbers `l.`, `I.`, `Il.`, `19,`, `14 | .`; `Nr.` apart from
+  its number; label lines OCR cut into words; `Motivazione` without its colon; the label
+  `Data Cane.` (OCR's `Data Canc.`, 2020 and 2021, in `columns.tsv`). A list printed
+  `NESSUNA`/`NEGATIVO` has no rows. A digital signature's stamp is no line of the list.
+- **An item whose number OCR did not read** is still an item: its first line carries a
+  second register number. The row is noted `item number not read: taken as N`; the
+  heading's count still checks the list.
+- **2016-2019 print the count over the names** (`Società (36)`) and the cancellations in
+  columns, name beside reason: each block of lines (gap > 1 em) is one item, a value
+  placed by the column it stands in. What else stands under the number or date is kept as
+  a note, not dropped.
+- **Values stay as printed or read**, flagged where they do not parse: 2019 FAREM's date
+  `14/10/209` (so printed); 2018's cancellation dates, whose last digit the scan cuts
+  (`09/04/201:`), and two OCR could not read (`e`, `Ualazei`); 2020's `6/08/2020` (a
+  one-digit day, so printed: read as a date).
+- **2020's CANCELLATE heading says 16, the list prints 15 items** (the narrative also says
+  15): the count check FAILs, a disagreement in the print, for the maintainer.
+- **Off-page text is not read**: 2019 p813 carries an old `Società Sospese: 2016` and
+  `prot. RNI` outside the page box.
