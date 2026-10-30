@@ -288,3 +288,40 @@ def test_boxed_cancellations_read_whole(year, sources):
     # OCR reads the wrapped `1` as `I`: kept as read, noted.
     assert security["numero_iscrizione"] == "0042I"
     assert "numero_iscrizione: '0042I' is not five digits" in security["notes"]
+
+
+@pytest.mark.parametrize("year", ["2012"])
+def test_2012_reads_its_own_ocr_layer_against_the_scans_rules(year, sources):
+    """2012's grid is set in 7 pt type; tesseract garbles it (`00° 59`), the
+    volume's own OCR layer does not (`ocrlayer-kept`). Its words go in the cells
+    the image's rules draw; a wall that cuts words row after row is letters, not
+    a wall; a reason row the layer garbles (`mouvazram`) is still the reason; the
+    suspensions are printed empty; the cancellations go on under `Segue DATI`."""
+    r, rows, _checks = _register(year)
+    assert not r.issues
+    enrolled = [x for x in rows if x["data_iscrizione"] and not x["data_cancellazione"]]
+    gone = [x for x in rows if x["data_cancellazione"]]
+    assert (len(enrolled), len(gone)) == (37, 29)
+    cff = next(x for x in enrolled if x["denominazione"].startswith("C.F.F."))
+    assert (cff["denominazione"], cff["numero_iscrizione"], cff["data_iscrizione"]) == (
+        "C.F.F. SISTEMI S.R.L", "00559", "20/01/2012")
+    assert all(x["motivazione"] for x in gone)
+    assert all("own text layer" in " ".join(x["notes"]) for x in rows)
+
+
+@pytest.mark.parametrize("year", ["2011"])
+def test_2011s_scanned_grids_read(year, sources):
+    """2011: three ruled grids, scanned, read cell by cell. 35 enrolments, one
+    suspension, 26 cancellations (the narrative: 214 registered at 31.12.2011;
+    206 at 31.12.2010 + 35 - 26 = 215: for the cross-year checks)."""
+    import ExtractTables as E
+    from lib import extract
+    r, rows, _checks = _register(year)
+    assert not r.issues
+    assert E.event_years(year, r, extract.specs()["DIFESA/A5/2"])[0][3] == "PASS"
+    counts = (sum(1 for x in rows if x["data_iscrizione"] and not x["data_cancellazione"]
+                  and not x["data_sospensione"]),
+              sum(1 for x in rows if x["data_sospensione"]),
+              sum(1 for x in rows if x["data_cancellazione"]))
+    assert counts == (35, 1, 26)
+    assert rows[0]["numero_iscrizione"] == "00523" and rows[0]["denominazione"] == "LAER S.R.L."

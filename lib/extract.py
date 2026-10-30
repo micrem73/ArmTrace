@@ -1901,8 +1901,9 @@ LIST_HEADING_OLD = re.compile(r"^Societ\S*\s+(Iscritte|Sospese|Cancellate)\s*[:\
 LIST_COUNT = re.compile(r"^[({]\s*(\d+)\s*[)}]$")      # `(13)`, OCR's `{09)`
 FOLIO = re.compile(r"^[\dlI]{1,3}$")       # the page's own number, under the list
 BLOCK_GAP_EM = 1.0      # 2016-2019 cancellations: lines of an item <= 0.4 em apart, items >= 1.8
-# The grid years (1991-2015): `DATI SULLE ISCRIZIONI AL REGISTRO PER L'ANNO 2015`.
-GRID_HEADING = re.compile(r"^DATI\s+SULLE\s+(ISCRIZIONI|SOSPENSIONI|CANCELLAZIONI)\b.*?"
+# The grid years (1991-2015): `DATI SULLE ISCRIZIONI AL REGISTRO PER L'ANNO 2015`, or
+# `Segue DATI SULLE ...` over a page it goes on to (2012 p69).
+GRID_HEADING = re.compile(r"^(?:Segue\s+)?DATI\s+SULLE\s+(ISCRIZIONI|SOSPENSIONI|CANCELLAZIONI)\b.*?"
                           r"((?:19|20)\d\d)\W*$", re.IGNORECASE)
 GRID_EVENT = {"ISCRIZIONI": "ISCRITTE", "SOSPENSIONI": "SOSPESE", "CANCELLAZIONI": "CANCELLATE"}
 EMPTY_LIST = re.compile(r"^(?:NESSUNA|NEGATIVO)\.?$|^NON\s+SONO\s+STATE\s+EFFETTUATE\b",
@@ -1973,6 +1974,8 @@ def _unspecked(text):
     """A cell's text without what is left of a faded rule beside a figure:
     2013 p579's walls survive as `I`, `Ì`, `Î` (`I 14/05/2013`, `38165 I`)."""
     rest = re.sub(r"^[IÌÍÎl|]\s+|\s+[IÌÍÎl|]$", "", text)
+    # 2012's own OCR layer reads them `1`, `>`, `!` (`1 00559`, `>20/01/2012`).
+    rest = re.sub(r"^(?:[1!]\s+|>)(?=\d)", "", rest)
     return rest if re.fullmatch(r"[\d/.\-]+", rest) else text
 
 
@@ -2057,8 +2060,14 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
                     groups[-1].append((u, i))
                 else:
                     groups.append([(u, i)])
-            common = [sum(u for u, _i in g) / len(g) for g in groups
-                      if len({i for _u, i in g}) >= len(data) / 3]
+            # A wall goes between words, never through them: letters the scan stacked
+            # into a column of strokes (2012 p67, in the names) cut words row after row.
+            def cuts(u):
+                return sum(1 for w in words if w.u0 + 1 < u < w.u1 - 1
+                           and any(inside(w, pairs[i][0], pairs[i][1]) for i in data))
+            common = [u for u in (sum(u for u, _i in g) / len(g) for g in groups
+                                  if len({i for _u, i in g}) >= len(data) / 3)
+                      if cuts(u) < 2]
             edges = [left] + sorted({*walls, *(u for u in common
                                                if all(abs(u - x) > 4 for x in walls))}) + [right]
             columns = []
@@ -2098,16 +2107,26 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
         # from its line down, the reason.
         lines = geo.row_bands(list(here))
         at = next((i for i, band in enumerate(lines)
-                   if i and re.match(r"Motivazion[ei]\b", band[0].text)), None)
+                   if i and re.match(r"Motivazion[ei]\b", band[0].text, re.IGNORECASE)), None)
         reason = None
         if at is not None:
             reason = " ".join(text_of(w for band in lines[at:] for w in band).split())
             here = [w for band in lines[:at] for w in band]
         numbered = any(re.fullmatch(r"\d{5}", w.text) for w in here)
+        dated = any(re.search(r"\d{1,2}/\d{2}/\d{2}", w.text) for w in here)
         text = " ".join(text_of(here).split())
-        if rows and re.match(r"Motivazion[ei]\s*:?", text):
-            # The reason, across the table, whatever walls reach into it (2014 p652).
-            rows[-1]["reason"] = re.sub(r"^Motivazion[ei]\s*:?\s*", "", text)
+        if rows and (re.match(r"Motivazion[ei]\s*:?", text, re.IGNORECASE)
+                     or (text and not numbered and not dated and rows[-1]["reason"] is not None)):
+            # The reason, across the table, whatever walls reach into it (2014 p652);
+            # or its next line, which no number or date of a row of its own begins.
+            reason = re.sub(r"^Motivazion[ei]\s*:?\s*", "", text, flags=re.IGNORECASE)
+            rows[-1]["reason"] = " ".join(filter(None, (rows[-1]["reason"], reason)))
+            continue
+        if rows and text and not numbered and not dated and rows[-1]["cells"].get(
+                "data_cancellazione"):
+            # A cancellation's reason the scan's own OCR garbled (2012 p68: `mouvazram`,
+            # `v i u n v a z i o n i`): the row under it, with no number nor date.
+            rows[-1]["reason"] = text
             continue
         if not walls and not numbered:      # one cell across the table
             if EMPTY_LIST.match(text):
@@ -2122,7 +2141,7 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
                                                   key in tight).split()))
                  for key, u0, u1, _label in columns}
         stray = cells.pop(None, "")
-        if stray and not re.fullmatch(r"[IÌÍÎil|1\s]*", stray):
+        if len(re.sub(r"[\W_]", "", stray)) >= 2:     # more than a speck (`j`, `|`)
             issues.append((sp.pdf_page, "grid", f"{stray!r} under no label"))
         bare = {re.sub(r"[\W_]", "", lab): k for lab, k in label_of.items()}
         if sum(1 for key, _u0, _u1, _label in columns
@@ -2134,7 +2153,8 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
         conf = [c for c in map(ocr.confidence, here) if c is not None]
         rows.append({"cells": cells, "conf": conf, "reason": None})
         if reason:
-            rows[-1]["reason"] = re.sub(r"^Motivazion[ei]\s*:?\s*", "", reason)
+            rows[-1]["reason"] = re.sub(r"^Motivazion[ei]\s*:?\s*", "", reason,
+                                        flags=re.IGNORECASE)
     return columns, rows, issues
 
 
