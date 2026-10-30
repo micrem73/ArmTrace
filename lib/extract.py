@@ -41,7 +41,7 @@ from pathlib import Path
 
 from lib import geometry as geo
 from lib import grammar as gra
-from lib import glyphs, source
+from lib import glyphs, ocr, source
 
 DATA = Path(__file__).parent / "data"
 TOL = geo.RULE_TOL
@@ -1924,9 +1924,13 @@ def read_list(year, key, spec, pages):
                "printed_page": sp.printed_page, "source_file": sp.doc.name.split("/")[-1]}
         col = by_event[event]
         cells[col.key] = date or ""
+        row["notes"] = []
         if not date:
             row["implied"] = {col.key: str(year)}
-            row["notes"] = [f"{col.key}: no date printed, the edition's year"]
+            row["notes"].append(f"{col.key}: no date printed, the edition's year")
+        if item["conf"]:        # a scan (lib/ocr.py): every value as tesseract read it
+            row["notes"].append(f"ocr: read by {ocr.SETTINGS}, least sure word "
+                                f"{min(item['conf']):.0f}%")
         row["cells"] = [cells.get(c.key, "") for c in order]
         result.rows.append(row)
 
@@ -1968,13 +1972,14 @@ def read_list(year, key, spec, pages):
                 number = n
                 row_ord += 1
                 item = {"name": [], "reason": [], "code": None, "date": None, "sp": sp,
-                        "row_ord": row_ord, "in_reason": False}
+                        "row_ord": row_ord, "in_reason": False, "conf": []}
                 band = band[1:]
                 if first.group(2).strip():          # `13. VULKAN ...` as one word
                     item["name"].append(first.group(2).strip())
             if item is None:
                 result.issues.append((sp.pdf_page, "list", f"line {text[:60]!r} outside an item"))
                 continue
+            item["conf"] += [c for c in map(ocr.confidence, band) if c is not None]
             prev = None
             for w in band:
                 t = " ".join(w.text.split())

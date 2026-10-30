@@ -150,7 +150,11 @@ def open_volume(year, name, sha256, root="."):
 
 
 def table_pages(year, key, root="."):
-    """Every source page of table `key`, as SourcePage, in reading order."""
+    """Every source page of table `key`, as SourcePage (OcrPage where the
+    register is a scan), in reading order."""
+    from lib import ocr, register_pages
+    scanned = ocr.reads(year, key)
+    sideways = register_pages.load()[int(year)].rotated if scanned else ()
     pages = []
     for seg in segments(year, key, root):
         doc = open_volume(year, seg["source_file"], seg["sha256"], root)
@@ -161,5 +165,8 @@ def table_pages(year, key, root="."):
             if seg["cut"] and str(p) not in clips:
                 raise ValueError(f"{key}: cut page {p} has no clip; "
                                  f"rebuild the table index")
-            pages.append(SourcePage(doc, p, printed, clips.get(str(p))))
+            if scanned:         # the register's scans, read by OCR (lib/ocr.py)
+                pages.append(ocr.OcrPage(doc, year, p, printed, p in sideways, root))
+            else:
+                pages.append(SourcePage(doc, p, printed, clips.get(str(p))))
     return pages

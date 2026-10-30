@@ -46,3 +46,28 @@ def test_a_year_with_its_own_index_is_left_alone(tmp_path):
     index.write_bytes(b"")
     with pytest.raises(SystemExit, match="already has a table index"):
         build(2025, root=tmp_path)
+
+
+@pytest.mark.parametrize("year", ["2018"])
+def test_a_scanned_register_page_reads_through_geometry(year, sources):
+    """2018 prints the register as a scan under a noisy text layer (`5` for
+    item 6, `0076` for 00769). The OCR page stands in for a SourcePage: its
+    words come out in printed lines, each carrying tesseract's confidence."""
+    import pymupdf
+
+    from lib import extract, ocr
+    from lib import geometry as geo
+    assert ocr.reads(2018, "DIFESA/A5/2") and not ocr.reads(2025, "DIFESA/A5/2")
+    assert not ocr.reads(2018, "DIFESA/4")
+    doc = pymupdf.open(f"In/{year}/2018_LXVII_n2_VOLUME_I.pdf")
+    page = ocr.OcrPage(doc, 2018, 729, 725)
+    _frame, words = extract.page_words(page)
+    lines = [" ".join(w.text for w in sorted(b, key=lambda w: w.u0))
+             for b in geo.row_bands(words)]
+    assert "1 AVIOSPACE SRL 00750" in lines
+    assert "20 ROSA SPA 00769" in lines
+    assert "LIMITATA 00771" in lines        # item 22's second line, as printed
+    # `&` read as `&Z`: kept as read, for the importer to see against the image.
+    assert "9 TECNOLOGIE INDUSTRIALI &ZAERONAUTICHE SRL 00758" in lines
+    assert "25 POGGIPOLINI SRL 00774" in lines
+    assert all(0 <= ocr.confidence(w) <= 100 for w in words)
