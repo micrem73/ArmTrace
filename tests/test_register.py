@@ -325,3 +325,39 @@ def test_2011s_scanned_grids_read(year, sources):
               sum(1 for x in rows if x["data_cancellazione"]))
     assert counts == (35, 1, 26)
     assert rows[0]["numero_iscrizione"] == "00523" and rows[0]["denominazione"] == "LAER S.R.L."
+
+
+@pytest.mark.parametrize("year, counts", [
+    ("2007", (26, 1, 17)),      # the narrative: 26 / 17, one suspended
+    ("2008", (11, 0, 7)),       # 11 / 7
+    ("2009", (15, 1, 11)),      # 15 / 1 / 11
+    ("2010", (32, 9, 29)),      # the narrative says 30 cancellations: 29 read (open)
+])
+def test_the_2007_2010_grids_read(year, sources, counts):
+    """2007-2009 head their grids `Dati su iscrizione : Anno 2008` / `Dati su
+    iscrizioni periodo 2009`, name the company `Operatore`, print a total under a
+    grid (`Tot. Sospensioni 1`, `Totale Sospensioni. 0`) and dates in words (`27
+    settembre 1994`); 2008's rows have no rules of their own (a line with a number
+    or a date begins a row, `motivazioni:` its reason); 2010 prints name and reason
+    in one cell (split at the first ` - `, flagged: maintainer, 2026-10-30)."""
+    r, rows, checks = _register(year)
+    assert not r.issues
+    got = (sum(1 for x in rows if x["data_iscrizione"] and not x["data_cancellazione"]
+               and not x["data_sospensione"]),
+           sum(1 for x in rows if x["data_sospensione"]),
+           sum(1 for x in rows if x["data_cancellazione"]))
+    assert got == counts
+    assert set(checks) <= {"PASS"}
+    if year == "2008":
+        abb = next(x for x in rows if x["numero_iscrizione"] == "00409")
+        assert (abb["denominazione"], abb["motivazione"]) == (
+            "ABB PROCESS SOLUTIONS & SERVICES S.p.A.", "RICHIESTA DALLA SOCIETA’")
+    if year == "2009":
+        essegi = next(x for x in rows if x["data_sospensione"])
+        assert (essegi["denominazione"], essegi["natura_imprenditore"]) == (
+            "ESSEGI S.R.L.", "Produzione")
+    if year == "2010":
+        alenia = next(x for x in rows if x["numero_iscrizione"] == "00288")
+        assert alenia["denominazione"] == "ALENIA AERONAVALI S.P.A."
+        assert alenia["motivazione"].startswith("Incorporazione per")
+        assert any("split at its first ' - '" in n for n in alenia["notes"])

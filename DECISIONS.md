@@ -945,3 +945,19 @@ table's key, so a later edition printing the same layout reads the same:
   years `U.R.N.I.`), `verbale`, `data_verbale`, `sede_legale`, `cap`, `citta`. A
   cancellation's printed enrolment date fills `data_iscrizione` (the view takes the
   latest per number, so it adds no enrolment).
+- **2009 prints `Sede Attività` and `Natura Imprenditore`**: new columns `sede_attivita`,
+  `natura_imprenditore` (maintainer, 2026-10-30). `Operatore` is the company.
+- **2010 prints name and reason in one cell** (`SOCIETÀ E MOTIVO DELLA CANCELLAZIONE`):
+  split, flagged (maintainer, 2026-10-30), at the first ` - ` (a name's own dashes have no
+  space before them: `S.I.R.M.I.- SOC.`; a reason may hold ` - ` of its own).
+- **2012 keeps its own OCR layer** (`ocrlayer-kept`): its 7 pt grid is a 350 dpi scan
+  tesseract garbles (`00° 59`), its layer does not; the rules are still found in the image.
+  A wall that cuts words row after row there is letters stacked by the scan, not a wall.
+- **2008's rows have no rules**: under a ruled header, a line with a register number or a
+  date begins a row, a line with neither goes on with it, `motivazioni:` begins its reason.
+- **A total printed under a grid** (`Tot. Sospensioni 1`, `Totale Sospensioni. 0`) is the
+  list's count, checked as the 2016-2025 headings' are. Dates written out (`27 settembre
+  1994`) are read as dates. A dash at a cell's edge is the wall's; one inside is printed.
+- **Counts against the narrative**: 2007 26/1/17, 2008 11/0/7, 2009 15/1/11 agree; 2010
+  reads 29 cancellations where the narrative says 30 (open); 2011 35/1/26 against 214 at
+  31.12 (206 + 35 - 26 = 215: for the cross-year checks).

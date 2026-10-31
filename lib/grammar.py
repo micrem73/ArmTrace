@@ -198,6 +198,10 @@ def parse_number(text):
     return value
 
 
+MONTHS = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
+          "settembre", "ottobre", "novembre", "dicembre"]
+
+
 def parse_date(text):
     """`03/03/2025` -> `2025-03-03`, or None.
 
@@ -208,7 +212,12 @@ def parse_date(text):
     """
     m = DATE_RE.match(str(text).strip())
     if not m:
-        return None
+        # Written out (Difesa A5/2, 2007-2009: `27 settembre 1994`).
+        w = re.fullmatch(r"(\d{1,2})\s+([a-zà]+)\s+((?:19|20)\d\d)", str(text).strip().lower())
+        if not w or w.group(2) not in MONTHS:
+            return None
+        day, month, year = int(w.group(1)), MONTHS.index(w.group(2)) + 1, int(w.group(3))
+        return f"{year:04d}-{month:02d}-{day:02d}" if 1 <= day <= 31 else None
     day, month, year = (int(g) for g in m.groups())
     if year < 100:
         year += 2000 if year < 70 else 1900

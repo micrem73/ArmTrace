@@ -1902,10 +1902,13 @@ LIST_COUNT = re.compile(r"^[({]\s*(\d+)\s*[)}]$")      # `(13)`, OCR's `{09)`
 FOLIO = re.compile(r"^[\dlI]{1,3}$")       # the page's own number, under the list
 BLOCK_GAP_EM = 1.0      # 2016-2019 cancellations: lines of an item <= 0.4 em apart, items >= 1.8
 # The grid years (1991-2015): `DATI SULLE ISCRIZIONI AL REGISTRO PER L'ANNO 2015`, or
-# `Segue DATI SULLE ...` over a page it goes on to (2012 p69).
-GRID_HEADING = re.compile(r"^(?:Segue\s+)?DATI\s+SULLE\s+(ISCRIZIONI|SOSPENSIONI|CANCELLAZIONI)\b.*?"
+# `Segue DATI SULLE ...` over a page it goes on to (2012 p69); `Dati su iscrizioni
+# periodo 2009`, `Dati su iscrizione : Anno 2008`.
+GRID_HEADING = re.compile(r"^(?:Segue\s+)?DATI\s+SU(?:LLE)?\s+(ISCRIZION|SOSPENSION|CANCELLAZION)[EI]\b.*?"
                           r"((?:19|20)\d\d)\W*$", re.IGNORECASE)
-GRID_EVENT = {"ISCRIZIONI": "ISCRITTE", "SOSPENSIONI": "SOSPESE", "CANCELLAZIONI": "CANCELLATE"}
+GRID_TOTAL = re.compile(r"^Tot(?:ale)?\.?\s*(Iscrizion|Sospension|Cancellazion)[ei]\.?\s*:?\s*(\d+)\W*$",
+                        re.IGNORECASE)
+GRID_EVENT = {"ISCRIZION": "ISCRITTE", "SOSPENSION": "SOSPESE", "CANCELLAZION": "CANCELLATE"}
 EMPTY_LIST = re.compile(r"^(?:NESSUNA|NEGATIVO)\.?$|^NON\s+SONO\s+STATE\s+EFFETTUATE\b",
                         re.IGNORECASE)
 # What every list page repeats over the list (a continuation page starts under it).
@@ -1973,6 +1976,9 @@ def _joined(band):
 def _unspecked(text):
     """A cell's text without what is left of a faded rule beside a figure:
     2013 p579's walls survive as `I`, `Ì`, `Î` (`I 14/05/2013`, `38165 I`)."""
+    # A dash at a cell's edge is the wall's, not the value's (`- 00580`, `-13/03/2012`,
+    # `M.P.G. INSTRUMENT S.R.L. -`); one inside is printed (`U.T.R.I. - UNMANNED`).
+    text = re.sub(r"^[-–]\s*(?=\d)|^[-–]\s+|\s+[-–]$", "", text)
     rest = re.sub(r"^[IÌÍÎl|]\s+|\s+[IÌÍÎl|]$", "", text)
     # 2012's own OCR layer reads them `1`, `>`, `!` (`1 00559`, `>20/01/2012`).
     rest = re.sub(r"^(?:[1!]\s+|>)(?=\d)", "", rest)
@@ -2021,9 +2027,9 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
         if header_end is not None and v1 <= header_end:
             continue            # within the header read already
         # A word of punctuation alone is a speck of the scan (`. SOCIETÀ`, 2015 p1018),
-        # but for `&` (`CANEPA & CAMPI`).
+        # but for `&` (`CANEPA & CAMPI`) and a dash (2010: name ` - ` reason).
         here = sorted((w for w in words if inside(w, v0, v1)
-                       and not re.fullmatch(r"[^\w&]+", w.text)),
+                       and not re.fullmatch(r"[^\w&\-–]+", w.text)),
                       key=lambda w: (w.v0, w.u0))
         mid = (v0 + v1) / 2
         walls = sorted({round(u) for u, a, b in segs["walls"]
@@ -2032,7 +2038,7 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
             # A table printed empty under its header (2012 p68: `NON SONO STATE
             # EFFETTUATE SOSPENSIONI ...`) needs no columns: none of its walls may show.
             body = " ".join(text_of(w for w in words if v1 < w.vmid <= levels[-1]
-                                    and not re.fullmatch(r"[^\w&]+", w.text)).split())
+                                    and not re.fullmatch(r"[^\w&\-–]+", w.text)).split())
             if body and EMPTY_LIST.match(body):
                 return None, [], []
             # The header: down to the first row holding a register number, however
@@ -2047,7 +2053,7 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
             if first:
                 header_end = pairs[first][0]
                 here = [w for w in words if inside(w, v0, header_end)
-                        and not re.fullmatch(r"[^\w&]+", w.text)]
+                        and not re.fullmatch(r"[^\w&\-–]+", w.text)]
                 walls = sorted({round(u) for u, a, b in segs["walls"] for h0, h1 in pairs[:first]
                                 if a <= (h0 + h1) / 2 <= b and left + 3 < u < right - 3})
             data = numbered or range(len(pairs))
@@ -2151,10 +2157,54 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
                 and all(re.fullmatch(r"//|/|[Il]{1,2}", v) for v in cells.values() if v)):
             continue        # `//` in every cell, nothing to list (OCR: `Il`, 2015 p1019)
         conf = [c for c in map(ocr.confidence, here) if c is not None]
-        rows.append({"cells": cells, "conf": conf, "reason": None})
+        rows.append({"cells": cells, "conf": conf, "reason": None, "split": False})
+        if any(k == "denominazione" and "MOTIVO" in label.upper()
+               for k, _u0, _u1, label in columns):
+            # 2010 prints name and reason in one cell, the name bold (OCR cannot
+            # tell): split at the first ` - ` (a name's own dashes have no space
+            # before them: `S.I.R.M.I.- SOC.`), flagged (maintainer, 2026-10-30).
+            name, dash, why = cells["denominazione"].partition(" - ")
+            if dash:
+                cells["denominazione"] = name.strip()
+                rows[-1]["reason"], rows[-1]["split"] = why.strip(), True
         if reason:
             rows[-1]["reason"] = re.sub(r"^Motivazion[ei]\s*:?\s*", "", reason,
                                         flags=re.IGNORECASE)
+    if columns and not rows:
+        # A ruled header over unruled rows (2008): each line with a register
+        # number or a date begins a row, a line with neither goes on with it
+        # (`HAMILTON SUNDSTRAND` / `ITALIA S.r.l.`), down to a total, the page's
+        # furniture or the region's end.
+        below = [w for w in words if levels[-1] < w.vmid <= bottom
+                 and not re.fullmatch(r"[^\w&\-–]+", w.text)]
+        lines = []      # [cell words, reason words] per row
+        for band in geo.row_bands(below):
+            text = " ".join(w.text for w in band)
+            if (GRID_TOTAL.match(text) or RUNNING_HEAD.search(text) or STAMP.search(text)
+                    or FOLIO.match(text) or GRID_HEADING.match(text)):
+                break
+            # `motivazioni: ...` under a row (2008's cancellations): from that word's
+            # line down, the reason; a name's last line may share the band with it.
+            m = next((w for w in band if re.match(r"motivazion[ei]", w.text, re.IGNORECASE)), None)
+            why = [w for w in band if m and w.v0 >= m.v0 - 1]
+            rest = [w for w in band if w not in why]
+            if any(re.fullmatch(r"\d{5}|\d{1,2}/\d{2}/\d{4}", w.text) for w in rest) or not lines:
+                lines.append([rest, why])
+            elif lines[-1][1] and not m:
+                lines[-1][1] += band
+            else:
+                lines[-1][0] += rest
+                lines[-1][1] += why
+        for here, why in lines:
+            cells = {key: _unspecked(" ".join(text_of((w for w in here if u0 <= w.umid <= u1),
+                                                      key in tight).split()))
+                     for key, u0, u1, _label in columns}
+            cells.pop(None, "")
+            conf = [c for c in map(ocr.confidence, here + why) if c is not None]
+            reason = " ".join(text_of(why).split()) or None
+            if reason:
+                reason = re.sub(r"^motivazion[ei]\s*:?\s*", "", reason, flags=re.IGNORECASE)
+            rows.append({"cells": cells, "conf": conf, "reason": reason, "split": False})
     return columns, rows, issues
 
 
@@ -2271,6 +2321,9 @@ def read_list(year, key, spec, pages):
         cells = dict(got["cells"])
         if got["reason"]:
             cells["motivazione"] = got["reason"]
+        # A dash at a cell's edge is the wall's (`... FABBRICAZIONE -`), whichever way
+        # the cell was read.
+        cells = {k: re.sub(r"^[-–]\s+|\s+[-–]$", "", v) for k, v in cells.items()}
         row = {"kind": "data", "group": None, "carried": [], "order": order,
                "year_of": {}, "row_ord": row_ord, "pdf_page": sp.pdf_page,
                "printed_page": sp.printed_page, "source_file": sp.doc.name.split("/")[-1],
@@ -2294,6 +2347,9 @@ def read_list(year, key, spec, pages):
                 row["notes"].append(f"numero_iscrizione: {number} out of sequence "
                                     f"(after {last_enrolled[0]})")
             last_enrolled[0] = number
+        if got.get("split"):
+            row["notes"].append("denominazione, motivazione: one printed cell, split at its "
+                                "first ' - '")
         if got["conf"]:
             row["notes"].append(ocr.note(got["conf"], ocr.GRID_SETTINGS))
         row["cells"] = [cells.get(c.key, "") for c in order]
@@ -2352,6 +2408,12 @@ def read_list(year, key, spec, pages):
                                        if b and max(w.v1 for w in b) <= top]
                 grid, got, issues = _grid_rows(sp, frame, words, top, bottom, grid, label_of,
                                                tight)
+                for b in page_bands:        # `Tot. Sospensioni 1` under the grid (2009)
+                    tot = GRID_TOTAL.match(" ".join(w.text for w in b)) if b else None
+                    if tot and top < min(w.v0 for w in b) < bottom:
+                        result.totals.append((sp.pdf_page, sp.printed_page,
+                                              f"SOCIETA' {GRID_EVENT[tot.group(1).upper()]} "
+                                              f"{list_year}", tot.group(2)))
                 result.issues += issues
                 for got_row in got:
                     row_ord += 1
