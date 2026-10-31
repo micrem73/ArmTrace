@@ -1910,6 +1910,21 @@ GRID_HEADING = re.compile(r"^(?:Segue\s+)?DATI\s+SU(?:LLE)?\s+(ISCRIZION|SOSPENS
 # on a dotted line): the heading's kind alone; the year is the edition's.
 GRID_HEADING_LOOSE = re.compile(r"^Dati\b.{0,14}?\b(iscrizion|sospension|cancellazion)[ei]\b",
                                 re.IGNORECASE)
+def _misread_heading(text):
+    """`Dati su ISCIIZIONE ...` (2005's OCR): `Dati`, then within three words one
+    nearly a kind (0.75 alike on letters), as a `GRID_HEADING_LOOSE` match would be."""
+    words = text.split()
+    if not words or words[0].lower() != "dati":
+        return None
+    for w in words[1:4]:
+        bare = re.sub(r"[\W\d_]", "", w.lower())
+        for kind in ("iscrizione", "sospensione", "cancellazione",
+                     "iscrizioni", "sospensioni", "cancellazioni"):
+            if difflib.SequenceMatcher(None, bare, kind).ratio() >= 0.75:
+                return GRID_HEADING_LOOSE.match(f"Dati {kind}")
+    return None
+
+
 GRID_TOTAL = re.compile(r"^Tot(?:ale)?\.?\s*(Iscrizion|Sospension|Cancellazion)[ei]\.?\s*:?\s*(\d+)\W*$",
                         re.IGNORECASE)
 GRID_EVENT = {"ISCRIZION": "ISCRITTE", "SOSPENSION": "SOSPESE", "CANCELLAZION": "CANCELLATE"}
@@ -2057,30 +2072,39 @@ def _loose_rows(words, top, bottom, columns, tight):
     (2008's cancellations; a name's last line may share the band with it); down
     to a total, the page's furniture or the region's end. A word outside every
     column (the margin's sideways running head, 2006) is no cell's."""
-    lines = []      # [cell words, reason words] per row
+    lines = []      # [cell words, reason words, columns holding a figure] per row
     left, right = min(c[1] for c in columns), max(c[2] for c in columns)
+
+    def column_of(w):
+        return next((key for key, u0, u1, _label in columns if u0 <= w.umid <= u1), None)
+
     below = [w for w in words if top < w.vmid <= bottom and left <= w.umid <= right]
     for band in geo.row_bands(below):
         text = " ".join(w.text for w in band)
         if GRID_TOTAL.match(text) or GRID_HEADING.match(text) or GRID_HEADING_LOOSE.match(text):
             break
         if (RUNNING_HEAD.search(text) or STAMP.search(text) or FOLIO.match(text)
-                or len(re.sub(r"[\W_]", "", text)) < 2):
-            continue        # the page's furniture, a margin speck (2006: `5`, `S`)
+                or len(re.sub(r"[\W_]", "", text)) < (3 if not lines else 2)):
+            continue        # the page's furniture, a margin speck (2006: `5`, `S`; 2004: `MM`
+                            # over the first row)
         m = next((w for w in band if re.match(r"motivazion[ei]", w.text, re.IGNORECASE)), None)
         # Its line and below: a word's middle under the label's top (the tops of one
         # line's words differ with their letters).
         why = [w for w in band if m and w.vmid >= m.v0]
         rest = [w for w in band if w not in why]
-        if any(re.fullmatch(r"\d{5},?|\d{1,2}/\d{2}/\d{4}", w.text) for w in rest) or not lines:
-            lines.append([rest, why])
+        # A figure begins a row where the row above has one in its column already
+        # (2004: OCR sets a protocol's date on a line of its own; it fills its row).
+        figs = {column_of(w) for w in rest if re.fullmatch(r"\d{5},?|\d{1,2}/\d{2}/\d{4}", w.text)}
+        if not lines or figs & lines[-1][2]:
+            lines.append([rest, why, set(figs)])
         elif lines[-1][1] and not m:
             lines[-1][1] += band
         else:
             lines[-1][0] += rest
             lines[-1][1] += why
+            lines[-1][2] |= figs
     rows = []
-    for here, why in lines:
+    for here, why, _figs in lines:
         cells = {}
         for key, u0, u1, _label in columns:
             ws = [w for w in here if u0 <= w.umid <= u1]
@@ -2091,6 +2115,8 @@ def _loose_rows(words, top, bottom, columns, tight):
         reason = " ".join(" ".join(w.text for w in b) for b in geo.row_bands(why)).strip() or None
         if reason:
             reason = re.sub(r"^motivazion[ei]\s*:?\s*", "", reason, flags=re.IGNORECASE)
+        if not reason and not any(cells.values()):
+            continue        # nothing in any cell (2005's empty suspensions)
         rows.append({"cells": cells, "conf": conf, "reason": reason, "split": False})
     return rows
 
@@ -2477,7 +2503,8 @@ def read_list(year, key, spec, pages):
         page_bands = [_joined(sorted(b, key=lambda w: w.u0)) for b in geo.row_bands(words)]
         heads = [(b, m) for b in page_bands
                  if (m := GRID_HEADING.match(" ".join(w.text for w in b))
-                     or GRID_HEADING_LOOSE.match(" ".join(w.text for w in b)))]
+                     or GRID_HEADING_LOOSE.match(" ".join(w.text for w in b))
+                     or _misread_heading(" ".join(w.text for w in b)))]
         if heads or grid is not None:
             # 1991-2015: ruled grids, one per heading, read by their rules.
             close()
@@ -2505,6 +2532,9 @@ def read_list(year, key, spec, pages):
                                               f"{list_year}", tot.group(2)))
                 result.issues += issues
                 for got_row in got:
+                    if len(re.sub(r"[\W_]", "", "".join(got_row["cells"].values())
+                                  + (got_row["reason"] or ""))) < 3:
+                        continue    # specks, not a company (2004's empty suspensions: `MM`)
                     row_ord += 1
                     emit_grid(got_row, sp, row_ord)
                 if grid:

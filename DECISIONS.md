@@ -969,3 +969,10 @@ table's key, so a later edition printing the same layout reads the same:
   year the edition's (the event check still holds every date to it). Labels `N.Iscr.`,
   `Data Verb`, `Protocollo URNI`, `Data URNI`. 2006: 21 / 1 / 9 (the narrative's 11
   cancellations count two of 2005).
+- **2005 and 2004 read as 2006** (sideways, unruled): 2005 13 / 2, 2004 13 / 9 (the
+  narrative's 11 count two of 2003), every event date in its year. A heading OCR misreads
+  (`Dati SU ISCIIZIONE`) is still one when its kind is nearly there. In rows with no rules,
+  a figure begins a row only where the row above already has one in its column (2004: OCR
+  sets a protocol's date on a line of its own). A row of specks (`MM`) is no company.
+- **A page marked sideways may carry its own turn** (2001-2003: /Rotate 90, upright as
+  rendered): not turning it is tried too, the reading tesseract is surest of kept.

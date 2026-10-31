@@ -244,7 +244,9 @@ def read(doc, year, pdf_page, sideways, root=".", grid=False, layer=False):
     if layer and sideways:
         raise ValueError(f"p{pdf_page}: a page printed sideways keeps no own layer here")
     tries = []
-    for rotation in ((90, 270) if sideways else (0,)):
+    # A page marked sideways may carry its own turn already (2001-2003: /Rotate 90,
+    # upright as rendered): not turning it is tried too.
+    for rotation in ((90, 270, 0) if sideways else (0,)):
         gray = _render(doc[pdf_page - 1], rotation)
         found = rules(gray) if grid else {"h": [], "v": []}
         if layer:

@@ -332,6 +332,8 @@ def test_2011s_scanned_grids_read(year, sources):
     ("2008", (11, 0, 7)),       # 11 / 7
     ("2009", (15, 1, 11)),      # 15 / 1 / 11
     ("2010", (32, 9, 29)),      # the narrative says 30 cancellations: 29 read (open)
+    ("2005", (13, 0, 2)),       # 13 / 2, unruled and sideways as 2006
+    ("2004", (13, 0, 9)),       # 13 / 11 (2 of 2003)
 ])
 def test_the_2007_2010_grids_read(year, sources, counts):
     """2007-2009 head their grids `Dati su iscrizione : Anno 2008` / `Dati su
