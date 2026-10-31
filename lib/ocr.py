@@ -84,8 +84,12 @@ def _tesseract(gray, psm):
         pymupdf.Pixmap(pymupdf.csGRAY, w, h, gray.tobytes(), False).save(png)
         out = subprocess.run(["tesseract", str(png), "-", "-l", "ita", "--psm", str(psm),
                               "tsv"], capture_output=True, text=True, check=True).stdout
-    confs = [w["conf"] for w in _words(out)]
-    return out, (statistics.mean(confs) if confs else 0.0)
+    words = _words(out)
+    confs = [w["conf"] for w in words]
+    # Its sure words, then its mean confidence: on a sparse page (2002 p143, an empty
+    # grid) a turn reading noise was, on average, surer than the right one.
+    sure = sum(1 for w in words if w["conf"] >= 80 and len(w["text"]) >= 3)
+    return out, (sure, statistics.mean(confs) if confs else 0.0)
 
 
 def _render(page, rotation):
@@ -254,6 +258,7 @@ def read(doc, year, pdf_page, sideways, root=".", grid=False, layer=False):
             break
         out, conf = _tesseract(_unruled(gray, found) if grid else gray,
                                GRID_PSM if grid else PSM)
+        conf = conf if sideways else 0      # how sure: only to choose a turn
         tries.append((conf, -rotation, rotation, gray, found, out))  # a tie: the first turn
     *_, rotation, gray, found, out = max(tries, key=lambda t: t[:2])
     if grid and not layer:

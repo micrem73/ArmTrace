@@ -976,3 +976,13 @@ table's key, so a later edition printing the same layout reads the same:
   sets a protocol's date on a line of its own). A row of specks (`MM`) is no company.
 - **A page marked sideways may carry its own turn** (2001-2003: /Rotate 90, upright as
   rendered): not turning it is tried too, the reading tesseract is surest of kept.
+- **2003-2001 read as 2004-2006** (counts against the narrative: 2003 17 / 7, 2002 17 / 11,
+  2001 19 / 11; 2001's list skips 00340, the narrative counts 20: for the cross-year
+  checks). A sideways page's turn is chosen by its sure words (confidence 80 or more, three
+  letters or more), then its mean: on a sparse page (2002 p143, an empty grid) the noise of
+  a wrong turn was surer on average. Labels are matched as a whole line (the most columns,
+  each once; the most words; the closest), letters I, J, l and 1 alike; a header cell still
+  unread is one of the columns no other names; a header over no figure is an empty table
+  (2001 p132's NEGATIVO, which OCR lost). A table goes on under its own heading repeated
+  (2002 p142), its labels again skipped, tilted as they may be; a typed list's word is
+  placed by its left edge (values start under their labels and may run past the next).

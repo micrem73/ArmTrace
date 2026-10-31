@@ -36,6 +36,7 @@ with groups), `group`, `data`.
 """
 import csv
 import difflib
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,7 +69,8 @@ STAMP = re.compile(r"Pag(?:ina|\.)?\s*\d+\s*di\s*\d+|CENTRO\s+INFORMATICO|^TAB\.
 # not rotate it (Difesa 4: `Camera dei Deputati … – 1292 – Senato della Repubblica`).
 FURNITURE = re.compile(r"Camera\s+dei\s+Deputati|Senato\s+della\s+Repubblica|LEGISLATURA|"
                        r"DISEGNI\s+DI\s+LEGGE|DOCUMENTI|^\W*\d{1,4}\W*$")
-RUNNING_HEAD = re.compile(r"Camera\s+dei\s+Deputati|Senato\s+della\s+Repubblica|LEGISLATURA\s+[—–-]")
+RUNNING_HEAD = re.compile(r"Camera\s+dei\s+Deputati|Senato\s+della\s+Repubblica|LEGISLATURA\s+[—–-]"
+                          r"|DISEGNI\s+DI\s+LEGGE\s+E\s+RELAZIONI")     # OCR may lose the dash
 YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 PERIOD = re.compile(r"((?:19|20)\d{2})\s*-\s*((?:19|20)\d{2})")
 # A line naming a block's year alone (T21 `Anno 2022` over each year's block).
@@ -1999,6 +2001,12 @@ def _unspecked(text):
     # `M.P.G. INSTRUMENT S.R.L. -`); one inside is printed (`U.T.R.I. - UNMANNED`).
     text = re.sub(r"^[-–—‘'`]\s*(?=\d)|^[-–—]\s+|\s+[-–—]$", "", text)
     rest = re.sub(r"^[IÌÍÎl|]\s+|\s+[IÌÍÎl|]$", "", text)
+    rest = re.sub(r"^[IÌÍÎil|](?=\d{1,2}/\d{2}/\d{4}$)", "", rest)    # glued (2002: `i08/02/2002`)
+    # A character alone after a whole date is the margin's (2003: `07/10/2003 0`).
+    rest = re.sub(r"^(\d{1,2}/\d{2}/\d{4})\s+\S$", r"\1", rest)
+    # A mark right after a whole date or number (2001: `03/12/2001.`, `10/12/2001]`,
+    # `00341.`).
+    rest = re.sub(r"^(\d{1,2}/\d{2}/\d{4}|\d{5})[.,;:\]\)\-\"”']$", r"\1", rest)
     # 2012's own OCR layer reads them `1`, `>`, `!` (`1 00559`, `>20/01/2012`).
     rest = re.sub(r"^(?:[1!]\s+|>)(?=\d)", "", rest)
     return rest if re.fullmatch(r"[\d/.\-]+", rest) else text
@@ -2011,21 +2019,72 @@ def _label_match(text, label_of):
     key = label_of.get(" ".join(text.split()).lower())
     if key:
         return key, 1.0
-    bare = re.sub(r"[\W_]", "", text.lower())
+    def flat(t):
+        """Letters and digits, `I` and what OCR reads for it (`J`, `l`, `1`) one."""
+        return re.sub(r"[jl1]", "i", re.sub(r"[\W_]", "", t.lower()))
+    bare = flat(text)
     if len(bare) < 3:
         return None, 0
-    best = {}
+    alike = {flat(lab) for lab in label_of}
+    if bare in alike:           # the same letters and digits (`Datalser.`, `N.Jser.`)
+        return next(k for lab, k in label_of.items() if flat(lab) == bare), 1.0
+    best, rest = {}, {}
     for lab, k in label_of.items():
-        best[k] = max(best.get(k, 0), difflib.SequenceMatcher(None, bare,
-                                                               re.sub(r"[\W_]", "", lab)).ratio())
+        lab = flat(lab)
+        best[k] = max(best.get(k, 0), difflib.SequenceMatcher(None, bare, lab).ratio())
+        # What differs past the shared start (`datalser`: `lser` against `iscr`,
+        # `verb`, ``), to part labels alike up to it.
+        n = len(os.path.commonprefix([bare, lab]))
+        rest[k] = max(rest.get(k, 0), difflib.SequenceMatcher(None, bare[n:], lab[n:]).ratio())
     near = sorted(((r, k) for k, r in best.items()), reverse=True)
     if near[0][0] >= 0.8 and near[0][0] - near[1][0] >= 0.1:
         return near[0][1], near[0][0]
+    if near[0][0] >= 0.75:
+        tied = sorted(((rest[k], k) for r, k in near if near[0][0] - r < 0.1), reverse=True)
+        if len(tied) == 1 or tied[0][0] - tied[1][0] >= 0.2:
+            return tied[0][1], near[0][0]
     return None, 0
 
 
 class Labelled(list):
     """A grid's columns found where its labels start (no walls: 2006)."""
+
+
+def _best_labels(band, label_of):
+    """[(key, u0, u1, text)]: the line's best reading as agreed labels, each one to
+    three words, a word left out where it is none: the most columns, each named
+    once, then the fewest words left out (`N.Iser. | Data Iscr.`, not `Data |
+    Iscr.` with `N.Iser.` none; `Data Canc.`, not `Data` and `Canc.` none), then
+    the closest. Word by word, 2002's `Data` (the agreed `DATA`,
+    exactly) took `Data Iser.`'s place and the column after it came twice."""
+    from functools import lru_cache
+
+    @lru_cache(maxsize=None)
+    def best(i, used):
+        if i >= len(band):
+            return (0, 0.0, 0, 0), ()
+        options = [best(i + 1, used)]            # the word is no label (`-`, `x`)
+        shorter = (None, 0)
+        for k in (1, 2, 3):
+            if i + k > len(band):
+                break
+            text = " ".join(w.text for w in band[i:i + k])
+            key, alike = _label_match(text, label_of)
+            # A word more that names the same column no better is a speck taken in
+            # (`Data Canc. Hd`: the margin's; it would stretch the line to it).
+            stretched = key is not None and key == shorter[0] and alike <= shorter[1]
+            if key:
+                shorter = (key, alike)
+            if key and key not in used and not stretched:
+                (n, covered, total, fewer), rest = best(i + k, used | frozenset([key]))
+                # Words of letters or digits count as covered; a speck taken in
+                # (`- N.Iser.`) would move the column's start onto it.
+                real = sum(1 for w in band[i:i + k] if len(re.sub(r"[\W_]", "", w.text)) >= 2)
+                options.append(((n + 1, covered + real, total + alike, fewer - k),
+                                ((key, band[i].u0, band[i + k - 1].u1, text),) + rest))
+        return max(options, key=lambda o: o[0])
+
+    return list(best(0, frozenset())[1])
 
 
 def _label_columns(region, segs, label_of):
@@ -2034,21 +2093,9 @@ def _label_columns(region, segs, label_of):
     no rules), else None. A column runs from where its label starts to where the
     next one does; the last ends a little past its label (the margin beyond it
     holds the running head, printed sideways)."""
-    for band in geo.row_bands(region)[:8]:
+    for band in geo.row_bands(region)[:15]:     # under the heading and the margin's specks
         band = sorted(band, key=lambda w: w.u0)
-        found, i = [], 0
-        while i < len(band):
-            # The best match of the words from here, the longer on a tie (`Data Verb`
-            # over `Data`; `—Data URNI` over `—Data URNI x`, a margin speck).
-            tries = [(*_label_match(" ".join(w.text for w in band[i:i + k]), label_of), k)
-                     for k in (1, 2, 3) if i + k <= len(band)]
-            key, _alike, k = max(tries, key=lambda t: (t[1], t[2]))
-            if key:
-                found.append((key, band[i].u0, band[i + k - 1].u1,
-                              " ".join(w.text for w in band[i:i + k])))
-                i += k
-            else:
-                i += 1
+        found = _best_labels(band, label_of)
         keys = [f[0] for f in found]
         v0, v1 = min(w.v0 for w in band), max(w.v1 for w in band)
         span = (found[0][1], found[-1][2]) if found else (0, 0)
@@ -2065,7 +2112,7 @@ def _label_columns(region, segs, label_of):
     return None
 
 
-def _loose_rows(words, top, bottom, columns, tight):
+def _loose_rows(words, top, bottom, columns, tight, label_of=None):
     """Rows of a grid with no rules between them, below `top`: a line with a
     register number or a date begins a row, a line with neither goes on with it
     (`HAMILTON SUNDSTRAND` / `ITALIA S.r.l.`), `motivazioni:` begins its reason
@@ -2075,14 +2122,34 @@ def _loose_rows(words, top, bottom, columns, tight):
     lines = []      # [cell words, reason words, columns holding a figure] per row
     left, right = min(c[1] for c in columns), max(c[2] for c in columns)
 
-    def column_of(w):
-        return next((key for key, u0, u1, _label in columns if u0 <= w.umid <= u1), None)
+    # Where a word stands: a typed list's values start under their labels' starts and
+    # may run past the next one's (2002 p142's protocol numbers): its left edge there;
+    # in a ruled grid, its middle. Each column from its start up to the next one's.
+    def at(w):
+        return w.u0 + 2 if isinstance(columns, Labelled) else w.umid
 
-    below = [w for w in words if top < w.vmid <= bottom and left <= w.umid <= right]
+    def column_of(w):
+        return next((key for key, u0, u1, _label in columns if u0 <= at(w) < u1), None)
+
+    below = [w for w in words if top < w.vmid <= bottom and left <= at(w) < right]
+    header_to = None        # the bottom of a labels line met
     for band in geo.row_bands(below):
         text = " ".join(w.text for w in band)
         if GRID_TOTAL.match(text) or GRID_HEADING.match(text) or GRID_HEADING_LOOSE.match(text):
             break
+        found = _best_labels(sorted(band, key=lambda w: w.u0), label_of) if label_of else []
+        if (header_to is not None and min(w.v0 for w in band) < header_to
+                and not any(re.fullmatch(r"\d{5}|\d{1,2}/\d{2}/\d{4}", w.text) for w in band)):
+            continue        # the rest of a tilted labels line (2002 p142: `Verbale Datalscr.`)
+        if len(found) >= 3:
+            header_to = max(w.v1 for w in band)
+            # The labels again, over a page it goes on to (2002 p142), maybe in one line
+            # with the first row: their words out, the row's kept.
+            band = [w for w in band if not any(u0 <= w.umid <= u1 and w.vmid < max(
+                x.v1 for x in band) and w.text in text.split() for _k, u0, u1, text in found)]
+            if not band:
+                continue
+            text = " ".join(w.text for w in band)
         if (RUNNING_HEAD.search(text) or STAMP.search(text) or FOLIO.match(text)
                 or len(re.sub(r"[\W_]", "", text)) < (3 if not lines else 2)):
             continue        # the page's furniture, a margin speck (2006: `5`, `S`; 2004: `MM`
@@ -2107,7 +2174,7 @@ def _loose_rows(words, top, bottom, columns, tight):
     for here, why, _figs in lines:
         cells = {}
         for key, u0, u1, _label in columns:
-            ws = [w for w in here if u0 <= w.umid <= u1]
+            ws = [w for w in here if u0 <= at(w) < u1]
             lines_ = [" ".join(w.text for w in b) for b in geo.row_bands(ws)]
             cells[key] = _unspecked(" ".join(("" if key in tight else " ").join(lines_).split()))
         cells.pop(None, "")
@@ -2135,9 +2202,22 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
         labelled = _label_columns(region, segs, label_of)
         if labelled:            # no rules but the labels' (2006): columns where they start
             columns, header_v = labelled
-            return columns, _loose_rows(region, header_v, bottom, columns, tight), []
+            return columns, _loose_rows(region, header_v, bottom, columns, tight, label_of), []
     elif isinstance(columns, Labelled):     # the labels' columns, on the next page
-        return columns, _loose_rows(region, top, bottom, columns, tight), []
+        again = _label_columns(region, segs, label_of)
+        if again:           # the page repeats its labels (2003 p145): under them, in
+            # their places if they name every column (2002 p142's tilted line does not)
+            whole = {c[0] for c in again[0]} >= {c[0] for c in columns}
+            cols = again[0] if whole else columns
+            if not whole:   # the last page's, moved as far as the labels both show (the
+                            # scan sits further right on 2002 p142 than on p141)
+                was = {k: u0 for k, u0, _u1, _t in columns}
+                moved = sorted(u0 - was[k] for k, u0, _u1, _t in again[0] if k in was and was[k])
+                shift = moved[len(moved) // 2] if moved else 0
+                cols = Labelled((k, u0 + shift if u0 else u0, u1 + shift, t)
+                                for k, u0, u1, t in columns)
+            return cols, _loose_rows(region, again[1], bottom, cols, tight, label_of), []
+        return columns, _loose_rows(region, top, bottom, columns, tight, label_of), []
     floors = []
     for v, u0, u1 in sorted(f for f in segs["floors"] if top - 2 <= f[0] <= bottom):
         if floors and v - floors[-1][0] <= 1:       # a rule the scan broke in pieces
@@ -2183,8 +2263,10 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
             # EFFETTUATE SOSPENSIONI ...`) needs no columns: none of its walls may show.
             body = " ".join(text_of(w for w in words if v1 < w.vmid <= levels[-1]
                                     and not re.fullmatch(r"[^\w&\-–]+", w.text)).split())
-            if body and EMPTY_LIST.match(body):
-                return None, [], []
+            if body and (EMPTY_LIST.match(body) or (
+                    re.search(r"\b(?:NEGATIVO|NESSUNA)\b|NON\s+SONO\s+STATE\s+EFFETTUATE", body,
+                              re.IGNORECASE) and not re.search(r"\b\d{5}\b", body))):
+                return None, [], []     # its one word among the scan's specks (2001 p132)
             # The header: down to the first row holding a register number, however
             # many thin rows the scan's specks cut it into (2012 p67). The grid's
             # columns: the walls most of its data rows draw (2012 p67's header lost
@@ -2246,10 +2328,33 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
                     near = sorted(((r, k) for k, r in best.items()), reverse=True)
                     if near[0][0] >= 0.75 and near[0][0] - near[1][0] >= 0.1:
                         key = near[0][1]
-                if key is None:
-                    raise Refused(f"grid header `{text}` (p{sp.pdf_page}): not an agreed "
-                                  "label of columns.tsv")
                 columns.append((key, u0, u1, " ".join(text.split())))
+            # A cell still unread is one of the columns no other cell names (2001 p132:
+            # `Uvala iscrizione`, as near NUMERO ISCRIZIONE as DATA ISCRIZIONE, the
+            # first named beside it), as near and as clear as above.
+            named = {c[0] for c in columns if c[0]}
+            for j, (key, u0, u1, text) in enumerate(columns):
+                if key is not None or not text:
+                    continue
+                if any(ocr.confidence(w) is not None for w in here):
+                    open_ = {lab: k for lab, k in label_of.items() if k not in named}
+                    near = sorted(((difflib.SequenceMatcher(None, re.sub(r"[\W_]", "", text.lower()),
+                                                            re.sub(r"[\W_]", "", lab)).ratio(), k)
+                                   for lab, k in open_.items()), reverse=True)
+                    best = {}
+                    for r, k in near:
+                        best.setdefault(k, r)
+                    ranked = sorted(((r, k) for k, r in best.items()), reverse=True)
+                    if ranked and ranked[0][0] >= 0.75 and (
+                            len(ranked) == 1 or ranked[0][0] - ranked[1][0] >= 0.1):
+                        columns[j] = (ranked[0][1], u0, u1, text)
+                        named.add(ranked[0][1])
+                        continue
+                if not re.search(r"\b\d{5}\b|\d{1,2}/\d{2}/\d{4}", body):
+                    return None, [], []     # no row under it to read (2001 p132's NEGATIVO,
+                                            # which OCR lost)
+                raise Refused(f"grid header `{text}` (p{sp.pdf_page}): not an agreed "
+                              "label of columns.tsv")
             continue
         if not here:
             continue
@@ -2317,7 +2422,7 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
     if columns and not rows:
         # A ruled header over unruled rows (2008): its lines below, as `_loose_rows`.
         rows = _loose_rows([w for w in words if not re.fullmatch(r"[^\w&\-–]+", w.text)],
-                           levels[-1], bottom, columns, tight)
+                           levels[-1], bottom, columns, tight, label_of)
     return columns, rows, issues
 
 
@@ -2436,7 +2541,7 @@ def read_list(year, key, spec, pages):
             cells["motivazione"] = got["reason"]
         # A dash at a cell's edge is the wall's (`... FABBRICAZIONE -`), whichever way
         # the cell was read.
-        cells = {k: re.sub(r"^[-–]\s+|\s+[-–]$", "", v) for k, v in cells.items()}
+        cells = {k: _unspecked(re.sub(r"^[-–]\s+|\s+[-–]$", "", v)) for k, v in cells.items()}
         row = {"kind": "data", "group": None, "carried": [], "order": order,
                "year_of": {}, "row_ord": row_ord, "pdf_page": sp.pdf_page,
                "printed_page": sp.printed_page, "source_file": sp.doc.name.split("/")[-1],
@@ -2501,23 +2606,30 @@ def read_list(year, key, spec, pages):
         words = [w for w in words if u_lo <= w.umid <= u_hi and v_lo <= w.vmid <= v_hi]
         started = False
         page_bands = [_joined(sorted(b, key=lambda w: w.u0)) for b in geo.row_bands(words)]
+        # A heading under a speck (2001 p133: `. Dati su cancellazioni ...`).
         heads = [(b, m) for b in page_bands
-                 if (m := GRID_HEADING.match(" ".join(w.text for w in b))
-                     or GRID_HEADING_LOOSE.match(" ".join(w.text for w in b))
-                     or _misread_heading(" ".join(w.text for w in b)))]
+                 if (t := re.sub(r"^[\W_]+", "", " ".join(w.text for w in b))) is not None
+                 and (m := GRID_HEADING.match(t) or GRID_HEADING_LOOSE.match(t)
+                      or _misread_heading(t))]
         if heads or grid is not None:
             # 1991-2015: ruled grids, one per heading, read by their rules.
             close()
             item = None
-            if not heads:           # the grid goes on from the page before
-                heads = [(None, None)]
+            first_v = min(w.v0 for w in heads[0][0]) if heads else 1e9
+            if grid is not None and (not heads or any(
+                    re.fullmatch(r"\d{5}", w.text) for w in words if w.v1 < first_v)):
+                # The grid goes on from the page before, down to a heading of its own
+                # (2002 p142: four enrolments over the suspensions' heading).
+                heads = [(None, None)] + heads
             for i, (band, m) in enumerate(heads):
                 top = max(w.v1 for w in band) if band else -1e9
                 bottom = (min(w.v0 for w in heads[i + 1][0]) if i + 1 < len(heads) else 1e9)
                 if m:
+                    again = GRID_EVENT[m.group(1).upper()] == event and grid is not None
                     event = GRID_EVENT[m.group(1).upper()]
                     list_year = m.group(2) if m.re is GRID_HEADING else str(year)
-                    grid = None
+                    if not again:   # the same heading over the next page goes on (2002 p142)
+                        grid = None
                     started = True
                 elif row_ord == 0:
                     result.caption += [" ".join(w.text for w in b) for b in page_bands
@@ -2532,9 +2644,12 @@ def read_list(year, key, spec, pages):
                                               f"{list_year}", tot.group(2)))
                 result.issues += issues
                 for got_row in got:
-                    if len(re.sub(r"[\W_]", "", "".join(got_row["cells"].values())
-                                  + (got_row["reason"] or ""))) < 3:
+                    said = " ".join(got_row["cells"].values()) + " " + (got_row["reason"] or "")
+                    if len(re.sub(r"[\W_]", "", said)) < 3:
                         continue    # specks, not a company (2004's empty suspensions: `MM`)
+                    if re.search(r"\b(?:NEGATIVO|NESSUNA)\b", said, re.IGNORECASE) and not re.search(
+                            r"\d", said):
+                        continue    # an empty list's word in a cell (2003's suspensions)
                     row_ord += 1
                     emit_grid(got_row, sp, row_ord)
                 if grid:
