@@ -1906,6 +1906,10 @@ BLOCK_GAP_EM = 1.0      # 2016-2019 cancellations: lines of an item <= 0.4 em ap
 # periodo 2009`, `Dati su iscrizione : Anno 2008`.
 GRID_HEADING = re.compile(r"^(?:Segue\s+)?DATI\s+SU(?:LLE)?\s+(ISCRIZION|SOSPENSION|CANCELLAZION)[EI]\b.*?"
                           r"((?:19|20)\d\d)\W*$", re.IGNORECASE)
+# The year OCR may scatter (2006: `Dati su iscrizione ......2006`, the year large
+# on a dotted line): the heading's kind alone; the year is the edition's.
+GRID_HEADING_LOOSE = re.compile(r"^Dati\b.{0,14}?\b(iscrizion|sospension|cancellazion)[ei]\b",
+                                re.IGNORECASE)
 GRID_TOTAL = re.compile(r"^Tot(?:ale)?\.?\s*(Iscrizion|Sospension|Cancellazion)[ei]\.?\s*:?\s*(\d+)\W*$",
                         re.IGNORECASE)
 GRID_EVENT = {"ISCRIZION": "ISCRITTE", "SOSPENSION": "SOSPESE", "CANCELLAZION": "CANCELLATE"}
@@ -1978,11 +1982,117 @@ def _unspecked(text):
     2013 p579's walls survive as `I`, `Ì`, `Î` (`I 14/05/2013`, `38165 I`)."""
     # A dash at a cell's edge is the wall's, not the value's (`- 00580`, `-13/03/2012`,
     # `M.P.G. INSTRUMENT S.R.L. -`); one inside is printed (`U.T.R.I. - UNMANNED`).
-    text = re.sub(r"^[-–]\s*(?=\d)|^[-–]\s+|\s+[-–]$", "", text)
+    text = re.sub(r"^[-–—‘'`]\s*(?=\d)|^[-–—]\s+|\s+[-–—]$", "", text)
     rest = re.sub(r"^[IÌÍÎl|]\s+|\s+[IÌÍÎl|]$", "", text)
     # 2012's own OCR layer reads them `1`, `>`, `!` (`1 00559`, `>20/01/2012`).
     rest = re.sub(r"^(?:[1!]\s+|>)(?=\d)", "", rest)
     return rest if re.fullmatch(r"[\d/.\-]+", rest) else text
+
+
+def _label_match(text, label_of):
+    """(column, how alike) of the agreed label `text` is: exactly (1.0), or OCR's
+    misreading of one (0.8 alike or more on letters and digits, 0.1 ahead of any
+    other column); else (None, 0)."""
+    key = label_of.get(" ".join(text.split()).lower())
+    if key:
+        return key, 1.0
+    bare = re.sub(r"[\W_]", "", text.lower())
+    if len(bare) < 3:
+        return None, 0
+    best = {}
+    for lab, k in label_of.items():
+        best[k] = max(best.get(k, 0), difflib.SequenceMatcher(None, bare,
+                                                               re.sub(r"[\W_]", "", lab)).ratio())
+    near = sorted(((r, k) for k, r in best.items()), reverse=True)
+    if near[0][0] >= 0.8 and near[0][0] - near[1][0] >= 0.1:
+        return near[0][1], near[0][0]
+    return None, 0
+
+
+class Labelled(list):
+    """A grid's columns found where its labels start (no walls: 2006)."""
+
+
+def _label_columns(region, segs, label_of):
+    """([(key, u0, u1, label)], header bottom) where a line of the region is the
+    agreed labels side by side with no wall across it (2006: underlined labels,
+    no rules), else None. A column runs from where its label starts to where the
+    next one does; the last ends a little past its label (the margin beyond it
+    holds the running head, printed sideways)."""
+    for band in geo.row_bands(region)[:8]:
+        band = sorted(band, key=lambda w: w.u0)
+        found, i = [], 0
+        while i < len(band):
+            # The best match of the words from here, the longer on a tie (`Data Verb`
+            # over `Data`; `—Data URNI` over `—Data URNI x`, a margin speck).
+            tries = [(*_label_match(" ".join(w.text for w in band[i:i + k]), label_of), k)
+                     for k in (1, 2, 3) if i + k <= len(band)]
+            key, _alike, k = max(tries, key=lambda t: (t[1], t[2]))
+            if key:
+                found.append((key, band[i].u0, band[i + k - 1].u1,
+                              " ".join(w.text for w in band[i:i + k])))
+                i += k
+            else:
+                i += 1
+        keys = [f[0] for f in found]
+        v0, v1 = min(w.v0 for w in band), max(w.v1 for w in band)
+        span = (found[0][1], found[-1][2]) if found else (0, 0)
+        crossed = any(a <= (v0 + v1) / 2 <= b and span[0] < u < span[1]
+                      for u, a, b in segs["walls"])     # not the margin's rule, past them
+        if (len(set(keys)) >= 4 and len(set(keys)) == len(keys) and not crossed
+                and {"numero_iscrizione", "denominazione"} <= set(keys)):
+            cols = []
+            for j, (key, u0, u1, text) in enumerate(found):
+                left = 0 if j == 0 else u0 - 6
+                right = found[j + 1][1] - 6 if j + 1 < len(found) else u1 + 15
+                cols.append((key, left, right, text))
+            return Labelled(cols), v1
+    return None
+
+
+def _loose_rows(words, top, bottom, columns, tight):
+    """Rows of a grid with no rules between them, below `top`: a line with a
+    register number or a date begins a row, a line with neither goes on with it
+    (`HAMILTON SUNDSTRAND` / `ITALIA S.r.l.`), `motivazioni:` begins its reason
+    (2008's cancellations; a name's last line may share the band with it); down
+    to a total, the page's furniture or the region's end. A word outside every
+    column (the margin's sideways running head, 2006) is no cell's."""
+    lines = []      # [cell words, reason words] per row
+    left, right = min(c[1] for c in columns), max(c[2] for c in columns)
+    below = [w for w in words if top < w.vmid <= bottom and left <= w.umid <= right]
+    for band in geo.row_bands(below):
+        text = " ".join(w.text for w in band)
+        if GRID_TOTAL.match(text) or GRID_HEADING.match(text) or GRID_HEADING_LOOSE.match(text):
+            break
+        if (RUNNING_HEAD.search(text) or STAMP.search(text) or FOLIO.match(text)
+                or len(re.sub(r"[\W_]", "", text)) < 2):
+            continue        # the page's furniture, a margin speck (2006: `5`, `S`)
+        m = next((w for w in band if re.match(r"motivazion[ei]", w.text, re.IGNORECASE)), None)
+        # Its line and below: a word's middle under the label's top (the tops of one
+        # line's words differ with their letters).
+        why = [w for w in band if m and w.vmid >= m.v0]
+        rest = [w for w in band if w not in why]
+        if any(re.fullmatch(r"\d{5},?|\d{1,2}/\d{2}/\d{4}", w.text) for w in rest) or not lines:
+            lines.append([rest, why])
+        elif lines[-1][1] and not m:
+            lines[-1][1] += band
+        else:
+            lines[-1][0] += rest
+            lines[-1][1] += why
+    rows = []
+    for here, why in lines:
+        cells = {}
+        for key, u0, u1, _label in columns:
+            ws = [w for w in here if u0 <= w.umid <= u1]
+            lines_ = [" ".join(w.text for w in b) for b in geo.row_bands(ws)]
+            cells[key] = _unspecked(" ".join(("" if key in tight else " ").join(lines_).split()))
+        cells.pop(None, "")
+        conf = [c for c in map(ocr.confidence, here + why) if c is not None]
+        reason = " ".join(" ".join(w.text for w in b) for b in geo.row_bands(why)).strip() or None
+        if reason:
+            reason = re.sub(r"^motivazion[ei]\s*:?\s*", "", reason, flags=re.IGNORECASE)
+        rows.append({"cells": cells, "conf": conf, "reason": reason, "split": False})
+    return rows
 
 
 def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
@@ -1994,6 +2104,14 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
     the text of a full-width row under it (`Motivazione : ...`), if any."""
     # 2014 boxes each cancellation apart: its walls are one row high (18 pt).
     segs = geo.rule_segments(sp, frame, min_len=5)
+    region = [w for w in words if top < w.vmid <= bottom and not re.fullmatch(r"[^\w&\-–]+", w.text)]
+    if columns is None:
+        labelled = _label_columns(region, segs, label_of)
+        if labelled:            # no rules but the labels' (2006): columns where they start
+            columns, header_v = labelled
+            return columns, _loose_rows(region, header_v, bottom, columns, tight), []
+    elif isinstance(columns, Labelled):     # the labels' columns, on the next page
+        return columns, _loose_rows(region, top, bottom, columns, tight), []
     floors = []
     for v, u0, u1 in sorted(f for f in segs["floors"] if top - 2 <= f[0] <= bottom):
         if floors and v - floors[-1][0] <= 1:       # a rule the scan broke in pieces
@@ -2171,40 +2289,9 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
             rows[-1]["reason"] = re.sub(r"^Motivazion[ei]\s*:?\s*", "", reason,
                                         flags=re.IGNORECASE)
     if columns and not rows:
-        # A ruled header over unruled rows (2008): each line with a register
-        # number or a date begins a row, a line with neither goes on with it
-        # (`HAMILTON SUNDSTRAND` / `ITALIA S.r.l.`), down to a total, the page's
-        # furniture or the region's end.
-        below = [w for w in words if levels[-1] < w.vmid <= bottom
-                 and not re.fullmatch(r"[^\w&\-–]+", w.text)]
-        lines = []      # [cell words, reason words] per row
-        for band in geo.row_bands(below):
-            text = " ".join(w.text for w in band)
-            if (GRID_TOTAL.match(text) or RUNNING_HEAD.search(text) or STAMP.search(text)
-                    or FOLIO.match(text) or GRID_HEADING.match(text)):
-                break
-            # `motivazioni: ...` under a row (2008's cancellations): from that word's
-            # line down, the reason; a name's last line may share the band with it.
-            m = next((w for w in band if re.match(r"motivazion[ei]", w.text, re.IGNORECASE)), None)
-            why = [w for w in band if m and w.v0 >= m.v0 - 1]
-            rest = [w for w in band if w not in why]
-            if any(re.fullmatch(r"\d{5}|\d{1,2}/\d{2}/\d{4}", w.text) for w in rest) or not lines:
-                lines.append([rest, why])
-            elif lines[-1][1] and not m:
-                lines[-1][1] += band
-            else:
-                lines[-1][0] += rest
-                lines[-1][1] += why
-        for here, why in lines:
-            cells = {key: _unspecked(" ".join(text_of((w for w in here if u0 <= w.umid <= u1),
-                                                      key in tight).split()))
-                     for key, u0, u1, _label in columns}
-            cells.pop(None, "")
-            conf = [c for c in map(ocr.confidence, here + why) if c is not None]
-            reason = " ".join(text_of(why).split()) or None
-            if reason:
-                reason = re.sub(r"^motivazion[ei]\s*:?\s*", "", reason, flags=re.IGNORECASE)
-            rows.append({"cells": cells, "conf": conf, "reason": reason, "split": False})
+        # A ruled header over unruled rows (2008): its lines below, as `_loose_rows`.
+        rows = _loose_rows([w for w in words if not re.fullmatch(r"[^\w&\-–]+", w.text)],
+                           levels[-1], bottom, columns, tight)
     return columns, rows, issues
 
 
@@ -2389,7 +2476,8 @@ def read_list(year, key, spec, pages):
         started = False
         page_bands = [_joined(sorted(b, key=lambda w: w.u0)) for b in geo.row_bands(words)]
         heads = [(b, m) for b in page_bands
-                 if (m := GRID_HEADING.match(" ".join(w.text for w in b)))]
+                 if (m := GRID_HEADING.match(" ".join(w.text for w in b))
+                     or GRID_HEADING_LOOSE.match(" ".join(w.text for w in b)))]
         if heads or grid is not None:
             # 1991-2015: ruled grids, one per heading, read by their rules.
             close()
@@ -2400,7 +2488,8 @@ def read_list(year, key, spec, pages):
                 top = max(w.v1 for w in band) if band else -1e9
                 bottom = (min(w.v0 for w in heads[i + 1][0]) if i + 1 < len(heads) else 1e9)
                 if m:
-                    event, list_year = GRID_EVENT[m.group(1).upper()], m.group(2)
+                    event = GRID_EVENT[m.group(1).upper()]
+                    list_year = m.group(2) if m.re is GRID_HEADING else str(year)
                     grid = None
                     started = True
                 elif row_ord == 0:

@@ -961,3 +961,11 @@ table's key, so a later edition printing the same layout reads the same:
 - **Counts against the narrative**: 2007 26/1/17, 2008 11/0/7, 2009 15/1/11 agree; 2010
   reads 29 cancellations where the narrative says 30 (open); 2011 35/1/26 against 214 at
   31.12 (206 + 35 - 26 = 215: for the cross-year checks).
+- **2006 prints its lists sideways and unruled**, the labels underlined: where no wall
+  crosses a line of agreed labels, the columns start where the labels do (the best label
+  match first, the longer on a tie), the last ends 15 pt past its label (the running head
+  is printed along the margin beyond it); rows as 2008's. A heading OCR scatters (`Dati su
+  iscrizione ......2006`, the year large on a dotted line) is known by its kind alone, its
+  year the edition's (the event check still holds every date to it). Labels `N.Iscr.`,
+  `Data Verb`, `Protocollo URNI`, `Data URNI`. 2006: 21 / 1 / 9 (the narrative's 11
+  cancellations count two of 2005).

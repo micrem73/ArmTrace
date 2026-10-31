@@ -361,3 +361,24 @@ def test_the_2007_2010_grids_read(year, sources, counts):
         assert alenia["denominazione"] == "ALENIA AERONAVALI S.P.A."
         assert alenia["motivazione"].startswith("Incorporazione per")
         assert any("split at its first ' - '" in n for n in alenia["notes"])
+
+
+@pytest.mark.parametrize("year", ["2006"])
+def test_2006s_sideways_lists_read_by_their_labels(year, sources):
+    """2006 prints its lists sideways, unruled but for the labels' underlines:
+    the page is turned, the columns start where the labels do, each line with a
+    number or a date a row, `Motivazioni:` its reason; the running head, printed
+    along the margin, is no cell's. 21 enrolments, 1 suspension, 9 cancellations
+    (the narrative's 11 count two of 2005)."""
+    r, rows, _checks = _register(year)
+    assert not r.issues
+    got = (sum(1 for x in rows if x["data_iscrizione"] and not x["data_cancellazione"]
+               and not x["data_sospensione"]),
+           sum(1 for x in rows if x["data_sospensione"]),
+           sum(1 for x in rows if x["data_cancellazione"]))
+    assert got == (21, 1, 9)
+    pravisani = next(x for x in rows if x["numero_iscrizione"] == "00380")
+    assert (pravisani["denominazione"], pravisani["sede_legale"], pravisani["cap"]) == (
+        "PRAVISANI S.P.A.", "VIA MAZZINI, 16", "33100")
+    assert pravisani["motivazione"] == "PER AVER COMUNICATO DI NON VOLER RINNOVARE L'ISCRIZIONE AL RNI"
+    assert next(x for x in rows if x["data_sospensione"])["data_sospensione"] == "20 novembre 2006"
