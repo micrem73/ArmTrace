@@ -999,5 +999,6 @@ table's key, so a later edition printing the same layout reads the same:
   prints 00465 for both NORTHWEST and CONSORZIO ROTORSIM (an anomaly of the print, noted).
 - **2020's CANCELLATE heading says 16 over 15 items**: left as printed, its check FAILs
   (maintainer).
-- Open (asked on the review page): 2012 LOGIC (00568?), UFI FILTERS (00569?), BOZZI & FIGLI
-  (00583?), and the register number of a 2012 cancellation printed without one.
+- Then (same page): 2012 LOGIC 00568, UFI FILTERS 00569, BOZZI & FIGLI 00583, and LINKRA's
+  cancellation, read without a number, 00476. 2012's enrolments now run 00558-00594 without
+  a gap.

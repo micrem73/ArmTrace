@@ -403,6 +403,10 @@ def test_a_correction_names_its_row(year, sources):
     assert got["GAYMARINE S.R.L"] == "00566"
     assert got["ARNO ITALIANA S.R.L"] == "00586"
     assert got["SICAMB S.P.A."] == "00570"      # the name, too, as the maintainer read it
+    # Read and corrected, the year's enrolments run without a gap: 00558-00594.
+    nums = [n for (n,) in db.execute("SELECT numero_iscrizione FROM difesa_a5_2 "
+                                     "WHERE data_cancellazione IS NULL ORDER BY row_ord")]
+    assert nums == [f"{n:05d}" for n in range(558, 595)]
 
 
 @pytest.mark.parametrize("year", ["2008"])
