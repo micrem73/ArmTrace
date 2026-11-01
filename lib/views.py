@@ -75,6 +75,8 @@ def from_db(db, key, year, spec=None):
                 cells.append("")        # a group is printed as its heading
             elif col.type == "rowsum":
                 cells.append(rowsums.get((row_ord, i)) or "")
+            elif col.pad:       # padded for the register; printed as `<col>_raw` holds
+                cells.append(row[f"{col.key}_raw"] or row[col.key] or "")
             elif col.type in ("amount", "number", "date"):
                 # A `once` value is on one year's row of the line (3B's edition year).
                 held = next((r for r in rows if r[col.key] is not None), row) \

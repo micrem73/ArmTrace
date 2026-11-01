@@ -108,6 +108,8 @@ class Column:
     rank: bool = False          # `rank`: a position printed in brackets, `(76)` (T6)
     prints_text: bool = False   # `text`: a year column printing text (T14.1's operator)
     under: str = None           # `under <col>`: printed under <col>'s value, its cell (T1)
+    pad: int = None             # `pad <n>`: a code stored with leading zeros to n digits,
+                                # as printed in `<col>_raw` (A5/2: `0004` up to 2000)
     colour: dict = None         # `colour`: {legend label: column or number}, from fills (T15)
 
     def sum_sql(self):
@@ -220,6 +222,8 @@ def specs():
             col.of = rule[0]
         elif rule[:1] == ["event"]:
             col.event = rule[1]
+        elif rule[:1] == ["pad"]:
+            col.pad = int(rule[1])
         elif rule[:1] == ["scale"]:
             col.scales = rule[1]
         elif rule == ["rank"]:
@@ -1999,14 +2003,14 @@ def _unspecked(text):
     2013 p579's walls survive as `I`, `Ì`, `Î` (`I 14/05/2013`, `38165 I`)."""
     # A dash at a cell's edge is the wall's, not the value's (`- 00580`, `-13/03/2012`,
     # `M.P.G. INSTRUMENT S.R.L. -`); one inside is printed (`U.T.R.I. - UNMANNED`).
-    text = re.sub(r"^[-–—‘'`]\s*(?=\d)|^[-–—]\s+|\s+[-–—]$", "", text)
+    text = re.sub(r"^[-–—‘'`“”\"]\s*(?=\d)|^[-–—]\s+|\s+[-–—]$", "", text)
     rest = re.sub(r"^[IÌÍÎl|]\s+|\s+[IÌÍÎl|]$", "", text)
     rest = re.sub(r"^[IÌÍÎil|](?=\d{1,2}/\d{2}/\d{4}$)", "", rest)    # glued (2002: `i08/02/2002`)
     # A character alone after a whole date is the margin's (2003: `07/10/2003 0`).
     rest = re.sub(r"^(\d{1,2}/\d{2}/\d{4})\s+\S$", r"\1", rest)
     # A mark right after a whole date or number (2001: `03/12/2001.`, `10/12/2001]`,
     # `00341.`).
-    rest = re.sub(r"^(\d{1,2}/\d{2}/\d{4}|\d{5})[.,;:\]\)\-\"”']$", r"\1", rest)
+    rest = re.sub(r"^(\d{1,2}/\d{2}/(?:\d{4}|\d{2})|(?:\d{5}|0\d{3}))[.,;:\]\)\-\"”']$", r"\1", rest)
     # 2012's own OCR layer reads them `1`, `>`, `!` (`1 00559`, `>20/01/2012`).
     rest = re.sub(r"^(?:[1!]\s+|>)(?=\d)", "", rest)
     return rest if re.fullmatch(r"[\d/.\-]+", rest) else text
@@ -2139,7 +2143,7 @@ def _loose_rows(words, top, bottom, columns, tight, label_of=None):
             break
         found = _best_labels(sorted(band, key=lambda w: w.u0), label_of) if label_of else []
         if (header_to is not None and min(w.v0 for w in band) < header_to
-                and not any(re.fullmatch(r"\d{5}|\d{1,2}/\d{2}/\d{4}", w.text) for w in band)):
+                and not any(re.fullmatch(r"(?:\d{5}|0\d{3})|\d{1,2}/\d{2}/(?:\d{4}|\d{2})", w.text) for w in band)):
             continue        # the rest of a tilted labels line (2002 p142: `Verbale Datalscr.`)
         if len(found) >= 3:
             header_to = max(w.v1 for w in band)
@@ -2150,6 +2154,10 @@ def _loose_rows(words, top, bottom, columns, tight, label_of=None):
             if not band:
                 continue
             text = " ".join(w.text for w in band)
+        if not lines and label_of and not any(re.fullmatch(
+                r"(?:\d{5}|0\d{3})|\d{1,2}/\d{2}/(?:\d{4}|\d{2})", w.text) for w in band) and any(
+                _label_match(w.text, label_of)[0] for w in band):
+            continue        # what is left of the labels, over the first row (1999 p123: `cietà`)
         if (RUNNING_HEAD.search(text) or STAMP.search(text) or FOLIO.match(text)
                 or len(re.sub(r"[\W_]", "", text)) < (3 if not lines else 2)):
             continue        # the page's furniture, a margin speck (2006: `5`, `S`; 2004: `MM`
@@ -2157,15 +2165,25 @@ def _loose_rows(words, top, bottom, columns, tight, label_of=None):
         m = next((w for w in band if re.match(r"motivazion[ei]", w.text, re.IGNORECASE)), None)
         # Its line and below: a word's middle under the label's top (the tops of one
         # line's words differ with their letters).
-        why = [w for w in band if m and w.vmid >= m.v0]
+        # A register number or a date is never the reason's, whatever line it shares
+        # (1999 p123: the rows sit close on their reasons).
+        why = [w for w in band if m and w.vmid >= m.v0 and not re.fullmatch(
+            r"(?:\d{5}|0\d{3})|\d{1,2}/\d{2}/(?:\d{4}|\d{2})", w.text)]
         rest = [w for w in band if w not in why]
         # A figure begins a row where the row above has one in its column already
         # (2004: OCR sets a protocol's date on a line of its own; it fills its row).
-        figs = {column_of(w) for w in rest if re.fullmatch(r"\d{5},?|\d{1,2}/\d{2}/\d{4}", w.text)}
-        if not lines or figs & lines[-1][2]:
+        figs = {column_of(w) for w in rest if re.fullmatch(r"(?:\d{5}|0\d{3}),?|\d{1,2}/\d{2}/(?:\d{4}|\d{2})", w.text)}
+        # After a reason, a line well below it (more than two of its lines) is the next
+        # row's, its name printed over its figures (1999 p123: GUASTINI over 00255).
+        apart = lines and lines[-1][1] and not m and not figs and min(w.v0 for w in band) - max(
+            w.v1 for w in lines[-1][1]) > 2 * max(w.size for w in band)
+        if not lines or figs & lines[-1][2] or apart:
             lines.append([rest, why, set(figs)])
         elif lines[-1][1] and not m:
             lines[-1][1] += band
+        elif lines[-1][1] and not lines[-1][2] and not why:
+            lines[-1][0] += rest        # the figures under a name printed over them
+            lines[-1][2] |= figs
         else:
             lines[-1][0] += rest
             lines[-1][1] += why
@@ -2265,7 +2283,7 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
                                     and not re.fullmatch(r"[^\w&\-–]+", w.text)).split())
             if body and (EMPTY_LIST.match(body) or (
                     re.search(r"\b(?:NEGATIVO|NESSUNA)\b|NON\s+SONO\s+STATE\s+EFFETTUATE", body,
-                              re.IGNORECASE) and not re.search(r"\b\d{5}\b", body))):
+                              re.IGNORECASE) and not re.search(r"\b(?:(?:\d{5}|0\d{3})|0\d{3})\b", body))):
                 return None, [], []     # its one word among the scan's specks (2001 p132)
             # The header: down to the first row holding a register number, however
             # many thin rows the scan's specks cut it into (2012 p67). The grid's
@@ -2273,7 +2291,7 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
             # the one between SOCIETÀ and NUMERO ISCRIZIONE).
             # A data row: a register number or a date (2012 p67's numbers OCR mangles).
             numbered = [i for i, (a, b) in enumerate(pairs)
-                        if any(re.fullmatch(r"\d{5}|\d{2}/\d{2}/\d{4}", w.text)
+                        if any(re.fullmatch(r"(?:\d{5}|0\d{3})|\d{1,2}/\d{2}/(?:\d{4}|\d{2})", w.text)
                                for w in words if inside(w, a, b))]
             first = numbered[0] if numbered else None
             if first:
@@ -2350,7 +2368,7 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
                         columns[j] = (ranked[0][1], u0, u1, text)
                         named.add(ranked[0][1])
                         continue
-                if not re.search(r"\b\d{5}\b|\d{1,2}/\d{2}/\d{4}", body):
+                if not re.search(r"\b(?:(?:\d{5}|0\d{3})|0\d{3})\b|\d{1,2}/\d{2}/(?:\d{4}|\d{2})", body):
                     return None, [], []     # no row under it to read (2001 p132's NEGATIVO,
                                             # which OCR lost)
                 raise Refused(f"grid header `{text}` (p{sp.pdf_page}): not an agreed "
@@ -2367,7 +2385,7 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
         if at is not None:
             reason = " ".join(text_of(w for band in lines[at:] for w in band).split())
             here = [w for band in lines[:at] for w in band]
-        numbered = any(re.fullmatch(r"\d{5}", w.text) for w in here)
+        numbered = any(re.fullmatch(r"(?:\d{5}|0\d{3})", w.text) for w in here)
         dated = any(re.search(r"\d{1,2}/\d{2}/\d{2}", w.text) for w in here)
         text = " ".join(text_of(here).split())
         if rows and (re.match(r"Motivazion[ei]\s*:?", text, re.IGNORECASE)
@@ -2402,7 +2420,7 @@ def _grid_rows(sp, frame, words, top, bottom, columns, label_of, tight=()):
         if sum(1 for key, _u0, _u1, _label in columns
                if key and bare.get(re.sub(r"[\W_]", "", cells[key].lower())) == key) > len(columns) / 2:
             continue        # the header again, at the top of a page it goes on to
-        if (not re.fullmatch(r"\d{5}", cells.get("numero_iscrizione", ""))
+        if (not re.fullmatch(r"(?:\d{5}|0\d{3})", cells.get("numero_iscrizione", ""))
                 and all(re.fullmatch(r"//|/|[Il]{1,2}", v) for v in cells.values() if v)):
             continue        # `//` in every cell, nothing to list (OCR: `Il`, 2015 p1019)
         conf = [c for c in map(ocr.confidence, here) if c is not None]
@@ -2558,7 +2576,7 @@ def read_list(year, key, spec, pages):
                 if int(m.group(1)) > int(year) + 1:
                     row["notes"].append(f"{c.key}: {cells[c.key]} is after the edition")
         number = cells.get("numero_iscrizione", "")
-        if not re.fullmatch(r"\d{5}", number):
+        if not re.fullmatch(r"(?:\d{5}|0\d{3})", number):
             row["notes"].append(f"numero_iscrizione: {number!r} is not five digits")
         elif event == "ISCRITTE":
             if last_enrolled[0] and int(number) != int(last_enrolled[0]) + 1:
@@ -2606,9 +2624,9 @@ def read_list(year, key, spec, pages):
         words = [w for w in words if u_lo <= w.umid <= u_hi and v_lo <= w.vmid <= v_hi]
         started = False
         page_bands = [_joined(sorted(b, key=lambda w: w.u0)) for b in geo.row_bands(words)]
-        # A heading under a speck (2001 p133: `. Dati su cancellazioni ...`).
+        # A heading behind a speck (2001 p133: `. Dati su cancellazioni ...`; 2000 p137: `i Dati`).
         heads = [(b, m) for b in page_bands
-                 if (t := re.sub(r"^[\W_]+", "", " ".join(w.text for w in b))) is not None
+                 if (t := re.sub(r"^(?:[\W_]+|\w\s+)+", "", " ".join(w.text for w in b))) is not None
                  and (m := GRID_HEADING.match(t) or GRID_HEADING_LOOSE.match(t)
                       or _misread_heading(t))]
         if heads or grid is not None:
@@ -2617,7 +2635,7 @@ def read_list(year, key, spec, pages):
             item = None
             first_v = min(w.v0 for w in heads[0][0]) if heads else 1e9
             if grid is not None and (not heads or any(
-                    re.fullmatch(r"\d{5}", w.text) for w in words if w.v1 < first_v)):
+                    re.fullmatch(r"(?:\d{5}|0\d{3})", w.text) for w in words if w.v1 < first_v)):
                 # The grid goes on from the page before, down to a heading of its own
                 # (2002 p142: four enrolments over the suspensions' heading).
                 heads = [(None, None)] + heads

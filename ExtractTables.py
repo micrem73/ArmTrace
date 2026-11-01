@@ -111,7 +111,7 @@ def columns_of(spec):
         elif col.type == "anno":
             out.append((col.key, "year"))       # a transposed table's year (T9)
         else:
-            out.append((col.key, col.type))
+            out.append((col.key, "padded" if col.pad else col.type))
     if spec.link:
         out.append((spec.link.key, "link"))
     out += [(c.key, "link") for c in spec.units]
@@ -130,7 +130,7 @@ def create(db, name, spec):
             cols.append(f"{col} INTEGER")
         elif kind in ("amount", "number"):
             cols += [f"{col} DECIMAL", f"{col}_raw TEXT"]
-        elif kind == "date":
+        elif kind in ("date", "padded"):
             cols += [f"{col} TEXT", f"{col}_raw TEXT"]
         else:
             cols.append(f"{col} TEXT")
@@ -207,7 +207,14 @@ def records(year, result, spec):
                 issues.append((r["pdf_page"], problem, f"{col.key} {raw!r}"))
             if value is None and col.key in r.get("implied", {}):
                 value = r["implied"][col.key]
-            if col.type in ("amount", "number", "date"):
+            if col.pad:             # a register number printed with four digits (to 2000)
+                printed = fixed if fixed is not None else raw
+                values[col.key] = (printed.zfill(col.pad) if printed.isdigit()
+                                   and len(printed) < col.pad else printed or None)
+                values[f"{col.key}_raw"] = raw or None
+                if values[col.key] != (printed or None):
+                    flags.append(f"{col.key}: printed {printed!r}, {col.pad} digits stored")
+            elif col.type in ("amount", "number", "date"):
                 values[col.key] = str(value) if value is not None else None
                 values[f"{col.key}_raw"] = raw or None
             else:
@@ -300,7 +307,7 @@ def records(year, result, spec):
                     out.append(anno + span if anno is not None else None)
                     continue
                 out.append(anno if kind == "year" and anno is not None else here.get(col))
-                if kind in ("amount", "number", "date"):
+                if kind in ("amount", "number", "date", "padded"):
                     out.append(here.get(f"{col}_raw"))
             rows.append(out + [flag])
     return rows, issues

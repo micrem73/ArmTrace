@@ -1002,3 +1002,9 @@ table's key, so a later edition printing the same layout reads the same:
 - Then (same page): 2012 LOGIC 00568, UFI FILTERS 00569, BOZZI & FIGLI 00583, and LINKRA's
   cancellation, read without a number, 00476. 2012's enrolments now run 00558-00594 without
   a gap.
+- **Up to 2000 the register prints four-digit numbers** (`0004`): stored padded to five
+  (`00004`), the printed number in `numero_iscrizione_raw`, the row flagged (maintainer,
+  2026-11-01: `pad 5` on the column in `columns.tsv`), so a company's events join across
+  years. A register number is five digits or `0` and three (never a year or a protocol);
+  dates may print two-digit years (`09/05/00`). 2000 15 / 19, 1999 20 / 13 agree with the
+  narrative.

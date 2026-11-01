@@ -337,6 +337,8 @@ def test_2011s_scanned_grids_read(year, sources):
     ("2003", (17, 0, 7)),       # 17 / 9 (2 of 2002)
     ("2002", (17, 0, 11)),      # 17 / 17 (6 of 2001)
     ("2001", (19, 0, 11)),      # 20 / 14 (3 of 2000): 00340 is not printed
+    ("2000", (15, 0, 19)),      # 15 / 21 (2 of 1999); four-digit numbers, two-digit years
+    ("1999", (20, 0, 13)),      # 20 / 16 (3 of 1998)
 ])
 def test_the_2007_2010_grids_read(year, sources, counts):
     """2007-2009 head their grids `Dati su iscrizione : Anno 2008` / `Dati su
@@ -422,3 +424,18 @@ def test_a_maintainers_note_keeps_the_value(year, sources):
     assert len(rows) == 2
     assert all("both printed with register number 00465" in flags for _n, _num, flags in rows)
     assert not any("corrected" in flags for _n, _num, flags in rows)
+
+
+@pytest.mark.parametrize("year", ["2000"])
+def test_a_four_digit_number_is_stored_with_five(year, sources):
+    """Up to 2000 the register prints four digits (`0004`); stored as 00004 so a
+    company's events join across the years, the printed number in `_raw`, flagged
+    (maintainer, 2026-11-01)."""
+    from lib import extract, source
+    from tests.test_extract import stored
+    key = "DIFESA/A5/2"
+    db = stored(year, extract.read_table(year, key, pages=source.table_pages(year, key)), key)
+    got = db.execute("SELECT numero_iscrizione, numero_iscrizione_raw, data_cancellazione, flags "
+                     "FROM difesa_a5_2 WHERE numero_iscrizione_raw = '0004'").fetchone()
+    assert got[:3] == ("00004", "0004", "2000-05-09")
+    assert "numero_iscrizione: printed '0004', 5 digits stored" in got[3]
