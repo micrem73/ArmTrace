@@ -1008,3 +1008,10 @@ table's key, so a later edition printing the same layout reads the same:
   years. A register number is five digits or `0` and three (never a year or a protocol);
   dates may print two-digit years (`09/05/00`). 2000 15 / 19, 1999 20 / 13 agree with the
   narrative.
+- **1998-1996 read** (counts against the narrative: 1998 20 / 21, 1997 20 / 18, 1996 22 / 2 /
+  19). `Dati` as OCR may misread it (`DALI`, `DAL`) still makes a heading; a heading word is
+  compared on its first run of letters (the dotted line glued on). A tilted labels line
+  split in two is read whole; a bare `DATA` is the protocol's date only after the protocol;
+  `N. Eser` (1996's OCR of `N. Iscr.`) joins the agreed labels. 1996 prints three
+  cancellations dated in 1995 (the narrative's "3 of 1995"): the event check FAILs on them,
+  for the maintainer.

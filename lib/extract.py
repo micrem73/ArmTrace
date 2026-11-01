@@ -1918,12 +1918,17 @@ GRID_HEADING_LOOSE = re.compile(r"^Dati\b.{0,14}?\b(iscrizion|sospension|cancell
                                 re.IGNORECASE)
 def _misread_heading(text):
     """`Dati su ISCIIZIONE ...` (2005's OCR): `Dati`, then within three words one
-    nearly a kind (0.75 alike on letters), as a `GRID_HEADING_LOOSE` match would be."""
-    words = text.split()
-    if not words or words[0].lower() != "dati":
+    nearly a kind (0.75 alike on letters), as a `GRID_HEADING_LOOSE` match would be.
+    Not `DATA ...`: a column's label is no heading."""
+    words = [w for w in text.split() if re.search(r"\w", w)]
+    # `Dati` as OCR may read it (1998: `DALI`, `DAL`), among the first words (a speck
+    # may come first: `vo DALI SU ISCFIZIONE`).
+    at = next((j for j, w in enumerate(words[:3]) if re.fullmatch(r"da[lti]{0,2}", w.lower())), None)
+    if at is None:
         return None
-    for w in words[1:4]:
-        bare = re.sub(r"[\W\d_]", "", w.lower())
+    for w in words[at + 1:at + 4]:
+        # Its first run of letters: OCR glues the dotted line on (1998: `ISCIZIONE.....urri`).
+        bare = (re.match(r"[^\W\d_]*", w.lower()) or [""])[0]
         for kind in ("iscrizione", "sospensione", "cancellazione",
                      "iscrizioni", "sospensioni", "cancellazioni"):
             if difflib.SequenceMatcher(None, bare, kind).ratio() >= 0.75:
@@ -2011,6 +2016,7 @@ def _unspecked(text):
     # A mark right after a whole date or number (2001: `03/12/2001.`, `10/12/2001]`,
     # `00341.`).
     rest = re.sub(r"^(\d{1,2}/\d{2}/(?:\d{4}|\d{2})|(?:\d{5}|0\d{3}))[.,;:\]\)\-\"”']$", r"\1", rest)
+    rest = re.sub(r"^(\d{1,2}/\d{2}/(?:\d{4}|\d{2}))[a-z]{1,3}$", r"\1", rest)  # 1998: `18/02/98ci`
     # 2012's own OCR layer reads them `1`, `>`, `!` (`1 00559`, `>20/01/2012`).
     rest = re.sub(r"^(?:[1!]\s+|>)(?=\d)", "", rest)
     return rest if re.fullmatch(r"[\d/.\-]+", rest) else text
@@ -2074,6 +2080,12 @@ def _best_labels(band, label_of):
                 break
             text = " ".join(w.text for w in band[i:i + k])
             key, alike = _label_match(text, label_of)
+            # A bare `DATA` is the protocol's date only after the protocol (2015:
+            # `PROT. R.N.I. | DATA`); elsewhere a misread label's half (1996: `Data` of
+            # `Data Iscr.`, its `N. Iscr.` read `N. Eser,`).
+            if key == "data_protocollo" and re.sub(r"[\W_]", "", text.lower()) == "data" \
+                    and "protocollo" not in used:
+                key = None
             # A word more that names the same column no better is a speck taken in
             # (`Data Canc. Hd`: the margin's; it would stretch the line to it).
             stretched = key is not None and key == shorter[0] and alike <= shorter[1]
@@ -2097,22 +2109,34 @@ def _label_columns(region, segs, label_of):
     no rules), else None. A column runs from where its label starts to where the
     next one does; the last ends a little past its label (the margin beyond it
     holds the running head, printed sideways)."""
-    for band in geo.row_bands(region)[:15]:     # under the heading and the margin's specks
-        band = sorted(band, key=lambda w: w.u0)
+    bands = [sorted(b, key=lambda w: w.u0) for b in geo.row_bands(region)[:15]]
+
+    def read(band):
+        """(columns, header bottom, labels found) of a line, or None."""
         found = _best_labels(band, label_of)
         keys = [f[0] for f in found]
         v0, v1 = min(w.v0 for w in band), max(w.v1 for w in band)
         span = (found[0][1], found[-1][2]) if found else (0, 0)
         crossed = any(a <= (v0 + v1) / 2 <= b and span[0] < u < span[1]
                       for u, a, b in segs["walls"])     # not the margin's rule, past them
-        if (len(set(keys)) >= 4 and len(set(keys)) == len(keys) and not crossed
+        if not (len(set(keys)) >= 4 and len(set(keys)) == len(keys) and not crossed
                 and {"numero_iscrizione", "denominazione"} <= set(keys)):
-            cols = []
-            for j, (key, u0, u1, text) in enumerate(found):
-                left = 0 if j == 0 else u0 - 6
-                right = found[j + 1][1] - 6 if j + 1 < len(found) else u1 + 15
-                cols.append((key, left, right, text))
-            return Labelled(cols), v1
+            return None
+        cols = []
+        for j, (key, u0, u1, text) in enumerate(found):
+            left = 0 if j == 0 else u0 - 6
+            right = found[j + 1][1] - 6 if j + 1 < len(found) else u1 + 15
+            cols.append((key, left, right, text))
+        return Labelled(cols), v1, len(keys)
+
+    for i, band in enumerate(bands):        # under the heading and the margin's specks
+        tries = [read(band)]
+        # A tilted labels line OCR splits in two (1997 p125: its `Data`s a line low).
+        if i + 1 < len(bands) and min(w.v0 for w in bands[i + 1]) - max(w.v1 for w in band) < 12:
+            tries.append(read(sorted(band + bands[i + 1], key=lambda w: w.u0)))
+        best = max((t for t in tries if t), key=lambda t: t[2], default=None)
+        if best:
+            return best[0], best[1]
     return None
 
 

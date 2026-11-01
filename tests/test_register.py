@@ -339,6 +339,9 @@ def test_2011s_scanned_grids_read(year, sources):
     ("2001", (19, 0, 11)),      # 20 / 14 (3 of 2000): 00340 is not printed
     ("2000", (15, 0, 19)),      # 15 / 21 (2 of 1999); four-digit numbers, two-digit years
     ("1999", (20, 0, 13)),      # 20 / 16 (3 of 1998)
+    ("1998", (20, 0, 21)),      # 20 / 28 (7 of 1997)
+    ("1997", (20, 0, 18)),      # 20 / 33 (15 of 1996)
+    ("1996", (22, 2, 19)),      # 22 / 2 / 19, three of them dated 1995, printed here
 ])
 def test_the_2007_2010_grids_read(year, sources, counts):
     """2007-2009 head their grids `Dati su iscrizione : Anno 2008` / `Dati su
