@@ -1926,13 +1926,23 @@ def _misread_heading(text):
     at = next((j for j, w in enumerate(words[:3]) if re.fullmatch(r"da[lti]{0,2}", w.lower())), None)
     if at is None:
         return None
-    for w in words[at + 1:at + 4]:
+    kinds = ("iscrizione", "sospensione", "cancellazione")
+    # Then the kind: the next word that is neither `su`/`sulle` nor a speck of three
+    # letters or fewer (2000 p135: `Dati Lia su ESCTIZIONE`); `dal Registro per ...`,
+    # a reason's line, is none (2020 p720).
+    after = [w for w in words[at + 1:at + 4] if w.lower() not in ("su", "sulle")
+             and len(re.sub(r"[\W\d_]", "", w)) >= 4]
+    for w in after[:1]:
         # Its first run of letters: OCR glues the dotted line on (1998: `ISCIZIONE.....urri`).
         bare = (re.match(r"[^\W\d_]*", w.lower()) or [""])[0]
-        for kind in ("iscrizione", "sospensione", "cancellazione",
-                     "iscrizioni", "sospensioni", "cancellazioni"):
-            if difflib.SequenceMatcher(None, bare, kind).ratio() >= 0.75:
-                return GRID_HEADING_LOOSE.match(f"Dati {kind}")
+        if len(bare) < 7:       # the kinds are 9-13 letters (2020 p719's `dal ... nella`)
+            continue
+        near = sorted(((max(difflib.SequenceMatcher(None, bare, k).ratio(),
+                            difflib.SequenceMatcher(None, bare, k[:-1] + "i").ratio()), k)
+                       for k in kinds), reverse=True)
+        # Nearly one kind; or, the three far apart, clearly nearer one (1995: `iscrembne`).
+        if near[0][0] >= 0.75 or (near[0][0] >= 0.6 and near[0][0] - near[1][0] >= 0.15):
+            return GRID_HEADING_LOOSE.match(f"Dati {near[0][1]}")
     return None
 
 
@@ -2060,6 +2070,10 @@ class Labelled(list):
     """A grid's columns found where its labels start (no walls: 2006)."""
 
 
+DATE_OF = {"data_verbale": "verbale", "data_protocollo": "protocollo",
+           "data_verbale_rinnovo": "verbale_rinnovo"}
+
+
 def _best_labels(band, label_of):
     """[(key, u0, u1, text)]: the line's best reading as agreed labels, each one to
     three words, a word left out where it is none: the most columns, each named
@@ -2072,7 +2086,7 @@ def _best_labels(band, label_of):
     @lru_cache(maxsize=None)
     def best(i, used):
         if i >= len(band):
-            return (0, 0.0, 0, 0), ()
+            return (0, 0, 0, 0.0, 0), ()
         options = [best(i + 1, used)]            # the word is no label (`-`, `x`)
         shorter = (None, 0)
         for k in (1, 2, 3):
@@ -2092,11 +2106,16 @@ def _best_labels(band, label_of):
             if key:
                 shorter = (key, alike)
             if key and key not in used and not stretched:
-                (n, covered, total, fewer), rest = best(i + k, used | frozenset([key]))
+                (n, covered, order, total, fewer), rest = best(i + k, used | frozenset([key]))
+                # A date follows its subject (`Verbale | Data verbale`, `Verb. Rinn. |
+                # D. Verb. Rinn.`): a reading that puts it first is the worse (1995 p120,
+                # its `D.` lost to OCR).
+                order -= 1 if key in DATE_OF.values() and any(
+                    DATE_OF.get(u) == key for u in used) else 0
                 # Words of letters or digits count as covered; a speck taken in
                 # (`- N.Iser.`) would move the column's start onto it.
                 real = sum(1 for w in band[i:i + k] if len(re.sub(r"[\W_]", "", w.text)) >= 2)
-                options.append(((n + 1, covered + real, total + alike, fewer - k),
+                options.append(((n + 1, covered + real, order, total + alike, fewer - k),
                                 ((key, band[i].u0, band[i + k - 1].u1, text),) + rest))
         return max(options, key=lambda o: o[0])
 
@@ -2590,7 +2609,15 @@ def read_list(year, key, spec, pages):
                "notes": []}
         col = by_event[event]
         row["event"] = col.key
-        if not cells.get(col.key):
+        if event == "ISCRITTE" and getattr(sp, "layout", "").startswith("snapshot"):
+            # 1995's Allegato 1: the whole register at year end, not the year's
+            # enrolments (maintainer, 2026-10-27): no event, its dates as printed.
+            row["event"] = None
+            row["notes"].append(f"snapshot: in the register at 31.12.{year} (Allegato 1)")
+        elif event == "CANCELLATE" and re.search(rf"/(?:{int(year) - 1}|{(int(year) - 1) % 100:02d})$",
+                                                 cells.get(col.key, "")):
+            row["notes"].append(f"{col.key}: of {int(year) - 1}, printed in this year's list")
+        if row["event"] and not cells.get(col.key):
             row["implied"] = {col.key: str(year)}
             row["notes"].append(f"{col.key}: no date printed, the edition's year")
         # What OCR may misread into a valid value: a year to come (2013 p579:

@@ -1015,3 +1015,21 @@ table's key, so a later edition printing the same layout reads the same:
   `N. Eser` (1996's OCR of `N. Iscr.`) joins the agreed labels. 1996 prints three
   cancellations dated in 1995 (the narrative's "3 of 1995"): the event check FAILs on them,
   for the maintainer.
+- **The register starts from 1995's snapshot** (maintainer, 2026-11-01): the reports before
+  1995 are not read; 1995's Allegato 1, the whole register at 31.12.1995, is taken as
+  authoritative. Its rows (172) are stored as 1995's, noted `snapshot: in the register at
+  31.12.1995`, no event of the year (the event check skips them); their enrolment dates are
+  kept as printed. The page map and register-only index of 1991-1994 stay, unread.
+- **1995 prints renewal columns**: new columns `verbale_rinnovo`, `data_verbale_rinnovo`,
+  `data_rinnovo` (maintainer, 2026-11-01). A date column follows its subject when labels
+  are read (`Verb. Rinn. | D. Verb. Rinn.`, its `D.` lost to OCR).
+- **A cancellation of the year before, printed in a year's list** (1996: three of December
+  1995) is kept as printed, accepted by the event check and noted (maintainer, 2026-11-01).
+- **The maintainer read 1995-2000's 84 flagged values** (review page, 2026-11-01): 40
+  corrections and 5 company names from the notes (A.I.R.I.S. S.P.A., OTE S.P.A., FRAMATOME
+  CONNECTORS ITALIA S.P.A., I.D.S. INGEGNERIA DEI SISTEMI S.P.A., IAMCO S.R.L.). Every event
+  date of 1995-2000 falls in its year (IAMCO's cancellation in the 1998 list, first read
+  `23/03/92`, is 23/03/98: maintainer).
+- **A heading as OCR reads it**: `Dati` (or `DAL`, `DALI`), maybe `su`/`sulle`, then a word
+  of seven letters or more nearly a kind (0.75 alike, or 0.6 and clearly nearer one); specks
+  between are skipped. A reason's line (`dal 1.01.2020, nella società ...`) is none.

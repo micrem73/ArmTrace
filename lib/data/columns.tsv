@@ -171,6 +171,9 @@ DIFESA/A5/2	cap	code	CAP
 DIFESA/A5/2	citta	text	CITTÀ	
 DIFESA/A5/2	sede_attivita	text	Sede Attività	
 DIFESA/A5/2	natura_imprenditore	text	Natura Imprenditore	
+DIFESA/A5/2	verbale_rinnovo	code	Verb. Rinn.	
+DIFESA/A5/2	data_verbale_rinnovo	date	D. Verb. Rinn.	
+DIFESA/A5/2	data_rinnovo	date	Data Rinn.	
 DIFESA/A5/2	id_ditta	company		denominazione
 MAE/T10	paese	text	Paese	
 MAE/T10	n	years	N.	sum

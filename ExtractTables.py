@@ -393,7 +393,11 @@ def event_years(year, result, spec):
         fix = correction(fixes, r["event"], raw, row_name(r))
         value, _ = extract.parse("date", fix[0] if fix else raw)
         dated += 1
-        if value is None or value[:4] != str(year):
+        # A cancellation of the year before, printed in this year's list (1996: three of
+        # December 1995; maintainer, 2026-11-01), noted on its row.
+        late = r["event"] == "data_cancellazione" and value is not None \
+            and value[:4] == str(int(year) - 1)
+        if not late and (value is None or value[:4] != str(year)):
             issues.append((r["pdf_page"], "event year",
                            f"{cells.get('numero_iscrizione', '')} {r['event']} {raw!r}: "
                            f"not in {year}"))

@@ -442,3 +442,33 @@ def test_a_four_digit_number_is_stored_with_five(year, sources):
                      "FROM difesa_a5_2 WHERE numero_iscrizione_raw = '0004'").fetchone()
     assert got[:3] == ("00004", "0004", "2000-05-09")
     assert "numero_iscrizione: printed '0004', 5 digits stored" in got[3]
+
+
+@pytest.mark.parametrize("year", ["1995"])
+def test_1995s_whole_register_is_a_snapshot(year, sources):
+    """1995's Allegato 1 prints the whole register at 31.12.1995 under an enrolment
+    heading: its rows are the snapshot the register starts from (maintainer,
+    2026-11-01: the reports before 1995 are not read), no event of the year, with
+    the renewal columns it prints; the 29 cancellations are the year's events."""
+    import ExtractTables as E
+    from lib import extract
+    r, rows, _checks = _register(year)
+    assert not r.issues
+    snap = [x for x in rows if any(n.startswith("snapshot") for n in x["notes"])]
+    gone = [x for x in rows if x["data_cancellazione"]]
+    assert (len(snap), len(gone)) == (172, 29)
+    first = snap[0]
+    assert (first["numero_iscrizione"], first["verbale_rinnovo"], first["data_verbale_rinnovo"],
+            first["data_rinnovo"]) == ("00003", "03/94", "11/04/94", "09/05/94")
+    # The snapshot's dates are not events of 1995: only the cancellations are checked.
+    assert E.event_years(year, r, extract.specs()["DIFESA/A5/2"])[0][1] == "29"
+
+
+@pytest.mark.parametrize("year", ["1996"])
+def test_a_late_cancellation_printed_the_year_after_is_kept(year, sources):
+    """1996's list prints three cancellations of December 1995 (the narrative's
+    "3 of 1995"): kept as printed, the event check accepts them, the row noted
+    (maintainer, 2026-11-01)."""
+    r, rows, _checks = _register(year)
+    late = [x for x in rows if any("of 1995, printed in this year's list" in n for n in x["notes"])]
+    assert {x["data_cancellazione"] for x in late} >= {"18/12/95", "03/12/95"}
