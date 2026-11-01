@@ -387,3 +387,34 @@ def test_2006s_sideways_lists_read_by_their_labels(year, sources):
         "PRAVISANI S.P.A.", "VIA MAZZINI, 16", "33100")
     assert pravisani["motivazione"] == "PER AVER COMUNICATO DI NON VOLER RINNOVARE L'ISCRIZIONE AL RNI"
     assert next(x for x in rows if x["data_sospensione"])["data_sospensione"] == "20 novembre 2006"
+
+
+@pytest.mark.parametrize("year", ["2012"])
+def test_a_correction_names_its_row(year, sources):
+    """2012 p67: OCR reads ARNO ITALIANA's 00586 as `00566`, which is also
+    GAYMARINE's true number. The maintainer's correction names its row (the
+    company as read), so only ARNO's changes (corrections.tsv, 2026-11-01)."""
+    from lib import extract, source
+    from tests.test_extract import stored
+    key = "DIFESA/A5/2"
+    db = stored(year, extract.read_table(year, key, pages=source.table_pages(year, key)), key)
+    got = dict(db.execute("SELECT denominazione, numero_iscrizione FROM difesa_a5_2 "
+                          "WHERE data_cancellazione IS NULL"))
+    assert got["GAYMARINE S.R.L"] == "00566"
+    assert got["ARNO ITALIANA S.R.L"] == "00586"
+    assert got["SICAMB S.P.A."] == "00570"      # the name, too, as the maintainer read it
+
+
+@pytest.mark.parametrize("year", ["2008"])
+def test_a_maintainers_note_keeps_the_value(year, sources):
+    """2008 prints 00465 for both NORTHWEST and CONSORZIO ROTORSIM: kept as printed,
+    each row noting the anomaly (a correction equal to the value read)."""
+    from lib import extract, source
+    from tests.test_extract import stored
+    key = "DIFESA/A5/2"
+    db = stored(year, extract.read_table(year, key, pages=source.table_pages(year, key)), key)
+    rows = db.execute("SELECT denominazione, numero_iscrizione, flags FROM difesa_a5_2 "
+                      "WHERE numero_iscrizione = '00465'").fetchall()
+    assert len(rows) == 2
+    assert all("both printed with register number 00465" in flags for _n, _num, flags in rows)
+    assert not any("corrected" in flags for _n, _num, flags in rows)

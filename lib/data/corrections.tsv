@@ -3,15 +3,48 @@
 # (DECISIONS.md 2026-10-25). Only a value printed exactly as `printed` is corrected.
 # year: the edition the correction is for; empty, any (a value printed alike in
 #   another year may be true there: 2018's `09/04/2011` is OCR's, 2011's would not be).
-table	year	col	printed	corrected	decided
-DIFESA/A2C6/3A		data_rilascio_aut	27/082025	27/08/2025	maintainer, 2026-10-25
-DIFESA/A2C6/3A		data_rilascio_aut	15/102025	15/10/2025	maintainer, 2026-10-25
-DIFESA/A2C6/3A		data_rilascio_aut	05/1172025	05/11/2025	maintainer, 2026-10-25
-MAE/T4		fascia	01-ott	1 - 10	maintainer, 2026-10-25: a spreadsheet date artefact for the band 1 - 10
-DIFESA/A5/2	2018	data_cancellazione	09/04/201:	09/04/2018	maintainer, 2026-10-30: 2018 p731, the scan cuts the year's last digit
-DIFESA/A5/2	2018	data_cancellazione	28/05/201:	28/05/2018	maintainer, 2026-10-30: 2018 p731, the scan cuts the year's last digit
-DIFESA/A5/2	2018	data_cancellazione	08/10/201:	08/10/2018	maintainer, 2026-10-30: 2018 p731, the scan cuts the year's last digit
-DIFESA/A5/2	2018	data_cancellazione	e	28/05/2018	maintainer, 2026-10-30: 2018 p731, GEMELLI SPA (00473), the date OCR could not read
-DIFESA/A5/2	2018	data_cancellazione	Ualazei	08/10/2018	maintainer, 2026-10-30: 2018 p731, T.C.S. GROUP (00591), the date OCR could not read
-DIFESA/A5/2	2018	data_cancellazione	09/04/2011	09/04/2018	maintainer, 2026-10-30: 2018 p731, B-MAX (00652): OCR read the cut year's last digit as 1
-DIFESA/A5/2	2019	data_cancellazione	14/10/209	14/10/2019	maintainer, 2026-10-30: 2019 p814, FAREM S.R.L. (00509): so printed, the year 2019
+# row: the row's company as read, where the same reading is right on another row
+#   (2012: `00566` is GAYMARINE's and, misread, another's); empty, every row.
+# A correction equal to `printed` is a note of the maintainer's on that value (`decided`).
+table	year	col	row	printed	corrected	decided
+DIFESA/A2C6/3A		data_rilascio_aut		27/082025	27/08/2025	maintainer, 2026-10-25
+DIFESA/A2C6/3A		data_rilascio_aut		15/102025	15/10/2025	maintainer, 2026-10-25
+DIFESA/A2C6/3A		data_rilascio_aut		05/1172025	05/11/2025	maintainer, 2026-10-25
+MAE/T4		fascia		01-ott	1 - 10	maintainer, 2026-10-25: a spreadsheet date artefact for the band 1 - 10
+DIFESA/A5/2	2018	data_cancellazione		09/04/201:	09/04/2018	maintainer, 2026-10-30: 2018 p731, the scan cuts the year's last digit
+DIFESA/A5/2	2018	data_cancellazione		28/05/201:	28/05/2018	maintainer, 2026-10-30: 2018 p731, the scan cuts the year's last digit
+DIFESA/A5/2	2018	data_cancellazione		08/10/201:	08/10/2018	maintainer, 2026-10-30: 2018 p731, the scan cuts the year's last digit
+DIFESA/A5/2	2018	data_cancellazione		e	28/05/2018	maintainer, 2026-10-30: 2018 p731, GEMELLI SPA (00473), the date OCR could not read
+DIFESA/A5/2	2018	data_cancellazione		Ualazei	08/10/2018	maintainer, 2026-10-30: 2018 p731, T.C.S. GROUP (00591), the date OCR could not read
+DIFESA/A5/2	2018	data_cancellazione		09/04/2011	09/04/2018	maintainer, 2026-10-30: 2018 p731, B-MAX (00652): OCR read the cut year's last digit as 1
+DIFESA/A5/2	2019	data_cancellazione		14/10/209	14/10/2019	maintainer, 2026-10-30: 2019 p814, FAREM S.R.L. (00509): so printed, the year 2019
+DIFESA/A5/2	2001	data_iscrizione	BONETTI AIRCRAFT SUPPORTS S.R.L.	.22/03/2001183/070/09002/01	22/03/2001	maintainer, 2026-11-01: 2001 p130, BONETTI AIRCRAFT SUPPORTS S.R.L.
+DIFESA/A5/2	2001	data_iscrizione	TENCARA S.P.A. i o	16/05/20011	16/05/2001	maintainer, 2026-11-01: 2001 p130, TENCARA S.P.A. i o
+DIFESA/A5/2	2002	numero_iscrizione	L.E.M.- LAVORAZIONI ELETTRONICHE E M		00304	maintainer, 2026-11-01: 2002 p144, L.E.M.- LAVORAZIONI ELETTRONICHE E M
+DIFESA/A5/2	2003	data_protocollo	SLEL.CO. S.R.L.	15/04/2008	15/04/2003	maintainer, 2026-11-01: 2003 p144, SLEL.CO. S.R.L.
+DIFESA/A5/2	2007	data_sospensione	SINCO MEC KOLOR S.P.A.	Verbale n°04/2007 del21.09.2007	21/09/2007	maintainer, 2026-11-01: 2007 p496, SINCO MEC KOLOR S.P.A. (manca uno spazio tra "del" e la data. La motivazione che dai è strana: la sospensione cade nel 2007.)
+DIFESA/A5/2	2011	numero_iscrizione	SISTEMA COMPOSITI S.P.A.	00173I	00173	maintainer, 2026-11-01: 2011 p62, SISTEMA COMPOSITI S.P.A. (indica errore nelle note)
+DIFESA/A5/2	2012	numero_iscrizione	SICAM6 SP.A.	GOS70	00570	maintainer, 2026-11-01: 2012 p67, SICAM6 SP.A. (il nome della ditta è SICAMB S.P.A.)
+DIFESA/A5/2	2012	data_iscrizione	AER MECCANICA S.R.L	15/0S/2012	15/05/2012	maintainer, 2026-11-01: 2012 p67, AER MECCANICA S.R.L
+DIFESA/A5/2	2012	numero_iscrizione	B.M.O. S.PA.	0)573	00573	maintainer, 2026-11-01: 2012 p67, B.M.O. S.PA.
+DIFESA/A5/2	2012	numero_iscrizione	CELTE S.R.L	(№576	00576	maintainer, 2026-11-01: 2012 p67, CELTE S.R.L
+DIFESA/A5/2	2012	numero_iscrizione	I.F.E.N.- IMPIANTI FORNITURE ELETTRICHE i NAVAU-MG. AMEDEO LIA	00576	00578	maintainer, 2026-11-01: 2012 p67, I.F.E.N.- IMPIANTI FORNITURE ELETTRICHE i NAVAU-MG. AMEDEO LIA
+DIFESA/A5/2	2012	numero_iscrizione	OFFICINE MECCANICHE AERONAUTICHE SPA IN SIGLA O.M A S P A	00562	00582	maintainer, 2026-11-01: 2012 p67, OFFICINE MECCANICHE AERONAUTICHE SPA IN SIGLA O.M A S P A
+DIFESA/A5/2	2012	numero_iscrizione	ARNO ITALIANA S.R.L	00566	00586	maintainer, 2026-11-01: 2012 p67, ARNO ITALIANA S.R.L
+DIFESA/A5/2	2012	numero_iscrizione	JOINTEK S.R.L	00568	00588	maintainer, 2026-11-01: 2012 p67, JOINTEK S.R.L
+DIFESA/A5/2	2012	data_cancellazione	ALENIA SIA S.P.A.	20101/2012	20/01/2012	maintainer, 2026-11-01: 2012 p68, ALENIA SIA S.P.A.
+DIFESA/A5/2	2012	numero_iscrizione	LOGIC S .P A j	п л м i00069 i	00069	maintainer, 2026-11-01: 2012 p68, LOGIC S .P A j
+DIFESA/A5/2	2012	numero_iscrizione	SIMAD S.P.A.	I00038	00038	maintainer, 2026-11-01: 2012 p69, SIMAD S.P.A.
+DIFESA/A5/2	2013	data_protocollo	DALLARA AUTOMOBILI S.P.A	12/07/2073	12/07/2013	maintainer, 2026-11-01: 2013 p579, DALLARA AUTOMOBILI S.P.A
+DIFESA/A5/2	2013	data_verbale	KIMAY S.R.L.	08/07/2073	08/07/2013	maintainer, 2026-11-01: 2013 p579, KIMAY S.R.L.
+DIFESA/A5/2	2013	numero_iscrizione	BROOKLIN S.R.L.	00809	00609	maintainer, 2026-11-01: 2013 p579, BROOKLIN S.R.L.
+DIFESA/A5/2	2013	data_protocollo	ASTI AIRCRAFT SERVICES SRL.	12/07/2073	12/07/2013	maintainer, 2026-11-01: 2013 p579, ASTI AIRCRAFT SERVICES SRL.
+DIFESA/A5/2	2013	data_protocollo	PARDINIARMISRL.	12/07/2093	12/07/2013	maintainer, 2026-11-01: 2013 p579, PARDINIARMISRL.
+DIFESA/A5/2	2013	data_iscrizione	METALBA S.P.A.	25/71/2013	25/11/2013	maintainer, 2026-11-01: 2013 p579, METALBA S.P.A.
+DIFESA/A5/2	2013	data_iscrizione	QS PENNA S.R.L.	25/03/2073	28/03/2013	maintainer, 2026-11-01: 2013 p579, QS PENNA S.R.L.
+DIFESA/A5/2	2014	numero_iscrizione	SECURITY SYSTEM S.R.L. UNIPERSONALE	0042I	00421	maintainer, 2026-11-01: 2014 p652, SECURITY SYSTEM S.R.L. UNIPERSONALE
+DIFESA/A5/2	2012	denominazione	SICAM6 SP.A.	SICAM6 SP.A.	SICAMB S.P.A.	maintainer, 2026-11-01: 2012 p67, register number 00570
+DIFESA/A5/2	2008	numero_iscrizione	NORTHWEST S.r.l.	00465	00465	maintainer, 2026-11-01: 2008 p597, NORTHWEST S.r.l. and CONSORZIO ROTORSIM are both printed with register number 00465: an anomaly of the print
+DIFESA/A5/2	2008	numero_iscrizione	CONSORZIO ROTORSIM	00465	00465	maintainer, 2026-11-01: 2008 p597, NORTHWEST S.r.l. and CONSORZIO ROTORSIM are both printed with register number 00465: an anomaly of the print
+DIFESA/A5/2	2012	numero_iscrizione	MECCANICA PER L'ELETTRONICA E SERVOMECCANISMI - M.E.S. S P A IN FORMA AB8REVIATA M.E.S. S.PA.	00564	00584	maintainer, 2026-11-01: 2012 p67, M.E.S. S.P.A. is 00584 (note on 00585)
+DIFESA/A5/2	2012	numero_iscrizione	8M A BUIZZA MA2ZEI AGENCY S.R.L	00569	00589	maintainer, 2026-11-01: 2012 p67, MAZZEI AGENCY is 00589 (note on 00590)

@@ -986,3 +986,18 @@ table's key, so a later edition printing the same layout reads the same:
   (2001 p132's NEGATIVO, which OCR lost). A table goes on under its own heading repeated
   (2002 p142), its labels again skipped, tilted as they may be; a typed list's word is
   placed by its left edge (values start under their labels and may run past the next).
+
+## 2026-11-01 — the register (RNI): the maintainer's readings of 2001-2023
+
+- **The maintainer read 42 flagged values on their pages** (review page, 2026-11-01): 28
+  corrections and 2 more from the notes (2012: M.E.S. 00584, MAZZEI AGENCY 00589), in
+  `corrections.tsv`, each for its year. Every event date of 2001-2023 is now in its year.
+- **A correction may name its row**: `corrections.tsv` gains a `row` column, the company as
+  read. 2012's misread numbers are other rows' true ones (`00566` is GAYMARINE's and,
+  misread, ARNO ITALIANA's 00586), so a correction for every row would change the wrong one.
+- **A correction equal to the value read is a note** on that value, kept as printed: 2008
+  prints 00465 for both NORTHWEST and CONSORZIO ROTORSIM (an anomaly of the print, noted).
+- **2020's CANCELLATE heading says 16 over 15 items**: left as printed, its check FAILs
+  (maintainer).
+- Open (asked on the review page): 2012 LOGIC (00568?), UFI FILTERS (00569?), BOZZI & FIGLI
+  (00583?), and the register number of a 2012 cancellation printed without one.

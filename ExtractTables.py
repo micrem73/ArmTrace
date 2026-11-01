@@ -138,13 +138,34 @@ def create(db, name, spec):
     db.execute(f"CREATE TABLE {name} ({', '.join(cols)})")
 
 
+def corrections(table, year):
+    """The maintainer's corrections of `table` for `year` (lib/data/corrections.tsv)."""
+    return [r for r in extract._rows("corrections.tsv")
+            if r["table"] == table and r["year"] in ("", str(year))]
+
+
+def correction(fixes, col, raw, row_name=""):
+    """(value, decided) the maintainer gave for `raw` in column `col`, or None: a
+    correction naming its row (the company as read: 2012's `00566` is GAYMARINE's
+    number and, misread, another's) before one for every row."""
+    hits = [f for f in fixes if f["col"] == col and f["printed"] == raw
+            and f["row"] in ("", row_name)]
+    hits.sort(key=lambda f: f["row"] == "")
+    return (hits[0]["corrected"], hits[0]["decided"]) if hits else None
+
+
+def row_name(r):
+    """The row's company as read, which a correction may name."""
+    keys = [c.key for c in r["order"]]
+    return r["cells"][keys.index("denominazione")] if "denominazione" in keys else ""
+
+
 def records(year, result, spec):
     """The facts of one table as SQL rows, and the issues their values raise."""
     rows, issues = [], []
     ids, unknown = companies.load()[1], set()
     bank_ids = banks.load()[1]
-    corrected = {(r["col"], r["printed"]): r["corrected"] for r in extract._rows("corrections.tsv")
-                 if r["table"] == spec.table and r["year"] in ("", str(year))}
+    fixes = corrections(spec.table, year)
     by_key = {c.key: c for c in spec.columns}
     for r in result.rows:
         if r["kind"] != "data":
@@ -173,8 +194,12 @@ def records(year, result, spec):
             if col.type == "anno":
                 values[col.key] = int(raw)
                 continue
-            fixed = corrected.get((col.key, raw))
-            if fixed is not None:       # the maintainer's correction (corrections.tsv)
+            fix = correction(fixes, col.key, raw, row_name(r))
+            fixed = None
+            if fix and fix[0] == raw:   # a note of the maintainer's, the value as printed
+                flags.append(f"{col.key}: {fix[1]}")
+            elif fix:                   # the maintainer's correction (corrections.tsv)
+                fixed = fix[0]
                 flags.append(f"{col.key}: corrected, printed {raw!r}")
             value, problem = extract.parse(col.type, fixed if fixed is not None else raw)
             if problem:
@@ -350,8 +375,7 @@ def event_years(year, result, spec):
     readers; implied where none is printed), as corrected, must fall in `year`:
     another year is a misreading (2018 p731: OCR's `09/04/2011`). FAIL stops the
     run; each such row is an issue."""
-    corrected = {(r["col"], r["printed"]): r["corrected"] for r in extract._rows("corrections.tsv")
-                 if r["table"] == spec.table and r["year"] in ("", str(year))}
+    fixes = corrections(spec.table, year)
     keys = [c.key for c in result.columns] or [c.key for c in spec.printed]
     dated, issues = 0, []
     for r in result.rows:
@@ -359,7 +383,8 @@ def event_years(year, result, spec):
             continue
         cells = dict(zip(keys, r["cells"]))
         raw = cells.get(r["event"], "")
-        value, _ = extract.parse("date", corrected.get((r["event"], raw), raw))
+        fix = correction(fixes, r["event"], raw, row_name(r))
+        value, _ = extract.parse("date", fix[0] if fix else raw)
         dated += 1
         if value is None or value[:4] != str(year):
             issues.append((r["pdf_page"], "event year",
